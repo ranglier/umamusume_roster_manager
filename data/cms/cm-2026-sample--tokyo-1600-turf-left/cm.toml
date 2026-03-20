@@ -1,0 +1,74 @@
+id = "cm-2026-sample--tokyo-1600-turf-left"
+name = "Sample CM - Tokyo 1600m Turf Left"
+event_window = "2026-04"
+prep_status = "farming"
+surface = "turf"
+distance = "mile"
+distance_m = 1600
+turn = "left"
+season = "spring"
+weather = "sunny"
+venue = "Tokyo"
+track_name = "Tokyo Racecourse 1600m"
+technical_points = [
+  "Longue ligne droite finale: la vitesse soutenue garde de la valeur apres le declenchement accel.",
+  "La montee en fin de course punit les builds trop greed en stamina et power.",
+  "Le positionnement compte davantage qu'une piste courte et bouchee."
+]
+skill_implications = [
+  "Les angles verts lies a Tokyo, left turn ou spring gardent de la valeur si le build reste propre.",
+  "Les accels fiables avec fenetre large valent mieux qu'un package trop high-roll.",
+  "Un carry propre et stable peut etre preferable a un plan double carry trop gourmand."
+]
+general_strategy = "Prioriser un carry principal simple a stabiliser, puis ajouter un second carry ou un tech pick seulement si le compte suit reellement."
+playable_archetypes = ["single_carry", "double_carry", "carry_plus_debuffer"]
+debuff_viability = "Acceptable seulement si le troisieme slot n'atteint pas un vrai niveau carry sans surinvestissement."
+candidate_ids_considered = [
+  "maruzensky--original",
+  "taiki-shuttle--original",
+  "grass-wonder--original"
+]
+candidate_ids_validated = [
+  "maruzensky--original"
+]
+recommended_parent_ids = [
+  "maruzensky--mile-leader-generic-v1",
+  "taiki-shuttle--tokyo-mile-borrow-v1",
+  "grass-wonder--tokyo-mile-closer-v1"
+]
+important_support_ids = [
+  "kitasan-black--speed-core--ssr",
+  "fine-motion--wisdom-anchor--ssr",
+  "sakura-bakushin-o--speed-replacement--sr",
+  "vodka--power-miler--sr",
+  "agnes-tachyon--accel-tech--ssr"
+]
+farm_goals = [
+  "Stabiliser le duo de parents pour Taiki Shuttle.",
+  "Decider vite si Maruzensky devient le safe pick final.",
+  "Ne lancer Grass Wonder que si le package accel devient reel."
+]
+identified_blockers = [
+  "Une seule vraie premium speed borrow dans le sample.",
+  "Le package accel late manque pour rendre Grass Wonder honnete.",
+  "Le parent track specific Grass Wonder n'est pas mature."
+]
+prep_plan = [
+  "Tester d'abord la version realiste Taiki Shuttle a une borrow.",
+  "Garder Maruzensky comme option prete maintenant pour ne pas prendre de retard.",
+  "Reporter Grass Wonder tant que les blocages centraux restent ouverts."
+]
+strategic_notes = """
+Ce CM sample est construit pour montrer comment separer la piste, les options du compte, les farms a ROI, et les builds reellement credibles.
+Le repository doit faire ressortir la difference entre une candidate sexy en theorie et une candidate honnete a grinder des aujourd'hui.
+"""
+updated_at = "2026-03-20"
+
+[track_features]
+final_corner = "Transition assez propre vers une phase finale longue: les plans de vitesse soutenue restent rentables."
+final_straight = "Tres longue ligne droite qui recompense la tenue de vitesse autant que l'accel pure."
+spurt_start = "Les builds trop courts en stamina ou power perdent vite de la valeur dans la montee finale."
+elevation = "Montee notable dans la partie finale de la ligne droite."
+positioning = "L'acces a une ligne propre en sortie de virage aide beaucoup, surtout pour les carries simples."
+relevant_green_skills = ["Tokyo Racecourse", "Left Turn", "Spring"]
+relevant_accel_skills = ["Accel fiable a fenetre large", "Outils leader ou late sans condition trop etroite"]

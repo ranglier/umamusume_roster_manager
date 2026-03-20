@@ -1,0 +1,69 @@
+id = "maruzensky--original"
+uma_slug = "maruzensky"
+name = "Maruzensky"
+alt = "Original"
+base_rarity = 3
+owned = true
+awakening_level = 5
+personal_progress_summary = "Option leader immediately playable sur mile ouverte, pas forcement plafond meta mais tres bonne valeur pratique."
+assessment_status = "ready"
+theoretical_power = "medium"
+practical_fit = "high"
+readiness_state = "ready_now"
+playable_distances = ["mile", "medium"]
+playable_styles = ["runner", "leader"]
+playable_surfaces = ["turf"]
+possible_roles = ["carry", "tech_pick", "parent"]
+strengths = [
+  "Facile a lancer tout de suite avec le roster sample.",
+  "Tres bonne valeur de secu sur piste mile ouverte.",
+  "Double valeur comme parent de long terme."
+]
+weaknesses = [
+  "Plafond theorique moins sexy qu'un build plus ambitieux et plus cher.",
+  "Peut devenir previsible si la meta est tres orientee late accel."
+]
+critical_needs = [
+  "Simple nettoyage des details d'heritage et de deck, pas un vrai projet de farm."
+]
+native_key_skills = [
+  "Plan front-loaded adapte aux pistes qui laissent respirer les leaders.",
+  "Bonne conversion immediate de deck stable en performance jouable."
+]
+unique_notes = "Excellente solution pragmatique quand l'objectif est de jouer vite et propre."
+aptitude_constraints = [
+  "Aime rester sur des mile tracks ou ses profils runner ou leader sont naturels."
+]
+compatibility_notes = [
+  "Tres bonne pick de stabilite si on ne veut pas surinvestir dans un build plus fragile.",
+  "Peut aussi servir de reference parent long terme."
+]
+recommended_parent_ids = [
+  "maruzensky--mile-leader-generic-v1"
+]
+recommended_support_ids = [
+  "kitasan-black--speed-core--ssr",
+  "fine-motion--wisdom-anchor--ssr",
+  "daitaku-helios--mile-helper--sr",
+  "sakura-bakushin-o--speed-replacement--sr"
+]
+recommended_scenarios = ["uaf"]
+tags = ["mile", "turf", "ready_example", "parent_value"]
+notes = """
+C'est l'exemple de candidate 'prete maintenant'.
+Elle n'est pas forcement le build le plus ambitieux, mais elle est honnete tout de suite.
+"""
+updated_at = "2026-03-20"
+
+[stat_targets]
+speed = 1600
+stamina = 850
+power = 1150
+guts = 900
+wisdom = 1200
+
+[readiness]
+ready_now = true
+farm_required = false
+blocked = false
+blockers = []

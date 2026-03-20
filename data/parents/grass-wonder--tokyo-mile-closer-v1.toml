@@ -1,0 +1,29 @@
+id = "grass-wonder--tokyo-mile-closer-v1"
+representative_uma_slug = "grass-wonder"
+representative_name = "Grass Wonder"
+role_summary = "Prototype de parent track specific a farmer pour rendre un plan late Tokyo Mile enfin credible."
+scope = "track_specific"
+ownership = "owned"
+status = "to_do"
+quality = "rough"
+target_surfaces = ["turf"]
+target_distances = ["mile"]
+target_styles = ["betweener", "chaser"]
+role_tags = ["track_specific", "unique_inherit"]
+usage_tags = ["farm_goal"]
+blue_sparks = ["speed", "power", "power"]
+pink_sparks = ["mile", "betweener"]
+green_white_sparks = ["Tokyo Racecourse", "Left Turn"]
+aptitude_fixes = ["mile", "betweener"]
+important_inheritables = [
+  "Angle plus agressif pour la fin de course.",
+  "Heritage cible pour sortir Grass Wonder du statut bloque."
+]
+compatibility_notes = [
+  "N'a de valeur que si le roster acquiert aussi le support accel manquant."
+]
+source = "Farm a lancer"
+notes = """
+Ce parent existe surtout pour montrer la difference entre parent ideel et parent reellement disponible.
+"""
+updated_at = "2026-03-20"

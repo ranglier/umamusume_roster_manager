@@ -1,0 +1,30 @@
+id = "maruzensky--mile-leader-generic-v1"
+representative_uma_slug = "maruzensky"
+representative_name = "Maruzensky"
+role_summary = "Parent generique pour securiser mile et leader sur des carries turf qui veulent rester simples a builder."
+scope = "generic"
+ownership = "owned"
+status = "good"
+quality = "good"
+target_surfaces = ["turf"]
+target_distances = ["mile"]
+target_styles = ["leader", "runner"]
+role_tags = ["generic", "style_fix", "distance_fix"]
+usage_tags = ["inherit_plan", "long_term"]
+blue_sparks = ["speed", "speed", "power"]
+pink_sparks = ["mile", "leader"]
+green_white_sparks = ["Tokyo Racecourse", "Left Turn", "Spring"]
+aptitude_fixes = ["mile", "leader"]
+important_inheritables = [
+  "Leader-friendly opening pressure.",
+  "White factors utiles sur piste mile gauche."
+]
+compatibility_notes = [
+  "Tres bon premier parent pour Taiki Shuttle ou Maruzensky sur une mile ouverte.",
+  "Bonne valeur de long terme meme hors de ce CM sample."
+]
+source = "Farm perso deja utilisable"
+notes = """
+Pas encore un parent parfait, mais deja un vrai actif utile et reusable.
+"""
+updated_at = "2026-03-20"

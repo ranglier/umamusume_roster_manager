@@ -1,0 +1,46 @@
+# Filename: data/cms/<cm-id>/builds/<id>.toml
+id = "<cm-id>--<candidate-slug>--<style>-realistic"
+cm_id = "<cm-id>"
+candidate_id = "<character-id>"
+role_in_team = "carry"
+chosen_style = "leader"
+final_surface = "turf"
+final_distance = "mile"
+build_profile = "realistic_account"
+build_objective = "<why-this-build-exists>"
+scenario = "uaf"
+difficulty = "medium"
+viability = "playable"
+progress_state = "planned"
+skills_priority = ["<must-have>"]
+skills_optional = ["<nice-to-have>"]
+skills_to_avoid = ["<low-value-skill>"]
+critical_inheritance_targets = ["<inherit-target>"]
+dependencies = ["<support-or-parent-dependency>"]
+result_summary = "<current-result-or-placeholder>"
+post_run_notes = """
+<freeform-run-notes>
+"""
+updated_at = "2026-03-20"
+
+[stat_targets]
+speed = 1600
+stamina = 900
+power = 1200
+guts = 900
+wisdom = 1200
+
+[borrow_plan]
+support_id = "<support-id>"
+reason = "<why-this-is-the-borrow>"
+
+[[deck]]
+slot = 1
+support_id = "<support-id>"
+borrow = false
+reason = "<why-this-card-is-here>"
+
+[[parent_plan]]
+parent_id = "<parent-id>"
+role = "main"
+reason = "<why-this-parent-is-needed>"

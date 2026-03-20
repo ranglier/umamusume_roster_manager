@@ -1,0 +1,33 @@
+id = "vodka--power-miler--sr"
+character_slug = "vodka"
+name = "Vodka"
+version = "SR Power Miler"
+support_type = "power"
+rarity = "sr"
+owned = true
+availability = "available"
+support_level = 40
+limit_break = 4
+usage_primary = "Pont power budget pour des carries mile qui veulent rester honnetes sans SSR premium."
+usage_secondary = [
+  "Bon slot de remplacement si le deck manque de power reel.",
+  "Utile sur des plans mile simples sans ambition maximale."
+]
+relevant_styles = ["leader", "betweener", "chaser"]
+relevant_distances = ["mile", "medium"]
+relevant_roles = ["carry", "sub_carry"]
+key_skills = [
+  "Paquet power correct pour le budget.",
+  "Aide a tenir la phase finale en restant sobre."
+]
+interest_tags = ["stats", "utility"]
+candidate_ids = [
+  "taiki-shuttle--original",
+  "grass-wonder--original"
+]
+restrictions = ["same_character_training_lock", "same_uma_support_family_exclusive"]
+status = "good_replacement"
+notes = """
+Pas une carte de plafond, mais un vrai couteau suisse pour sortir des builds jouables sans sur-ingenierie.
+"""
+updated_at = "2026-03-20"

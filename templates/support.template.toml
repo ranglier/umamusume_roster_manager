@@ -1,0 +1,25 @@
+# Filename: data/supports/<id>.toml
+id = "<uma-slug>--<card-slug>--<rarity>"
+character_slug = "<uma-slug>"
+name = "<display-name>"
+version = "<card-version>"
+support_type = "speed"
+rarity = "ssr"
+owned = true
+availability = "available"
+support_level = 45
+limit_break = 3
+usage_primary = "<main-use>"
+usage_secondary = ["<secondary-use>"]
+relevant_styles = ["leader"]
+relevant_distances = ["mile"]
+relevant_roles = ["carry"]
+key_skills = ["<important-skill-or-package>"]
+interest_tags = ["stats"]
+candidate_ids = ["<character-id>"]
+restrictions = ["same_character_training_lock", "same_uma_support_family_exclusive"]
+status = "good_replacement"
+notes = """
+<freeform-notes>
+"""
+updated_at = "2026-03-20"

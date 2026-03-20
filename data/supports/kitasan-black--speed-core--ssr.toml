@@ -1,0 +1,34 @@
+id = "kitasan-black--speed-core--ssr"
+character_slug = "kitasan-black"
+name = "Kitasan Black"
+version = "SSR Speed Core"
+support_type = "speed"
+rarity = "ssr"
+owned = false
+availability = "borrow_only"
+support_level = 50
+limit_break = 4
+usage_primary = "Borrow premium pour stabiliser les builds carry turf et lisser les runs UAF."
+usage_secondary = [
+  "Tres forte base stats pour les leaders et betweener mile.",
+  "Bonne valeur universelle quand le compte manque d'une vraie speed anchor."
+]
+relevant_styles = ["runner", "leader", "betweener"]
+relevant_distances = ["mile", "medium", "long"]
+relevant_roles = ["carry", "sub_carry"]
+key_skills = [
+  "Paquet vitesse generique tres rentable.",
+  "Hints simples a convertir dans beaucoup de builds turf."
+]
+interest_tags = ["stats", "skill_access"]
+candidate_ids = [
+  "taiki-shuttle--original",
+  "maruzensky--original",
+  "grass-wonder--original"
+]
+restrictions = ["same_character_training_lock", "same_uma_support_family_exclusive"]
+status = "core"
+notes = """
+Support non possedee dans le sample, mais c'est la borrow la plus rentable pour securiser un carry mile simple.
+"""
+updated_at = "2026-03-20"

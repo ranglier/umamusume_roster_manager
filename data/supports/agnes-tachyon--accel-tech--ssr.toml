@@ -1,0 +1,32 @@
+id = "agnes-tachyon--accel-tech--ssr"
+character_slug = "agnes-tachyon"
+name = "Agnes Tachyon"
+version = "SSR Accel Tech"
+support_type = "wisdom"
+rarity = "ssr"
+owned = false
+availability = "missing"
+support_level = 0
+limit_break = 0
+usage_primary = "Support accel ou skill access qui manque surtout pour les plans late plus ambitieux."
+usage_secondary = [
+  "Debloquerait des candidates plus gourmandes en timing de fin de course.",
+  "Augmenterait la credibilite des builds betweener ou chaser sur piste ouverte."
+]
+relevant_styles = ["betweener", "chaser"]
+relevant_distances = ["mile", "medium"]
+relevant_roles = ["carry", "tech_pick"]
+key_skills = [
+  "Acces accel plus propre pour les plans late.",
+  "Package de skills que le roster sample ne possede pas encore."
+]
+interest_tags = ["accel", "skill_access"]
+candidate_ids = [
+  "grass-wonder--original"
+]
+restrictions = ["same_character_training_lock", "same_uma_support_family_exclusive"]
+status = "core"
+notes = """
+Carte explicitement absente dans le sample et suivie parce qu'elle change une vraie decision de build.
+"""
+updated_at = "2026-03-20"
