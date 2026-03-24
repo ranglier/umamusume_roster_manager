@@ -14,6 +14,7 @@
   const backToTopButton = document.getElementById("backToTopButton");
   const globalBuild = document.getElementById("globalBuild");
   const summaryText = document.getElementById("summaryText");
+  const compactLayoutQuery = window.matchMedia("(max-width: 1680px)");
 
   if (!data) {
     document.body.innerHTML = "<main class='detail-empty'>Missing local reference bundle. Run the update script first.</main>";
@@ -419,6 +420,15 @@
     }
   }
 
+  function isCompactLayout() {
+    return compactLayoutQuery.matches;
+  }
+
+  function syncLayoutMode(hasSelectedItem) {
+    document.body.classList.toggle("layout-compact", isCompactLayout());
+    document.body.classList.toggle("layout-compact-detail-active", isCompactLayout() && hasSelectedItem);
+  }
+
   function currentHashState() {
     const hash = (window.location.hash || "").replace(/^#\/?/, "");
     const [entityKey, rawId] = hash.split("/");
@@ -560,7 +570,14 @@
       .join("");
 
     listEl.querySelectorAll("[data-item-id]").forEach((card) => {
-      card.addEventListener("click", () => setHash(entityKey, card.dataset.itemId));
+      card.addEventListener("click", () => {
+        const itemId = card.dataset.itemId;
+        if (isCompactLayout() && localState.selectedId === itemId) {
+          setHash(entityKey, null);
+          return;
+        }
+        setHash(entityKey, itemId);
+      });
     });
   }
 
@@ -714,26 +731,28 @@
     return `
       <section class="character-stats-block">
         <div class="character-grid-head">${escapeHtml(title)}</div>
-        <table class="character-stats-table">
-          <thead>
-            <tr>
-              <th>Tier</th>
-              ${safeColumns.map((column) => `<th>${escapeHtml(column.label)}</th>`).join("")}
-            </tr>
-          </thead>
-          <tbody>
-            ${safeRows
-              .map((row) => `
-                <tr>
-                  <th>${escapeHtml(row.label)}</th>
-                  ${safeColumns
-                    .map((column) => `<td>${escapeHtml(row.values?.[column.key] ?? "-")}</td>`)
-                    .join("")}
-                </tr>
-              `)
-              .join("")}
-          </tbody>
-        </table>
+        <div class="table-scroll">
+          <table class="character-stats-table">
+            <thead>
+              <tr>
+                <th>Tier</th>
+                ${safeColumns.map((column) => `<th>${escapeHtml(column.label)}</th>`).join("")}
+              </tr>
+            </thead>
+            <tbody>
+              ${safeRows
+                .map((row) => `
+                  <tr>
+                    <th>${escapeHtml(row.label)}</th>
+                    ${safeColumns
+                      .map((column) => `<td>${escapeHtml(row.values?.[column.key] ?? "-")}</td>`)
+                      .join("")}
+                  </tr>
+                `)
+                .join("")}
+            </tbody>
+          </table>
+        </div>
       </section>
     `;
   }
@@ -1077,6 +1096,7 @@
     if (entityKey === "compatibility") body = renderCompatibility(detail, entity.model);
 
     detailEl.innerHTML = `
+      <button class="detail-close-button" type="button" id="detailCloseButton">Close details</button>
       ${renderDetailHeader(selectedItem, entityKey)}
       ${body}
       <div class="detail-section">
@@ -1090,6 +1110,11 @@
       button.addEventListener("click", () => setHash(button.dataset.refEntity, button.dataset.refId));
     });
 
+    const closeButton = document.getElementById("detailCloseButton");
+    if (closeButton) {
+      closeButton.addEventListener("click", () => setHash(entityKey, null));
+    }
+
     if (detailPanelEl) {
       detailPanelEl.scrollTop = 0;
     }
@@ -1102,6 +1127,8 @@
 
     if (itemId) {
       localState.selectedId = itemId;
+    } else if (isCompactLayout()) {
+      localState.selectedId = null;
     }
 
     renderNav(entityKey);
@@ -1112,12 +1139,19 @@
 
     const filteredItems = getFilteredItems(entityKey);
     resultCountEl.textContent = `${filteredItems.length} visible`;
-    if (!localState.selectedId || !filteredItems.some((item) => item.id === localState.selectedId)) {
+
+    if (localState.selectedId && !filteredItems.some((item) => item.id === localState.selectedId)) {
+      localState.selectedId = null;
+    }
+
+    if (!isCompactLayout() && !localState.selectedId) {
       localState.selectedId = filteredItems[0]?.id || null;
     }
 
+    const selectedItem = filteredItems.find((item) => item.id === localState.selectedId) || null;
+    syncLayoutMode(Boolean(selectedItem));
     renderList(entityKey, filteredItems);
-    renderDetail(entityKey, filteredItems.find((item) => item.id === localState.selectedId) || null);
+    renderDetail(entityKey, selectedItem);
     window.requestAnimationFrame(syncToolbarMetrics);
   }
 
@@ -1147,6 +1181,7 @@
   }
 
   window.addEventListener("resize", () => {
+    render();
     window.requestAnimationFrame(syncToolbarMetrics);
   });
   window.addEventListener("scroll", syncBackToTopVisibility, { passive: true });

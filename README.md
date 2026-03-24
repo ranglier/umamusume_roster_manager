@@ -74,9 +74,10 @@ Umamusume_Roster_Manager/
 |  |- data/
 |  `- media/
 |- scripts/
-|  |- update-reference.ps1
+|  |- update_reference.py
+|  |- serve_reference.py
 |  `- lib/
-|     `- GameTora.Reference.ps1
+|     `- gametora_reference.py
 `- src/
    `- ui/
       |- index.html
@@ -137,19 +138,40 @@ La consultation ne depend donc pas du reseau.
 
 Mettre a jour le referentiel:
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\update-reference.ps1
+```bash
+python ./scripts/update_reference.py
 ```
 
 Forcer un refresh complet:
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\update-reference.ps1 -Force
+```bash
+python ./scripts/update_reference.py --force
 ```
+
+Notes:
+
+- Windows: `py -3 .\scripts\update_reference.py` fonctionne aussi
+- macOS / Linux: `python3 ./scripts/update_reference.py` fonctionne aussi si `python` n'est pas disponible
 
 Ouvrir l'application locale:
 
-- ouvrir [`dist/index.html`](c:\Users\034927N\PERSO\Umamusume_Roster_Manager\dist\index.html)
+- recommande: servir `dist/` en HTTP local pour eviter les limites `file://` de certains navigateurs
+
+```bash
+python ./scripts/serve_reference.py --open
+```
+
+- variante pratique pour regénérer puis servir dans la foulée:
+
+```bash
+python ./scripts/serve_reference.py --update-first --open
+```
+
+- alternative minimale: `python -m http.server 8000 --directory dist`
+- URL locale: `http://127.0.0.1:8000/`
+- endpoint sante: `http://127.0.0.1:8000/__health`
+- endpoint metadata: `http://127.0.0.1:8000/__meta`
+- l'ouverture directe de [`dist/index.html`](c:\Users\034927N\PERSO\Umamusume_Roster_Manager\dist\index.html) peut fonctionner selon le navigateur, mais Opera peut mal gerer ce mode
 
 Apres un clonage neuf, commencer par lancer l'update pour regenerer `data/` et les assets locaux.
 
@@ -208,8 +230,9 @@ Note:
 ## Fichiers clefs
 
 - configuration des sources: [`config/sources.json`](c:\Users\034927N\PERSO\Umamusume_Roster_Manager\config\sources.json)
-- pipeline import / normalisation / build: [`scripts/lib/GameTora.Reference.ps1`](c:\Users\034927N\PERSO\Umamusume_Roster_Manager\scripts\lib\GameTora.Reference.ps1)
-- commande d'update: [`scripts/update-reference.ps1`](c:\Users\034927N\PERSO\Umamusume_Roster_Manager\scripts\update-reference.ps1)
+- pipeline import / normalisation / build: [`scripts/lib/gametora_reference.py`](c:\Users\034927N\PERSO\Umamusume_Roster_Manager\scripts\lib\gametora_reference.py)
+- commande d'update: [`scripts/update_reference.py`](c:\Users\034927N\PERSO\Umamusume_Roster_Manager\scripts\update_reference.py)
+- serveur local de consultation: [`scripts/serve_reference.py`](c:\Users\034927N\PERSO\Umamusume_Roster_Manager\scripts\serve_reference.py)
 - metadonnees raw: [`data/raw/metadata.json`](c:\Users\034927N\PERSO\Umamusume_Roster_Manager\data\raw\metadata.json)
 - catalogue assets: [`data/raw/assets/metadata.json`](c:\Users\034927N\PERSO\Umamusume_Roster_Manager\data\raw\assets\metadata.json)
 
@@ -218,8 +241,8 @@ Note:
 - GameTora doit continuer d'exposer son manifest public et ses datasets JSON versionnes.
 - `compatibility` est conservee comme base de calcul, sans integration directe des bonus G1 dans un score compose.
 - l'UI est volontairement read-only
-- l'updater est actuellement verifie sous Windows PowerShell
-- la consultation locale reste portable car `dist/` est une application statique
+- l'updater repose sur Python standard library pour rester cross-OS sans dependances externes
+- la consultation locale est recommandee via HTTP local pour rester cross-navigateur
 - le depot Git ne contient pas les donnees GameTora importees; elles doivent etre regenerees localement
 
 ## Revue code

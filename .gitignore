@@ -12,6 +12,10 @@ Thumbs.db
 .edge-profile-compat/
 edge-dom-*.html
 
+# Python cache
+__pycache__/
+*.pyc
+
 # Imported / generated local reference data
 data/raw/
 data/normalized/

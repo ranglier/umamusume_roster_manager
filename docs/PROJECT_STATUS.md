@@ -30,8 +30,8 @@ Un pipeline complet a ete mis en place pour:
 
 Fichiers principaux:
 
-- [`scripts/lib/GameTora.Reference.ps1`](c:\Users\034927N\PERSO\Umamusume_Roster_Manager\scripts\lib\GameTora.Reference.ps1)
-- [`scripts/update-reference.ps1`](c:\Users\034927N\PERSO\Umamusume_Roster_Manager\scripts\update-reference.ps1)
+- [`scripts/lib/gametora_reference.py`](c:\Users\034927N\PERSO\Umamusume_Roster_Manager\scripts\lib\gametora_reference.py)
+- [`scripts/update_reference.py`](c:\Users\034927N\PERSO\Umamusume_Roster_Manager\scripts\update_reference.py)
 - [`config/sources.json`](c:\Users\034927N\PERSO\Umamusume_Roster_Manager\config\sources.json)
 
 ### 2. Schema local stable
@@ -151,23 +151,23 @@ Pourquoi:
 - permet de conserver les groupes de relation
 - prepare l'exploitation des G1 factors sans figer trop tot une formule finale
 
-### PowerShell pour le pipeline d'update
+### Python pour le pipeline d'update
 
 Choix:
 
-- pipeline d'import implemente en PowerShell
+- pipeline d'import implemente en Python standard library
 
 Pourquoi:
 
-- demarrage rapide dans l'environnement courant
+- cross-OS sans changer la philosophie du projet
 - bon support pour le telechargement, JSON et la generation de fichiers
-- suffisant pour une phase 1 locale
+- suffisant pour une phase 1 locale sans ajouter de dependances externes
 
 Limite connue:
 
-- la partie update est aujourd'hui surtout verifiee sous Windows PowerShell
+- Python doit etre disponible localement pour executer l'update
 - la consultation locale reste portable
-- un portage futur vers Node.js / Deno / Go reste envisageable si la portabilite CLI devient prioritaire
+- un portage futur vers Node.js / Deno / Go reste envisageable si une distribution sans runtime devient prioritaire
 
 ## Etat actuel
 
@@ -178,11 +178,24 @@ Le referentiel est aujourd'hui fonctionnel de bout en bout:
 - sync des assets
 - bundle statique
 - consultation locale
+- consultation via HTTP local recommandee pour eviter les limites `file://` de certains navigateurs
 
 La commande de mise a jour validee est:
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\update-reference.ps1
+```bash
+python ./scripts/update_reference.py
+```
+
+La commande recommandee pour consulter l'application localement est:
+
+```bash
+python ./scripts/serve_reference.py --open
+```
+
+Une variante pratique permet de mettre a jour puis servir en une seule commande:
+
+```bash
+python ./scripts/serve_reference.py --update-first --open
 ```
 
 Le depot Git est prevu pour ne pas embarquer les donnees importees depuis GameTora:
