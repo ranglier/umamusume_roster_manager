@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Umamusume Local Reference</title>
+  <link rel="stylesheet" href="./assets/app.css">
+  <script charset="utf-8" src="./data/reference-data.js" defer></script>
+  <script charset="utf-8" src="./assets/app.js" defer></script>
+</head>
+<body>
+  <div class="page-shell">
+    <div class="app-layout">
+      <main class="main-column">
+        <header class="top-header panel">
+          <div class="top-header-copy">
+            <h1>Umamusume Pretty Derby Reference</h1>
+            <p class="hero-text" id="summaryText">
+              Static local reference built from versioned GameTora datasets.
+            </p>
+          </div>
+          <div class="top-header-meta">
+            <div class="meta-block">
+              <span class="meta-label">Last Local Build</span>
+              <strong id="globalBuild">-</strong>
+            </div>
+            <div class="meta-block">
+              <span class="meta-label">Refresh Command</span>
+              <code>powershell -ExecutionPolicy Bypass -File ./scripts/update-reference.ps1</code>
+            </div>
+          </div>
+        </header>
+
+        <section class="dataset-bar panel">
+          <div class="section-heading compact-heading">
+            <div>
+              <h2>Datasets</h2>
+            </div>
+          </div>
+          <nav id="entityNav" class="entity-nav"></nav>
+        </section>
+
+        <section id="toolbar" class="toolbar panel">
+          <div class="toolbar-top">
+            <div>
+              <h2 id="entityTitle">Characters</h2>
+              <p id="entityMeta" class="entity-meta"></p>
+            </div>
+            <p id="resultCount" class="count-chip">0 visible</p>
+          </div>
+
+          <div class="search-row">
+            <input id="searchInput" type="search" placeholder="Search in current dataset">
+            <button id="clearButton" type="button">Reset</button>
+          </div>
+
+          <div id="filters" class="filters"></div>
+        </section>
+
+        <section class="panel results-panel">
+          <div class="section-heading">
+            <div>
+              <h2>Results</h2>
+            </div>
+          </div>
+          <div id="list" class="result-list"></div>
+        </section>
+      </main>
+
+      <aside class="detail-column">
+        <section class="panel detail-panel">
+          <div id="detail" class="detail-view"></div>
+        </section>
+      </aside>
+    </div>
+  </div>
+
+  <button id="backToTopButton" class="back-to-top" type="button" aria-label="Back to top">
+    Haut
+  </button>
+</body>
+</html>

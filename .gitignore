@@ -1,0 +1,19 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+
+# Local temp files
+*.log
+*.tmp
+*.bak
+
+# Local browser automation leftovers
+.edge-profile/
+.edge-profile-compat/
+edge-dom-*.html
+
+# Imported / generated local reference data
+data/raw/
+data/normalized/
+dist/data/
+dist/media/

@@ -1,0 +1,170 @@
+{
+  "schemaVersion": "1.0.0",
+  "game": "umamusume",
+  "sourceSite": "GameTora",
+  "manifestUrl": "https://gametora.com/data/manifests/umamusume.json",
+  "datasetBaseUrl": "https://gametora.com/data/umamusume",
+  "pageBaseUrl": "https://gametora.com/umamusume",
+  "assetBaseUrl": "https://gametora.com/images/umamusume",
+  "assetServeBasePath": "./media/reference",
+  "assets": {
+    "skill_icon": {
+      "role": "icon",
+      "pathTemplate": "skills/{icon_id}.png",
+      "urlTemplate": "skill_icons/utx_ico_skill_{icon_id}.png"
+    },
+    "character_portrait": {
+      "role": "portrait",
+      "pathTemplate": "characters/{base_character_id}/{card_id}.png",
+      "urlTemplate": "characters/chara_stand_{base_character_id}_{card_id}.png"
+    },
+    "support_cover": {
+      "role": "cover",
+      "pathTemplate": "supports/{support_id}.png",
+      "urlTemplate": "supports/tex_support_card_{support_id}.png"
+    },
+    "support_icon": {
+      "role": "icon",
+      "pathTemplate": "supports/icons/{support_id}.png",
+      "urlTemplate": "supports/support_card_s_{support_id}.png"
+    },
+    "race_banner": {
+      "role": "banner",
+      "pathTemplate": "races/banners/{banner_id}.png",
+      "urlTemplate": "en/race_banners/thum_race_rt_000_{banner_id}_00.png"
+    }
+  },
+  "datasets": [
+    {
+      "key": "characters",
+      "pageUrl": "https://gametora.com/umamusume/characters"
+    },
+    {
+      "key": "character-cards",
+      "pageUrl": "https://gametora.com/umamusume/characters"
+    },
+    {
+      "key": "support-cards",
+      "pageUrl": "https://gametora.com/umamusume/supports"
+    },
+    {
+      "key": "support_effects",
+      "pageUrl": "https://gametora.com/umamusume/supports"
+    },
+    {
+      "key": "skills",
+      "pageUrl": "https://gametora.com/umamusume/skills"
+    },
+    {
+      "key": "static/skill_effect_values",
+      "pageUrl": "https://gametora.com/umamusume/skills"
+    },
+    {
+      "key": "static/skill_condition_values",
+      "pageUrl": "https://gametora.com/umamusume/skills"
+    },
+    {
+      "key": "races",
+      "pageUrl": "https://gametora.com/umamusume/races"
+    },
+    {
+      "key": "racetracks",
+      "pageUrl": "https://gametora.com/umamusume/racetracks"
+    },
+    {
+      "key": "factors",
+      "pageUrl": "https://gametora.com/umamusume/g1-race-factor-list"
+    },
+    {
+      "key": "db-files/succession_relation",
+      "pageUrl": "https://gametora.com/umamusume/compatibility"
+    },
+    {
+      "key": "db-files/succession_relation_member",
+      "pageUrl": "https://gametora.com/umamusume/compatibility"
+    }
+  ],
+  "entities": [
+    {
+      "key": "characters",
+      "label": "Characters",
+      "pageUrls": [
+        "https://gametora.com/umamusume/characters"
+      ],
+      "datasetKeys": [
+        "characters",
+        "character-cards",
+        "skills"
+      ]
+    },
+    {
+      "key": "supports",
+      "label": "Supports",
+      "pageUrls": [
+        "https://gametora.com/umamusume/supports"
+      ],
+      "datasetKeys": [
+        "support-cards",
+        "support_effects",
+        "skills"
+      ]
+    },
+    {
+      "key": "skills",
+      "label": "Skills",
+      "pageUrls": [
+        "https://gametora.com/umamusume/skills"
+      ],
+      "datasetKeys": [
+        "skills",
+        "static/skill_effect_values",
+        "static/skill_condition_values"
+      ]
+    },
+    {
+      "key": "races",
+      "label": "Races",
+      "pageUrls": [
+        "https://gametora.com/umamusume/races"
+      ],
+      "datasetKeys": [
+        "races"
+      ]
+    },
+    {
+      "key": "racetracks",
+      "label": "Racetracks",
+      "pageUrls": [
+        "https://gametora.com/umamusume/racetracks"
+      ],
+      "datasetKeys": [
+        "racetracks"
+      ]
+    },
+    {
+      "key": "g1_factors",
+      "label": "G1 Factors",
+      "pageUrls": [
+        "https://gametora.com/umamusume/g1-race-factor-list"
+      ],
+      "datasetKeys": [
+        "factors",
+        "races",
+        "skills"
+      ]
+    },
+    {
+      "key": "compatibility",
+      "label": "Compatibility",
+      "pageUrls": [
+        "https://gametora.com/umamusume/compatibility"
+      ],
+      "datasetKeys": [
+        "db-files/succession_relation",
+        "db-files/succession_relation_member",
+        "characters",
+        "character-cards"
+      ]
+    }
+  ]
+}
