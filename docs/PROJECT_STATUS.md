@@ -2,7 +2,7 @@
 
 ## Objet du projet
 
-Ce projet couvre pour l'instant uniquement la phase 1: construire un referentiel local fiable pour `Umamusume Pretty Derby`, alimente depuis GameTora, exploitable sans connexion a GameTora a l'execution.
+Ce projet couvre maintenant la phase 1 complete du referentiel et une premiere tranche de phase 2: profils locaux + roster personnel persistant, toujours exploitable sans connexion a GameTora a l'execution.
 
 Le scope actuellement implemente est:
 
@@ -14,7 +14,7 @@ Le scope actuellement implemente est:
 - `g1_factors`
 - `compatibility`
 
-Le roster personnel, les builds et l'optimisation Champions Meeting ne sont pas encore traites.
+Les builds, les parents personnels et l'optimisation Champions Meeting ne sont pas encore traites.
 
 ## Ce qui a ete realise
 
@@ -52,20 +52,45 @@ Cette separation permet de garder:
 
 Une interface statique locale a ete construite pour:
 
+- choisir un profil local au demarrage
+- basculer entre `My Roster` et `Catalog`
 - naviguer par dataset
 - rechercher
 - filtrer
 - consulter les fiches detail
 - naviguer entre entites reliees
 - afficher les dates d'import et la provenance
+- modifier localement les entrees possedees dans `My Roster`
 
 Fichiers UI:
 
-- [`src/ui/index.html`](c:\Users\034927N\PERSO\Umamusume_Roster_Manager\src\ui\index.html)
-- [`src/ui/assets/app.js`](c:\Users\034927N\PERSO\Umamusume_Roster_Manager\src\ui\assets\app.js)
-- [`src/ui/assets/app.css`](c:\Users\034927N\PERSO\Umamusume_Roster_Manager\src\ui\assets\app.css)
+- `src/ui/index.html`
+- `src/ui/assets/app.js`
+- `src/ui/assets/app.css`
 
-### 4. Assets visuels locaux
+### 4. Profils locaux et roster personnel
+
+Une couche utilisateur locale a ete ajoutee via le serveur Python:
+
+- page d'entree de selection de profil
+- creation, selection et suppression de profils
+- stockage local des profils dans `data/user/`
+- stockage roster separe par profil
+- `My Roster` limite aux personnages et supports possedes
+- `Catalog` pour ajouter / retirer les personnages et supports possedes
+- edition locale des personnages et supports depuis `My Roster`
+- fond video local sur la page de selection de profil
+
+API locale ajoutee:
+
+- `GET /api/profiles`
+- `POST /api/profiles`
+- `POST /api/profiles/select`
+- `DELETE /api/profiles/<id>`
+- `GET /api/profiles/<id>/roster`
+- `PUT /api/profiles/<id>/roster`
+
+### 5. Assets visuels locaux
 
 Le projet telecharge et sert localement:
 
@@ -77,7 +102,7 @@ Le projet telecharge et sert localement:
 
 Le but est d'eviter tout appel a GameTora au moment de la consultation.
 
-### 5. Donnees relationnelles utiles pour la suite
+### 6. Donnees relationnelles utiles pour la suite
 
 Des liens utiles ont ete preserves dans le referentiel:
 
@@ -178,7 +203,10 @@ Le referentiel est aujourd'hui fonctionnel de bout en bout:
 - sync des assets
 - bundle statique
 - consultation locale
-- consultation via HTTP local recommandee pour eviter les limites `file://` de certains navigateurs
+- selection de profil
+- navigation `My Roster` / `Catalog`
+- persistance du roster personnel
+- consultation via le serveur Python local recommandee pour eviter les limites `file://` et exposer l'API profils / roster
 
 La commande de mise a jour validee est:
 
@@ -202,6 +230,7 @@ Le depot Git est prevu pour ne pas embarquer les donnees importees depuis GameTo
 
 - `data/raw/`
 - `data/normalized/`
+- `data/user/`
 - `dist/data/`
 - `dist/media/`
 
@@ -209,16 +238,15 @@ Apres clonage, un import local est donc necessaire pour regenerer les donnees et
 
 ## Ce qui n'a pas encore ete traite
 
-- modele de roster personnel
-- donnees utilisateur separees
 - comparaison / scoring
 - logique de builds
+- parents personnels
 - heuristiques Champions Meeting
 
 ## Prochaine etape logique
 
-La suite naturelle est la phase 2:
+La suite naturelle est maintenant d'enrichir la phase 2:
 
-- ajouter une couche roster personnel distincte du referentiel
+- enrichir le roster personnel au-dela de la possession simple
 - conserver la separation stricte entre reference globale et donnees utilisateur
 - preparer ensuite les croisements necessaires a la phase builds / CM

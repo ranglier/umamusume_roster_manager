@@ -19,5 +19,6 @@ __pycache__/
 # Imported / generated local reference data
 data/raw/
 data/normalized/
+data/user/
 dist/data/
 dist/media/

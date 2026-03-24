@@ -9,32 +9,45 @@
   <script charset="utf-8" src="./assets/app.js" defer></script>
 </head>
 <body>
+  <div id="profileBackgroundMedia" class="profile-background-media" hidden aria-hidden="true">
+    <video id="profileBackgroundVideo" class="profile-background-video" autoplay muted loop playsinline>
+      <source src="./assets/profile-selection-bg.mp4" type="video/mp4">
+    </video>
+  </div>
   <div class="page-shell">
     <div class="app-layout">
       <main class="main-column">
-        <header class="top-header panel">
+        <header id="topHeader" class="top-header panel">
           <div class="top-header-copy">
-            <h1>Umamusume Pretty Derby Reference</h1>
+            <nav id="modeNav" class="mode-nav" aria-label="Primary navigation"></nav>
+            <h1 id="pageTitle">Umamusume Pretty Derby Reference</h1>
             <p class="hero-text" id="summaryText">
               Static local reference built from versioned GameTora datasets.
             </p>
           </div>
           <div class="top-header-meta">
-            <div class="meta-block">
+            <div id="lastBuildBlock" class="meta-block">
               <span class="meta-label">Last Local Build</span>
               <strong id="globalBuild">-</strong>
             </div>
-            <div class="meta-block">
+            <div id="refreshCommandBlock" class="meta-block">
               <span class="meta-label">Refresh Command</span>
               <code>python ./scripts/update_reference.py</code>
+            </div>
+            <div id="activeProfileBlock" class="meta-block">
+              <span class="meta-label">Active Profile</span>
+              <strong id="activeProfileName">No profile selected</strong>
+              <button id="changeProfileButton" type="button">Change profile</button>
             </div>
           </div>
         </header>
 
-        <section class="dataset-bar panel">
+        <section id="profileGate" class="panel profile-gate" hidden></section>
+
+        <section id="datasetBar" class="dataset-bar panel">
           <div class="section-heading compact-heading">
             <div>
-              <h2>Datasets</h2>
+              <h2 id="datasetHeading">Datasets</h2>
             </div>
           </div>
           <nav id="entityNav" class="entity-nav"></nav>
@@ -57,7 +70,7 @@
           <div id="filters" class="filters"></div>
         </section>
 
-        <section class="panel results-panel">
+        <section id="resultsPanel" class="panel results-panel">
           <div class="section-heading">
             <div>
               <h2>Results</h2>
@@ -67,7 +80,7 @@
         </section>
       </main>
 
-      <aside class="detail-column">
+      <aside id="detailColumn" class="detail-column">
         <section class="panel detail-panel">
           <div id="detail" class="detail-view"></div>
         </section>

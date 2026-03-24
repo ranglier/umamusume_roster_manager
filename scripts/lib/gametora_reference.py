@@ -2233,6 +2233,12 @@ def save_static_app(payload: dict[str, Any], asset_metadata: Any = None) -> None
     write_utf8_file(dist_root / "index.html", (ui_root / "index.html").read_text(encoding="utf-8"), with_bom=True)
     write_utf8_file(dist_assets / "app.css", (ui_root / "assets" / "app.css").read_text(encoding="utf-8"), with_bom=True)
     write_utf8_file(dist_assets / "app.js", (ui_root / "assets" / "app.js").read_text(encoding="utf-8"), with_bom=True)
+    for ui_asset_path in (ui_root / "assets").iterdir():
+        if not ui_asset_path.is_file():
+            continue
+        if ui_asset_path.name in {"app.css", "app.js"}:
+            continue
+        shutil.copy2(ui_asset_path, dist_assets / ui_asset_path.name)
 
     if asset_metadata is not None:
         for asset_entry in get_asset_map_entries(asset_metadata.get("assets")):
