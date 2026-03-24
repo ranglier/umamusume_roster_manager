@@ -280,3 +280,7 @@ Phase suivante recommandee:
 1. enrichir le roster personnel au-dela de la possession simple
 2. conserver la separation stricte entre reference globale et donnees utilisateur
 3. preparer ensuite les vues et heuristiques pour les builds / Champions Meeting
+
+Document de cadrage associe:
+
+- `docs/CM_BUILD_PLAN.md`

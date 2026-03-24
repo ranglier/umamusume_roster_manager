@@ -250,3 +250,7 @@ La suite naturelle est maintenant d'enrichir la phase 2:
 - enrichir le roster personnel au-dela de la possession simple
 - conserver la separation stricte entre reference globale et donnees utilisateur
 - preparer ensuite les croisements necessaires a la phase builds / CM
+
+Un cadrage dedie a la future couche `builds / Champions Meeting` est disponible dans:
+
+- `docs/CM_BUILD_PLAN.md`
