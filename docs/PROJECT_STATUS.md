@@ -40,6 +40,7 @@ Les donnees sont separees en trois couches:
 
 - `data/raw/`
 - `data/normalized/`
+- `data/runtime/`
 - `dist/`
 
 Cette separation permet de garder:
@@ -47,6 +48,7 @@ Cette separation permet de garder:
 - la tracabilite des sources
 - un schema stable pour les evolutions futures
 - une UI decouplee des formats bruts GameTora
+- une base SQLite locale prete pour la suite
 
 ### 3. Interface locale de consultation
 
@@ -72,6 +74,7 @@ Fichiers UI:
 
 Une couche utilisateur locale a ete ajoutee via le serveur Python:
 
+- wizard de premier demarrage si aucun profil n'existe
 - page d'entree de selection de profil
 - creation, selection et suppression de profils
 - stockage local des profils dans `data/user/`
@@ -90,7 +93,22 @@ API locale ajoutee:
 - `GET /api/profiles/<id>/roster`
 - `PUT /api/profiles/<id>/roster`
 
-### 5. Assets visuels locaux
+### 5. Administration locale
+
+Une page d'administration locale a ete ajoutee pour centraliser:
+
+- lancement des updates
+- suivi du job courant
+- creation et restauration de backups
+- import / export / renommage / suppression des profils
+
+Le wizard et l'admin affichent maintenant une progression plus lisible pendant la creation initiale de la base locale:
+
+- message indiquant que l'operation peut prendre plusieurs minutes
+- progression basee sur des checkpoints backend
+- affichage de la tache courante en cours
+
+### 6. Assets visuels locaux
 
 Le projet telecharge et sert localement:
 
@@ -102,7 +120,7 @@ Le projet telecharge et sert localement:
 
 Le but est d'eviter tout appel a GameTora au moment de la consultation.
 
-### 6. Donnees relationnelles utiles pour la suite
+### 7. Donnees relationnelles utiles pour la suite
 
 Des liens utiles ont ete preserves dans le referentiel:
 
@@ -110,6 +128,17 @@ Des liens utiles ont ete preserves dans le referentiel:
 - hint skills et event skills des supports
 - navigation inverse depuis un skill vers characters / supports
 - `compatibility` comme entite de reference, pas comme simple outil annexe
+
+### 8. Migration SQLite demarree
+
+Une premiere couche SQLite locale a ete ajoutee pour la reference:
+
+- generation de `data/runtime/reference.sqlite` pendant l'update
+- schema relationnel pour les entites principales et leurs liens utiles
+- conservation de `payload_json` pour ne pas perdre de detail pendant la transition
+- metadonnees SQLite exposees via `__meta`
+
+L'UI continue encore de lire le bundle statique existant; la bascule des lectures vers SQLite sera la tranche suivante.
 
 ## Choix techniques et justification
 
@@ -151,6 +180,13 @@ Pourquoi:
 - consultation multi-OS
 - maintenance plus simple qu'une stack plus lourde
 
+Ajouts recents:
+
+- wizard modalise pour le premier demarrage
+- page d'administration locale
+- favicon `URM`
+- progression d'update rendue plus explicite pour les longues operations
+
 ### Assets caches localement
 
 Choix:
@@ -187,6 +223,7 @@ Pourquoi:
 - cross-OS sans changer la philosophie du projet
 - bon support pour le telechargement, JSON et la generation de fichiers
 - suffisant pour une phase 1 locale sans ajouter de dependances externes
+- SQLite disponible via `sqlite3` sans service externe
 
 Limite connue:
 

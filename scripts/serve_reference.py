@@ -6,26 +6,42 @@ import argparse
 import errno
 import functools
 import http.server
+import io
 import json
 import re
 import shutil
 import socketserver
 import sys
+import tempfile
+import threading
+import uuid
 import webbrowser
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
 from lib.gametora_reference import update_umamusume_reference
+from lib.sqlite_reference import get_reference_database_path, read_reference_database_meta
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DIST_ROOT = PROJECT_ROOT / "dist"
 REFERENCE_META_PATH = DIST_ROOT / "data" / "reference-meta.json"
+REFERENCE_DB_PATH = get_reference_database_path()
 USER_DATA_ROOT = PROJECT_ROOT / "data" / "user"
+BACKUP_ROOT = PROJECT_ROOT / "data" / "backups"
 PROFILES_INDEX_PATH = USER_DATA_ROOT / "profiles.json"
 PROFILE_DATA_ROOT = USER_DATA_ROOT / "profiles"
 PROFILE_ID_PATTERN = re.compile(r"^p_\d{3,}$")
+BACKUP_ID_PATTERN = re.compile(r"^backup_\d{8}_\d{6}_[0-9a-f]{8}$")
+PROFILE_EXPORT_KIND = "umamusume-profile-export"
+FULL_BACKUP_KIND = "umamusume-full-backup"
+ADMIN_JOB_HISTORY_LIMIT = 12
+
+JOB_LOCK = threading.Lock()
+ACTIVE_ADMIN_JOB: dict | None = None
+ADMIN_JOB_HISTORY: list[dict] = []
 
 
 def utc_timestamp() -> str:
@@ -52,6 +68,10 @@ def default_roster() -> dict:
 def ensure_user_data_roots() -> None:
     USER_DATA_ROOT.mkdir(parents=True, exist_ok=True)
     PROFILE_DATA_ROOT.mkdir(parents=True, exist_ok=True)
+
+
+def ensure_backup_root() -> None:
+    BACKUP_ROOT.mkdir(parents=True, exist_ok=True)
 
 
 def read_json(path: Path, fallback_factory):
@@ -284,6 +304,362 @@ def delete_profile(profile_id: str) -> dict:
     return save_profiles_index(index)
 
 
+def rename_profile(profile_id: str, name: str) -> tuple[dict, dict]:
+    normalized_name = str(name or "").strip()
+    if not PROFILE_ID_PATTERN.match(profile_id):
+        raise FileNotFoundError("Profile not found.")
+    if not normalized_name:
+        raise ValueError("Profile name is required.")
+    if len(normalized_name) > 80:
+        raise ValueError("Profile name must be 80 characters or fewer.")
+
+    index = load_profiles_index()
+    profile = next((entry for entry in index["profiles"] if entry["id"] == profile_id), None)
+    if profile is None:
+        raise FileNotFoundError("Profile not found.")
+
+    profile["name"] = normalized_name
+    profile["updated_at"] = utc_timestamp()
+    saved_index = save_profiles_index(index)
+    saved_profile = next(entry for entry in saved_index["profiles"] if entry["id"] == profile_id)
+    return saved_index, saved_profile
+
+
+def unique_profile_name(base_name: str, existing_names: set[str]) -> str:
+    if base_name not in existing_names:
+        return base_name
+
+    suffix = " (imported)"
+    candidate = f"{base_name}{suffix}"
+    if candidate not in existing_names:
+        return candidate
+
+    index = 2
+    while True:
+        candidate = f"{base_name}{suffix} {index}"
+        if candidate not in existing_names:
+            return candidate
+        index += 1
+
+
+def export_profile_archive_bytes(profile_id: str) -> tuple[bytes, str]:
+    index = load_profiles_index()
+    profile = next((entry for entry in index["profiles"] if entry["id"] == profile_id), None)
+    if profile is None:
+        raise FileNotFoundError("Profile not found.")
+
+    roster = load_roster(profile_id)
+    manifest = {
+        "kind": PROFILE_EXPORT_KIND,
+        "version": 1,
+        "created_at": utc_timestamp(),
+        "profile_id": profile_id,
+    }
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
+        archive.writestr("profile.json", json.dumps(profile, ensure_ascii=False, indent=2) + "\n")
+        archive.writestr("roster.json", json.dumps(roster, ensure_ascii=False, indent=2) + "\n")
+
+    safe_name = re.sub(r"[^A-Za-z0-9._-]+", "-", profile["name"]).strip("-") or profile_id
+    return buffer.getvalue(), f"{safe_name}.zip"
+
+
+def import_profile_archive_bytes(payload: bytes, target_profile_id: str | None = None) -> tuple[dict, dict]:
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(payload))
+    except zipfile.BadZipFile as exc:
+        raise ValueError("Profile import must be a valid ZIP archive.") from exc
+
+    with archive:
+        try:
+            manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
+            profile = json.loads(archive.read("profile.json").decode("utf-8"))
+            roster = json.loads(archive.read("roster.json").decode("utf-8"))
+        except KeyError as exc:
+            raise ValueError("Profile archive is incomplete.") from exc
+        except json.JSONDecodeError as exc:
+            raise ValueError("Profile archive contains invalid JSON.") from exc
+
+    if manifest.get("kind") != PROFILE_EXPORT_KIND:
+        raise ValueError("Unsupported profile archive format.")
+
+    imported_name = str(profile.get("name") or "").strip()
+    if not imported_name:
+        raise ValueError("Profile archive is missing a valid profile name.")
+
+    index = load_profiles_index()
+
+    if target_profile_id is not None:
+        target_profile = next((entry for entry in index["profiles"] if entry["id"] == target_profile_id), None)
+        if target_profile is None:
+            raise FileNotFoundError("Profile not found.")
+
+        target_profile["updated_at"] = utc_timestamp()
+        index["last_profile_id"] = target_profile_id
+        saved_index = save_profiles_index(index)
+        save_roster(target_profile_id, roster)
+        saved_profile = next(entry for entry in saved_index["profiles"] if entry["id"] == target_profile_id)
+        return saved_index, saved_profile
+
+    existing_names = {entry["name"] for entry in index["profiles"]}
+    timestamp = utc_timestamp()
+    profile_id = next_profile_id(index["profiles"])
+    profile_name = unique_profile_name(imported_name, existing_names)
+    new_profile = {
+        "id": profile_id,
+        "name": profile_name,
+        "created_at": timestamp,
+        "updated_at": timestamp,
+    }
+
+    index["profiles"].append(new_profile)
+    index["last_profile_id"] = profile_id
+    saved_index = save_profiles_index(index)
+    save_roster(profile_id, roster)
+    return saved_index, new_profile
+
+
+def get_bootstrap_status() -> dict:
+    profiles_index = load_profiles_index()
+    has_profiles = bool(profiles_index["profiles"])
+    has_reference_meta = REFERENCE_META_PATH.exists()
+    has_reference_db = REFERENCE_DB_PATH.exists()
+    has_dist_bundle = (DIST_ROOT / "index.html").exists()
+    needs_initial_update = not has_reference_meta or not has_reference_db
+
+    if not has_profiles:
+        recommended_entry = "wizard"
+    elif profiles_index.get("last_profile_id"):
+        recommended_entry = "roster"
+    else:
+        recommended_entry = "profiles"
+
+    return {
+        "has_profiles": has_profiles,
+        "has_reference_meta": has_reference_meta,
+        "has_reference_db": has_reference_db,
+        "has_dist_bundle": has_dist_bundle,
+        "needs_initial_update": needs_initial_update,
+        "recommended_entry": recommended_entry,
+    }
+
+
+def admin_job_snapshot(job: dict | None) -> dict | None:
+    if job is None:
+        return None
+    return dict(job)
+
+
+def list_admin_jobs() -> dict:
+    with JOB_LOCK:
+        return {
+            "active_job": admin_job_snapshot(ACTIVE_ADMIN_JOB),
+            "recent_jobs": [admin_job_snapshot(job) for job in ADMIN_JOB_HISTORY],
+        }
+
+
+def _finish_admin_job(job: dict, *, status: str, message: str, result: dict | None = None) -> None:
+    global ACTIVE_ADMIN_JOB
+    with JOB_LOCK:
+        job["status"] = status
+        job["message"] = message
+        job["progress"] = 100 if status == "succeeded" else job.get("progress", 0)
+        if status == "succeeded":
+            job["current_task"] = "Completed"
+        job["finished_at"] = utc_timestamp()
+        if result is not None:
+            job["result"] = result
+        if ACTIVE_ADMIN_JOB and ACTIVE_ADMIN_JOB["id"] == job["id"]:
+            ACTIVE_ADMIN_JOB = None
+        ADMIN_JOB_HISTORY.insert(0, dict(job))
+        del ADMIN_JOB_HISTORY[ADMIN_JOB_HISTORY_LIMIT:]
+
+
+def _update_admin_job_progress(job: dict, payload: dict | None) -> None:
+    if not payload:
+        return
+
+    with JOB_LOCK:
+        progress = payload.get("progress")
+        if isinstance(progress, (int, float)):
+            job["progress"] = max(0, min(100, int(progress)))
+
+        message = payload.get("message")
+        if isinstance(message, str) and message.strip():
+            job["message"] = message.strip()
+
+        current_task = payload.get("current_task")
+        if isinstance(current_task, str) and current_task.strip():
+            current_task = current_task.strip()
+            job["current_task"] = current_task
+            checkpoints = list(job.get("checkpoints") or [])
+            if not checkpoints or checkpoints[-1] != current_task:
+                checkpoints.append(current_task)
+                job["checkpoints"] = checkpoints[-6:]
+
+
+def start_admin_job(job_type: str, runner) -> dict:
+    global ACTIVE_ADMIN_JOB
+    with JOB_LOCK:
+        if ACTIVE_ADMIN_JOB is not None:
+            raise RuntimeError("Another admin job is already running.")
+        job = {
+            "id": f"job_{uuid.uuid4().hex[:12]}",
+            "type": job_type,
+            "status": "running",
+            "created_at": utc_timestamp(),
+            "started_at": utc_timestamp(),
+            "finished_at": None,
+            "message": f"{job_type.capitalize()} started.",
+            "progress": 0,
+            "current_task": f"{job_type.capitalize()} started.",
+            "checkpoints": [],
+            "result": None,
+        }
+        ACTIVE_ADMIN_JOB = job
+
+    def _target():
+        try:
+            result = runner(job)
+        except Exception as exc:  # noqa: BLE001
+            _finish_admin_job(job, status="failed", message=str(exc) or f"{job_type} failed.")
+            return
+        _finish_admin_job(job, status="succeeded", message=f"{job_type.capitalize()} completed.", result=result)
+
+    thread = threading.Thread(target=_target, name=job["id"], daemon=True)
+    thread.start()
+    return dict(job)
+
+
+def run_reference_update_job(job: dict, *, force: bool = False) -> dict:
+    return update_umamusume_reference(
+        force=force,
+        progress_callback=lambda payload: _update_admin_job_progress(job, payload),
+    )
+
+
+def backup_id_now() -> str:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    return f"backup_{timestamp}_{uuid.uuid4().hex[:8]}"
+
+
+def get_backup_path(backup_id: str) -> Path:
+    return BACKUP_ROOT / f"{backup_id}.zip"
+
+
+def create_full_backup() -> dict:
+    ensure_backup_root()
+    backup_id = backup_id_now()
+    backup_path = get_backup_path(backup_id)
+    manifest = {
+        "kind": FULL_BACKUP_KIND,
+        "version": 1,
+        "created_at": utc_timestamp(),
+        "backup_id": backup_id,
+    }
+    include_paths = [
+        USER_DATA_ROOT,
+        PROJECT_ROOT / "data" / "runtime",
+        PROJECT_ROOT / "data" / "raw",
+        PROJECT_ROOT / "data" / "normalized",
+        DIST_ROOT / "data",
+        DIST_ROOT / "media",
+    ]
+
+    with zipfile.ZipFile(backup_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
+        for root_path in include_paths:
+            if not root_path.exists():
+                continue
+            if root_path.is_file():
+                archive.write(root_path, root_path.relative_to(PROJECT_ROOT).as_posix())
+                continue
+            for entry in root_path.rglob("*"):
+                if entry.is_file():
+                    archive.write(entry, entry.relative_to(PROJECT_ROOT).as_posix())
+
+    return get_backup_info(backup_path)
+
+
+def get_backup_info(backup_path: Path) -> dict:
+    if not backup_path.exists():
+        raise FileNotFoundError("Backup not found.")
+    backup_id = backup_path.stem
+    created_at = datetime.fromtimestamp(backup_path.stat().st_mtime, tz=timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    manifest = {}
+    try:
+        with zipfile.ZipFile(backup_path) as archive:
+            manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
+    except Exception:  # noqa: BLE001
+        manifest = {}
+    return {
+        "id": backup_id,
+        "filename": backup_path.name,
+        "created_at": manifest.get("created_at") or created_at,
+        "size_bytes": backup_path.stat().st_size,
+        "kind": manifest.get("kind") or FULL_BACKUP_KIND,
+    }
+
+
+def list_backups() -> list[dict]:
+    ensure_backup_root()
+    backups = []
+    for backup_path in sorted(BACKUP_ROOT.glob("backup_*.zip"), reverse=True):
+        backups.append(get_backup_info(backup_path))
+    return backups
+
+
+def delete_backup(backup_id: str) -> list[dict]:
+    if not BACKUP_ID_PATTERN.match(backup_id):
+        raise FileNotFoundError("Backup not found.")
+    backup_path = get_backup_path(backup_id)
+    if not backup_path.exists():
+        raise FileNotFoundError("Backup not found.")
+    backup_path.unlink()
+    return list_backups()
+
+
+def restore_full_backup(backup_id: str) -> dict:
+    if not BACKUP_ID_PATTERN.match(backup_id):
+        raise FileNotFoundError("Backup not found.")
+
+    backup_path = get_backup_path(backup_id)
+    if not backup_path.exists():
+        raise FileNotFoundError("Backup not found.")
+
+    with zipfile.ZipFile(backup_path) as archive:
+        manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
+        if manifest.get("kind") != FULL_BACKUP_KIND:
+            raise ValueError("Unsupported backup format.")
+
+        with tempfile.TemporaryDirectory(prefix="uma_restore_") as temp_dir_str:
+            temp_dir = Path(temp_dir_str)
+            archive.extractall(temp_dir)
+
+            restore_roots = [
+                PROJECT_ROOT / "data" / "user",
+                PROJECT_ROOT / "data" / "runtime",
+                PROJECT_ROOT / "data" / "raw",
+                PROJECT_ROOT / "data" / "normalized",
+                DIST_ROOT / "data",
+                DIST_ROOT / "media",
+            ]
+            for destination in restore_roots:
+                source = temp_dir / destination.relative_to(PROJECT_ROOT)
+                if destination.exists():
+                    if destination.is_dir():
+                        shutil.rmtree(destination)
+                    else:
+                        destination.unlink()
+                if source.exists():
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copytree(source, destination) if source.is_dir() else shutil.copy2(source, destination)
+
+    return get_backup_info(backup_path)
+
+
 class ReferenceRequestHandler(http.server.SimpleHTTPRequestHandler):
     server_version = "UmamusumeReferenceHTTP/2.0"
 
@@ -291,6 +667,8 @@ class ReferenceRequestHandler(http.server.SimpleHTTPRequestHandler):
         request_path = urlparse(self.path).path
         if request_path.startswith("/api/") or request_path in ("/", "/index.html", "/__health", "/__meta"):
             self.send_header("Cache-Control", "no-store")
+        elif request_path.startswith("/media/reference/"):
+            self.send_header("Cache-Control", "no-cache, must-revalidate")
         elif request_path.startswith("/data/"):
             self.send_header("Cache-Control", "no-cache")
         else:
@@ -299,7 +677,7 @@ class ReferenceRequestHandler(http.server.SimpleHTTPRequestHandler):
 
     def do_OPTIONS(self) -> None:  # noqa: N802
         self.send_response(204)
-        self.send_header("Allow", "GET, POST, PUT, DELETE, OPTIONS")
+        self.send_header("Allow", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
         self.end_headers()
 
     def do_GET(self) -> None:  # noqa: N802
@@ -311,6 +689,7 @@ class ReferenceRequestHandler(http.server.SimpleHTTPRequestHandler):
                     "status": "ok",
                     "dist_exists": DIST_ROOT.exists(),
                     "reference_meta_exists": REFERENCE_META_PATH.exists(),
+                    "reference_db_exists": REFERENCE_DB_PATH.exists(),
                     "user_data_exists": USER_DATA_ROOT.exists(),
                 }
             )
@@ -320,11 +699,47 @@ class ReferenceRequestHandler(http.server.SimpleHTTPRequestHandler):
             if not REFERENCE_META_PATH.exists():
                 self._send_api_error(404, "Reference metadata not found. Run the update command first.")
                 return
-            self._send_json(json.loads(REFERENCE_META_PATH.read_text(encoding="utf-8-sig")))
+            meta_payload = json.loads(REFERENCE_META_PATH.read_text(encoding="utf-8-sig"))
+            sqlite_meta = read_reference_database_meta(REFERENCE_DB_PATH)
+            if sqlite_meta is not None:
+                meta_payload["sqlite"] = sqlite_meta
+            self._send_json(meta_payload)
+            return
+
+        if request_path == "/api/app/bootstrap-status":
+            self._send_json(get_bootstrap_status())
+            return
+
+        if request_path == "/api/admin/jobs":
+            self._send_json(list_admin_jobs())
+            return
+
+        if request_path == "/api/admin/backups":
+            self._send_json({"items": list_backups()})
             return
 
         if request_path == "/api/profiles":
             self._send_json(load_profiles_index())
+            return
+
+        match = re.fullmatch(r"/api/profiles/(p_\d{3,})/export", request_path)
+        if match:
+            try:
+                payload, filename = export_profile_archive_bytes(match.group(1))
+            except FileNotFoundError:
+                self._send_api_error(404, "Profile not found.")
+                return
+            self._send_bytes(payload, content_type="application/zip", filename=filename)
+            return
+
+        match = re.fullmatch(r"/api/admin/backups/(backup_\d{8}_\d{6}_[0-9a-f]{8})", request_path)
+        if match:
+            try:
+                backup_path = get_backup_path(match.group(1))
+                info = get_backup_info(backup_path)
+                self._send_bytes(backup_path.read_bytes(), content_type="application/zip", filename=info["filename"])
+            except FileNotFoundError:
+                self._send_api_error(404, "Backup not found.")
             return
 
         roster_profile_id = self._match_profile_roster_path(request_path)
@@ -339,6 +754,24 @@ class ReferenceRequestHandler(http.server.SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         request_path = urlparse(self.path).path
+
+        if request_path == "/api/admin/jobs/update":
+            try:
+                job = start_admin_job("update", lambda job: run_reference_update_job(job, force=False))
+            except RuntimeError as exc:
+                self._send_api_error(409, str(exc))
+                return
+            self._send_json(job, status=202)
+            return
+
+        if request_path == "/api/admin/jobs/backup":
+            try:
+                job = start_admin_job("backup", lambda _job: create_full_backup())
+            except RuntimeError as exc:
+                self._send_api_error(409, str(exc))
+                return
+            self._send_json(job, status=202)
+            return
 
         if request_path == "/api/profiles":
             try:
@@ -375,6 +808,58 @@ class ReferenceRequestHandler(http.server.SimpleHTTPRequestHandler):
             self._send_json(index)
             return
 
+        if request_path == "/api/profiles/import":
+            try:
+                payload = self._read_binary_body()
+                saved_index, profile = import_profile_archive_bytes(payload)
+            except ValueError as exc:
+                self._send_api_error(400, str(exc))
+                return
+            self._send_json(
+                {
+                    "profiles": saved_index,
+                    "created_profile": profile,
+                },
+                status=201,
+            )
+            return
+
+        match = re.fullmatch(r"/api/profiles/(p_\d{3,})/import", request_path)
+        if match:
+            try:
+                payload = self._read_binary_body()
+                saved_index, profile = import_profile_archive_bytes(payload, target_profile_id=match.group(1))
+            except FileNotFoundError:
+                self._send_api_error(404, "Profile not found.")
+                return
+            except ValueError as exc:
+                self._send_api_error(400, str(exc))
+                return
+            self._send_json(
+                {
+                    "profiles": saved_index,
+                    "profile": profile,
+                },
+                status=200,
+            )
+            return
+
+        match = re.fullmatch(r"/api/admin/backups/(backup_\d{8}_\d{6}_[0-9a-f]{8})/restore", request_path)
+        if match:
+            backup_id = match.group(1)
+            try:
+                get_backup_info(get_backup_path(backup_id))
+            except FileNotFoundError:
+                self._send_api_error(404, "Backup not found.")
+                return
+            try:
+                job = start_admin_job("restore", lambda _job: restore_full_backup(backup_id))
+            except RuntimeError as exc:
+                self._send_api_error(409, str(exc))
+                return
+            self._send_json(job, status=202)
+            return
+
         self._send_api_error(404, "API route not found.")
 
     def do_PUT(self) -> None:  # noqa: N802
@@ -400,8 +885,41 @@ class ReferenceRequestHandler(http.server.SimpleHTTPRequestHandler):
 
         self._send_json(saved_roster)
 
+    def do_PATCH(self) -> None:  # noqa: N802
+        request_path = urlparse(self.path).path
+        match = re.fullmatch(r"/api/profiles/(p_\d{3,})", request_path)
+        if not match:
+            self._send_api_error(404, "API route not found.")
+            return
+
+        try:
+            payload = self._read_json_body()
+        except ValueError:
+            return
+
+        try:
+            index, profile = rename_profile(match.group(1), payload.get("name"))
+        except FileNotFoundError:
+            self._send_api_error(404, "Profile not found.")
+            return
+        except ValueError as exc:
+            self._send_api_error(400, str(exc))
+            return
+
+        self._send_json({"profiles": index, "profile": profile})
+
     def do_DELETE(self) -> None:  # noqa: N802
         request_path = urlparse(self.path).path
+        match = re.fullmatch(r"/api/admin/backups/(backup_\d{8}_\d{6}_[0-9a-f]{8})", request_path)
+        if match:
+            try:
+                items = delete_backup(match.group(1))
+            except FileNotFoundError:
+                self._send_api_error(404, "Backup not found.")
+                return
+            self._send_json({"items": items})
+            return
+
         match = re.fullmatch(r"/api/profiles/(p_\d{3,})", request_path)
         if not match:
             self._send_api_error(404, "API route not found.")
@@ -445,6 +963,24 @@ class ReferenceRequestHandler(http.server.SimpleHTTPRequestHandler):
 
         return payload
 
+    def _read_binary_body(self) -> bytes:
+        content_length = self.headers.get("Content-Length")
+        if not content_length:
+            self._send_api_error(400, "Request body is required.")
+            raise ValueError("missing-body")
+
+        try:
+            raw_body = self.rfile.read(int(content_length))
+        except (TypeError, ValueError):
+            self._send_api_error(400, "Invalid request body.")
+            raise ValueError("invalid-body") from None
+
+        if not raw_body:
+            self._send_api_error(400, "Request body is required.")
+            raise ValueError("empty-body")
+
+        return raw_body
+
     def _match_profile_roster_path(self, request_path: str) -> str | None:
         match = re.fullmatch(r"/api/profiles/(p_\d{3,})/roster", request_path)
         if not match:
@@ -458,6 +994,15 @@ class ReferenceRequestHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _send_bytes(self, payload: bytes, *, content_type: str, filename: str | None = None, status: int = 200) -> None:
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(payload)))
+        if filename:
+            self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+        self.end_headers()
+        self.wfile.write(payload)
 
     def _send_api_error(self, status: int, message: str) -> None:
         self._send_json({"error": message}, status=status)
@@ -508,6 +1053,7 @@ def main() -> int:
         print(f"Normalized entities : {summary['normalizedEntityCount']}")
         print(f"Visual assets       : {summary['assetCount']}")
         print(f"Asset failures      : {summary['assetFailureCount']}")
+        print(f"Reference DB        : {summary['referenceDbPath']}")
         print(f"App output          : {summary['appEntry']}")
         print("")
 

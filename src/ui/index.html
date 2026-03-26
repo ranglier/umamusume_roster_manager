@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Umamusume Local Reference</title>
+  <title>Umamusume Roster Manager</title>
+  <link rel="icon" type="image/svg+xml" href="./assets/favicon.svg">
   <link rel="stylesheet" href="./assets/app.css">
   <script charset="utf-8" src="./data/reference-data.js" defer></script>
   <script charset="utf-8" src="./assets/app.js" defer></script>
@@ -20,7 +21,7 @@
         <header id="topHeader" class="top-header panel">
           <div class="top-header-copy">
             <nav id="modeNav" class="mode-nav" aria-label="Primary navigation"></nav>
-            <h1 id="pageTitle">Umamusume Pretty Derby Reference</h1>
+            <h1 id="pageTitle">Umamusume Roster Manager</h1>
             <p class="hero-text" id="summaryText">
               Static local reference built from versioned GameTora datasets.
             </p>
@@ -37,7 +38,10 @@
             <div id="activeProfileBlock" class="meta-block">
               <span class="meta-label">Active Profile</span>
               <strong id="activeProfileName">No profile selected</strong>
-              <button id="changeProfileButton" type="button">Change profile</button>
+              <div class="active-profile-actions">
+                <button id="changeProfileButton" type="button">Change profile</button>
+                <button id="adminButton" class="button-secondary" type="button">Administration</button>
+              </div>
             </div>
           </div>
         </header>

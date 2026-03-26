@@ -30,6 +30,7 @@ def main() -> int:
     print(f"Normalized entities : {summary['normalizedEntityCount']}")
     print(f"Visual assets       : {summary['assetCount']}")
     print(f"Asset failures      : {summary['assetFailureCount']}")
+    print(f"Reference DB        : {summary['referenceDbPath']}")
     print(f"App output          : {summary['appEntry']}")
     return 0
 

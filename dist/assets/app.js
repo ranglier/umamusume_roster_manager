@@ -1,5 +1,46 @@
 ﻿(function () {
-  const data = window.UMA_REFERENCE_DATA;
+  function createEmptyReferenceBundle() {
+    const entitySpecs = [
+      ["characters", "Characters"],
+      ["supports", "Supports"],
+      ["skills", "Skills"],
+      ["races", "Races"],
+      ["racetracks", "Racetracks"],
+      ["g1_factors", "G1 Factors"],
+      ["compatibility", "Compatibility"],
+    ];
+
+    const entities = Object.fromEntries(
+      entitySpecs.map(([key, label]) => [
+        key,
+        {
+          key,
+          label,
+          count: 0,
+          items: [],
+          filter_definitions: [],
+          filter_options: {},
+          source: {
+            imported_at: "",
+            page_urls: [],
+          },
+          model: {},
+        },
+      ]),
+    );
+
+    return {
+      generated_at: null,
+      reference: {
+        generated_at: null,
+        entities: Object.fromEntries(entitySpecs.map(([key]) => [key, { count: 0 }])),
+      },
+      entities,
+    };
+  }
+
+  const hasLoadedReferenceBundle = Boolean(window.UMA_REFERENCE_DATA);
+  const data = window.UMA_REFERENCE_DATA || createEmptyReferenceBundle();
   const profileBackgroundMediaEl = document.getElementById("profileBackgroundMedia");
   const profileBackgroundVideoEl = document.getElementById("profileBackgroundVideo");
   const modeNavEl = document.getElementById("modeNav");
@@ -12,6 +53,7 @@
   const activeProfileBlock = document.getElementById("activeProfileBlock");
   const activeProfileNameEl = document.getElementById("activeProfileName");
   const changeProfileButton = document.getElementById("changeProfileButton");
+  const adminButton = document.getElementById("adminButton");
   const profileGateEl = document.getElementById("profileGate");
   const datasetBarEl = document.getElementById("datasetBar");
   const datasetHeadingEl = document.getElementById("datasetHeading");
@@ -31,11 +73,6 @@
   const backToTopButton = document.getElementById("backToTopButton");
   const compactLayoutQuery = window.matchMedia("(max-width: 1680px)");
 
-  if (!data) {
-    document.body.innerHTML = "<main class='detail-empty'>Missing local reference bundle. Run the update script first.</main>";
-    return;
-  }
-
   const referenceEntityKeys = Object.keys(data.entities);
   const rosterEntityKeys = ["characters", "supports"];
   const inlineMediaEntityKeys = new Set(["characters", "skills", "supports"]);
@@ -49,10 +86,20 @@
     profilesIndex: { version: 1, last_profile_id: null, profiles: [] },
     selectedProfileId: null,
     activeProfileId: null,
+    bootstrapStatusLoaded: false,
+    bootstrapStatus: null,
     rosterDocument: normalizeRosterDocument(null),
     rosterProfileId: null,
     rosterStatus: { kind: "idle", message: "" },
     profilesApiStatus: { kind: "idle", message: "" },
+    adminJobs: { active_job: null, recent_jobs: [] },
+    backups: [],
+    adminStatus: { kind: "idle", message: "" },
+    wizardProfileId: null,
+    wizardStep: "create",
+    wizardBuildStartedAt: null,
+    wizardBuildAutoStarted: false,
+    wizardRedirectScheduled: false,
     renderToken: 0,
   };
 
@@ -326,6 +373,14 @@
       return { page: "profiles" };
     }
 
+    if (segments[0] === "wizard") {
+      return { page: "wizard" };
+    }
+
+    if (segments[0] === "admin") {
+      return { page: "admin" };
+    }
+
     if (segments[0] === "reference" || segments[0] === "roster") {
       const mode = segments[0];
       const entityKey = segments[1] || defaultEntityKeyForMode(mode);
@@ -353,6 +408,22 @@
   function setProfilesHash() {
     if (window.location.hash !== "#/profiles") {
       window.location.hash = "#/profiles";
+      return;
+    }
+    requestRender();
+  }
+
+  function setWizardHash() {
+    if (window.location.hash !== "#/wizard") {
+      window.location.hash = "#/wizard";
+      return;
+    }
+    requestRender();
+  }
+
+  function setAdminHash() {
+    if (window.location.hash !== "#/admin") {
+      window.location.hash = "#/admin";
       return;
     }
     requestRender();
@@ -455,11 +526,30 @@
     return entries[0] || null;
   }
 
+  function resolveMediaAssetSrc(src) {
+    const rawSrc = String(src || "").trim();
+    if (!rawSrc) {
+      return "";
+    }
+    if (/^(https?:)?\/\//i.test(rawSrc) || rawSrc.startsWith("data:")) {
+      return rawSrc;
+    }
+    const isLocalReferenceMedia = rawSrc.startsWith("./media/") || rawSrc.startsWith("/media/") || rawSrc.startsWith("media/");
+    if (!isLocalReferenceMedia) {
+      return rawSrc;
+    }
+    const buildVersion = data.reference?.generated_at ? encodeURIComponent(String(data.reference.generated_at)) : "";
+    if (!buildVersion) {
+      return rawSrc;
+    }
+    return `${rawSrc}${rawSrc.includes("?") ? "&" : "?"}v=${buildVersion}`;
+  }
+
   function renderImageAsset(asset, cssClass, loadingMode) {
     if (!asset?.src) {
       return "";
     }
-    return `<img class="${cssClass}" src="${escapeHtml(asset.src)}" alt="${escapeHtml(asset.alt || "")}" loading="${escapeHtml(loadingMode || "lazy")}">`;
+    return `<img class="${cssClass}" src="${escapeHtml(resolveMediaAssetSrc(asset.src))}" alt="${escapeHtml(asset.alt || "")}" loading="${escapeHtml(loadingMode || "lazy")}">`;
   }
 
   function getResultMediaRoles(entityKey) {
@@ -1267,25 +1357,26 @@
       return;
     }
 
-    if (route.page === "profiles") {
+    if (route.page === "profiles" || route.page === "wizard") {
       modeNavEl.innerHTML = "";
       modeNavEl.hidden = true;
       return;
     }
 
     modeNavEl.hidden = false;
-    const currentEntityForReference = route.mode === "reference" && allowedEntityKeys("reference").includes(route.entityKey)
+    const activeMode = route.page === "admin" ? "roster" : route.mode;
+    const currentEntityForReference = activeMode === "reference" && allowedEntityKeys("reference").includes(route.entityKey)
       ? route.entityKey
       : defaultEntityKeyForMode("reference");
-    const currentEntityForRoster = route.mode === "roster" && allowedEntityKeys("roster").includes(route.entityKey)
+    const currentEntityForRoster = activeMode === "roster" && allowedEntityKeys("roster").includes(route.entityKey)
       ? route.entityKey
       : defaultEntityKeyForMode("roster");
 
     modeNavEl.innerHTML = `
-      <button class="mode-button ${route.mode === "roster" ? "active" : ""}" type="button" data-mode="roster" data-target-entity="${escapeHtml(currentEntityForRoster)}">
+      <button class="mode-button ${activeMode === "roster" ? "active" : ""}" type="button" data-mode="roster" data-target-entity="${escapeHtml(currentEntityForRoster)}">
         My Roster
       </button>
-      <button class="mode-button ${route.mode === "reference" ? "active" : ""}" type="button" data-mode="reference" data-target-entity="${escapeHtml(currentEntityForReference)}">
+      <button class="mode-button ${activeMode === "reference" ? "active" : ""}" type="button" data-mode="reference" data-target-entity="${escapeHtml(currentEntityForReference)}">
         Catalog
       </button>
     `;
@@ -1299,96 +1390,52 @@
     });
   }
 
-  function renderProfileGate() {
-    if (!profileGateEl) {
-      return;
-    }
-
+  function renderProfilesPage() {
     const profiles = state.profilesIndex.profiles;
-    const selectedProfileId = state.selectedProfileId;
-    const lastProfileId = state.profilesIndex.last_profile_id;
-    const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId) || null;
+    const activeProfile = getActiveProfile();
     const apiError = state.profilesApiStatus.kind === "error" ? state.profilesApiStatus.message : "";
 
     profileGateEl.innerHTML = `
-      <div class="profile-landing">
-        <div class="profile-top-meta">
-          <span class="profile-eyebrow">Local Profile Select</span>
-          <span class="profile-eyebrow">Last local build ${escapeHtml(formatDateTime(data.reference.generated_at || "-"))}</span>
-        </div>
+      <div class="profile-landing profile-landing-compact">
         <div class="profile-landing-copy">
-          <h2>Select a profile</h2>
-          <p class="source-note">Choose an existing roster profile or create a new one before entering <strong>My Roster / Characters</strong>.</p>
-          <div class="profile-hero-meta">
-            ${selectedProfile ? `<button type="button" class="button-strong" id="openSelectedProfileButton">Open ${escapeHtml(selectedProfile.name)}</button>` : ""}
-            <button type="button" class="button-secondary" id="showCreateProfileButton">Create profile</button>
-          </div>
+          <h2>Welcome</h2>
+          <p class="source-note">Welcome back. Choose the local profile you want to open to continue managing your roster.</p>
           ${apiError ? `<p class="source-note error-text profile-api-error">${escapeHtml(apiError)}</p>` : ""}
         </div>
-        <div class="profile-gate-layout">
-          <section class="profile-list-shell">
-            <div class="profile-section-heading">
-              <h3>Profiles</h3>
-              <p class="source-note">One local roster per profile.</p>
-            </div>
-            ${profiles.length
-              ? `
-                <div class="profile-list">
-                  ${profiles
-                    .map((profile) => `
-                      <article class="profile-card ${profile.id === selectedProfileId ? "active" : ""}" data-profile-card="${escapeHtml(profile.id)}">
-                        <div class="profile-card-copy">
-                          <h3>${escapeHtml(profile.name)}</h3>
-                          <p class="source-note">Created ${escapeHtml(formatDateTime(profile.created_at))}</p>
-                          <div class="badge-row">
-                            ${profile.id === lastProfileId ? renderBadge("Last used", "badge-strong") : ""}
-                            ${profile.id === state.activeProfileId ? renderBadge("Active now", "badge-strong") : ""}
-                          </div>
-                        </div>
-                        <div class="profile-card-actions">
-                          <button type="button" data-profile-open="${escapeHtml(profile.id)}">Open profile</button>
-                          <button type="button" class="button-danger" data-profile-delete="${escapeHtml(profile.id)}">Delete</button>
-                        </div>
-                      </article>
-                    `)
-                    .join("")}
-                </div>
-              `
-              : `
-                <div class="empty-state">
-                  No profile exists yet. Create your first local roster profile to start immediately.
-                </div>
-              `}
-          </section>
+        <div class="profile-top-meta">
+          <span class="profile-eyebrow">Profile Select</span>
+          <span class="profile-eyebrow">Last local build ${escapeHtml(formatDateTime(data.reference.generated_at || "-"))}</span>
         </div>
-        <div id="createProfileModal" class="profile-modal" hidden>
-          <div class="profile-modal-backdrop" data-close-profile-modal="true"></div>
-          <section class="profile-modal-card" role="dialog" aria-modal="true" aria-labelledby="createProfileModalTitle">
-            <div class="profile-section-heading">
-              <h3 id="createProfileModalTitle">Create a profile</h3>
-              <p class="source-note">A profile stores your local characters and supports collection.</p>
+        <section class="profile-list-shell">
+          <div class="profile-section-heading">
+            <h3>Available Profiles</h3>
+            <p class="source-note">One local roster per profile.</p>
+          </div>
+          ${profiles.length ? `
+            <div class="profile-list">
+              ${profiles.map((profile) => `
+                <article class="profile-card ${profile.id === state.selectedProfileId ? "active" : ""}" data-profile-card="${escapeHtml(profile.id)}">
+                  <div class="profile-card-copy">
+                    <h3>${escapeHtml(profile.name)}</h3>
+                    <p class="source-note">Created ${escapeHtml(formatDateTime(profile.created_at))}</p>
+                    <p class="source-note">Updated ${escapeHtml(formatDateTime(profile.updated_at))}</p>
+                    <div class="badge-row">
+                      ${profile.id === activeProfile?.id ? '<span class="badge badge-strong">Active</span>' : ""}
+                      <span class="badge">${escapeHtml(profile.id)}</span>
+                    </div>
+                  </div>
+                  <div class="profile-card-actions">
+                    <button type="button" class="button-strong" data-open-profile="${escapeHtml(profile.id)}">Open profile</button>
+                  </div>
+                </article>
+              `).join("")}
             </div>
-            <form id="createProfileForm" class="profile-form">
-              <label class="field-label" for="profileNameInput">Profile name</label>
-              <input id="profileNameInput" name="profile_name" type="text" maxlength="80" placeholder="Main profile" required>
-              <div class="profile-modal-actions">
-                <button type="submit" class="button-strong">Create and open</button>
-                <button type="button" class="button-secondary" id="cancelCreateProfileButton">Cancel</button>
-              </div>
-            </form>
-          </section>
-        </div>
+          ` : `
+            <div class="empty-state">No profile exists yet. The bootstrap wizard will help you create one.</div>
+          `}
+        </section>
       </div>
     `;
-
-    if (selectedProfile) {
-      const openSelectedButton = document.getElementById("openSelectedProfileButton");
-      if (openSelectedButton) {
-        openSelectedButton.addEventListener("click", () => {
-          openProfile(selectedProfile.id);
-        });
-      }
-    }
 
     profileGateEl.querySelectorAll("[data-profile-card]").forEach((card) => {
       card.addEventListener("click", () => {
@@ -1397,88 +1444,574 @@
       });
     });
 
-    profileGateEl.querySelectorAll("[data-profile-open]").forEach((button) => {
-      button.addEventListener("click", (event) => {
-        event.stopPropagation();
-        openProfile(button.dataset.profileOpen);
-      });
-    });
-
-    profileGateEl.querySelectorAll("[data-profile-delete]").forEach((button) => {
+    profileGateEl.querySelectorAll("[data-open-profile]").forEach((button) => {
       button.addEventListener("click", async (event) => {
         event.stopPropagation();
-        const profileId = button.dataset.profileDelete;
-        const profile = profiles.find((entry) => entry.id === profileId);
-        if (!profile) {
-          return;
-        }
-        if (!window.confirm(`Delete profile "${profile.name}" and its local roster data?`)) {
-          return;
-        }
-        await deleteProfileAndRefresh(profileId);
+        await openProfile(button.dataset.openProfile);
       });
     });
+  }
 
-    const createProfileModal = document.getElementById("createProfileModal");
-    const profileNameInput = document.getElementById("profileNameInput");
-    const showCreateProfileButton = document.getElementById("showCreateProfileButton");
-    const cancelCreateProfileButton = document.getElementById("cancelCreateProfileButton");
+  function wizardNeedsReferenceBuild() {
+    return Boolean(state.bootstrapStatus?.needs_initial_update || !state.bootstrapStatus?.has_dist_bundle);
+  }
 
-    function closeCreateProfileModal() {
-      if (createProfileModal) {
-        createProfileModal.hidden = true;
+  function getWizardProgress() {
+    const activeJob = state.adminJobs.active_job;
+    if (!wizardNeedsReferenceBuild()) {
+      return 100;
+    }
+    if (activeJob?.type === "update" && activeJob.status === "running") {
+      if (Number.isFinite(activeJob.progress)) {
+        return Math.max(8, Math.min(99, Number(activeJob.progress)));
       }
-    }
-
-    function openCreateProfileModal() {
-      if (createProfileModal) {
-        createProfileModal.hidden = false;
+      if (!state.wizardBuildStartedAt) {
+        state.wizardBuildStartedAt = Date.now();
       }
-      if (profileNameInput) {
-        window.requestAnimationFrame(() => {
-          profileNameInput.focus();
-          profileNameInput.select();
-        });
-      }
+      const elapsedSeconds = Math.max(0, (Date.now() - state.wizardBuildStartedAt) / 1000);
+      return Math.min(92, 12 + Math.round(elapsedSeconds * 9));
+    }
+    if (activeJob?.type === "update" && activeJob.status === "succeeded") {
+      return 100;
+    }
+    return 8;
+  }
+
+  function getTimedProgress(startedAt, floor, cap, ratePerSecond) {
+    const started = startedAt ? new Date(startedAt).getTime() : Date.now();
+    const safeStarted = Number.isFinite(started) ? started : Date.now();
+    const elapsedSeconds = Math.max(0, (Date.now() - safeStarted) / 1000);
+    return Math.min(cap, floor + Math.round(elapsedSeconds * ratePerSecond));
+  }
+
+  function getUpdateProgress(job) {
+    if (!job) {
+      return state.bootstrapStatus?.has_reference_db ? 100 : 0;
     }
 
-    if (showCreateProfileButton) {
-      showCreateProfileButton.addEventListener("click", openCreateProfileModal);
+    if (job.type !== "update") {
+      return state.bootstrapStatus?.has_reference_db ? 100 : 0;
     }
 
-    if (cancelCreateProfileButton) {
-      cancelCreateProfileButton.addEventListener("click", closeCreateProfileModal);
+    if (Number.isFinite(job.progress)) {
+      return Math.max(0, Math.min(100, Number(job.progress)));
     }
 
-    if (createProfileModal) {
-      createProfileModal.querySelectorAll("[data-close-profile-modal]").forEach((node) => {
-        node.addEventListener("click", closeCreateProfileModal);
-      });
-      createProfileModal.addEventListener("click", (event) => {
-        if (event.target === createProfileModal) {
-          closeCreateProfileModal();
-        }
-      });
-      createProfileModal.addEventListener("keydown", (event) => {
-        if (event.key === "Escape") {
-          closeCreateProfileModal();
-        }
-      });
+    if (job.status === "running") {
+      return getTimedProgress(job.started_at, 10, 92, 9);
     }
 
-    const createProfileForm = document.getElementById("createProfileForm");
-    if (createProfileForm) {
-      createProfileForm.addEventListener("submit", async (event) => {
+    if (job.status === "succeeded") {
+      return 100;
+    }
+
+    return 0;
+  }
+
+  function renderJobCheckpointList(job, className) {
+    const checkpoints = asArray(job?.checkpoints).slice(-6);
+    if (!checkpoints.length) {
+      return "";
+    }
+    return `
+      <div class="${className}">
+        ${checkpoints.map((entry, index) => `
+          <div class="job-checkpoint-item ${index === checkpoints.length - 1 && job?.status === "running" ? "active" : ""}">
+            ${escapeHtml(entry)}
+          </div>
+        `).join("")}
+      </div>
+    `;
+  }
+
+  function renderWizardPage() {
+    const wizardProfile = state.profilesIndex.profiles.find((profile) => profile.id === state.wizardProfileId) || null;
+    const activeJob = state.adminJobs.active_job;
+    const updateFailed = activeJob?.type === "update" && activeJob.status === "failed";
+    const progress = getWizardProgress();
+    const wizardTitle = wizardProfile ? `Preparing ${wizardProfile.name}` : "Bootstrap wizard";
+
+    let modalContent = "";
+
+    if (state.wizardStep === "create" || !wizardProfile) {
+      modalContent = `
+        <div class="profile-section-heading">
+          <h3>Create your first profile</h3>
+          <p class="source-note">Start by choosing a name for the profile that will own your local roster data.</p>
+        </div>
+        <form id="wizardCreateProfileForm" class="profile-form">
+          <label class="field-label" for="wizardProfileNameInput">Profile name</label>
+          <input id="wizardProfileNameInput" name="profile_name" type="text" maxlength="80" placeholder="Main profile" required>
+          <div class="profile-modal-actions">
+            <button type="submit" class="button-strong">Create profile</button>
+          </div>
+        </form>
+      `;
+    } else if (state.wizardStep === "import") {
+      modalContent = `
+        <div class="profile-section-heading">
+          <h3>Import existing data?</h3>
+          <p class="source-note">You can optionally import a previously exported profile ZIP into <strong>${escapeHtml(wizardProfile.name)}</strong>.</p>
+        </div>
+        <div class="profile-form">
+          <label class="field-label" for="wizardImportProfileInput">Profile ZIP</label>
+          <input id="wizardImportProfileInput" type="file" accept=".zip,application/zip">
+          <div class="profile-modal-actions wizard-choice-actions">
+            <button type="button" class="button-secondary" id="wizardSkipImportButton">No, continue</button>
+            <button type="button" class="button-strong" id="wizardImportProfileButton">Yes, import ZIP</button>
+          </div>
+          <p class="source-note ${state.adminStatus.kind === "error" ? "error-text" : ""}">${escapeHtml(state.adminStatus.message || "Skip this step if you do not have an export yet.")}</p>
+        </div>
+      `;
+    } else {
+      const currentTask = activeJob?.current_task || (wizardNeedsReferenceBuild() ? "Preparing local database..." : "Ready");
+      modalContent = `
+        <div class="profile-section-heading">
+          <h3>Create the local base</h3>
+          <p class="source-note">${escapeHtml(wizardNeedsReferenceBuild() ? "Building the local reference base from GameTora data. This can take several minutes, especially during the asset synchronization step." : "Local reference base is ready. Redirecting to My Roster...")}</p>
+        </div>
+        <div class="wizard-progress-shell">
+          <div class="wizard-progress-track">
+            <div class="wizard-progress-bar" style="width:${escapeHtml(progress)}%"></div>
+          </div>
+          <div class="wizard-progress-meta">
+            <strong>${escapeHtml(`${progress}%`)}</strong>
+            <span class="source-note">${escapeHtml(activeJob?.message || currentTask)}</span>
+          </div>
+          <div class="wizard-task-card">
+            <strong>Current task</strong>
+            <span class="source-note">${escapeHtml(currentTask)}</span>
+          </div>
+        </div>
+        <div class="admin-meta-grid">
+          <div class="admin-meta-card"><span class="meta-label">Profile</span><strong>${escapeHtml(wizardProfile.name)}</strong></div>
+          <div class="admin-meta-card"><span class="meta-label">Reference Meta</span><strong>${state.bootstrapStatus?.has_reference_meta ? "Ready" : "Missing"}</strong></div>
+          <div class="admin-meta-card"><span class="meta-label">Reference DB</span><strong>${state.bootstrapStatus?.has_reference_db ? "Ready" : "Missing"}</strong></div>
+        </div>
+        ${updateFailed ? `
+          <div class="profile-modal-actions">
+            <button type="button" class="button-strong" id="wizardRetryBuildButton">Retry local base creation</button>
+          </div>
+        ` : ""}
+        <p class="source-note ${state.adminStatus.kind === "error" || updateFailed ? "error-text" : ""}">${escapeHtml(state.adminStatus.message || (updateFailed ? "Local base creation failed. Retry the operation." : "Please wait while the local reference is prepared."))}</p>
+      `;
+    }
+
+    profileGateEl.innerHTML = `
+      <div class="profile-landing profile-landing-wizard wizard-shell">
+        <div class="profile-top-meta">
+          <span class="profile-eyebrow">Bootstrap Wizard</span>
+          <span class="profile-eyebrow">${escapeHtml(wizardTitle)}</span>
+        </div>
+        <div class="profile-landing-copy">
+          <h2>First-time setup</h2>
+          <p class="source-note">The assistant guides the profile creation, optional data import and local base creation before opening <strong>My Roster</strong>.</p>
+        </div>
+        <div class="profile-modal wizard-modal">
+          <div class="profile-modal-backdrop"></div>
+          <div class="profile-modal-card wizard-modal-card">
+            ${modalContent}
+          </div>
+        </div>
+      </div>
+    `;
+
+    const wizardCreateProfileForm = document.getElementById("wizardCreateProfileForm");
+    if (wizardCreateProfileForm) {
+      wizardCreateProfileForm.addEventListener("submit", async (event) => {
         event.preventDefault();
-        const formData = new FormData(createProfileForm);
+        const formData = new FormData(wizardCreateProfileForm);
         const name = String(formData.get("profile_name") || "").trim();
         if (!name) {
           return;
         }
-        closeCreateProfileModal();
-        await createProfileAndOpen(name);
+        try {
+          const payload = await apiJson("/api/profiles", {
+            method: "POST",
+            body: JSON.stringify({ name }),
+          });
+          state.profilesIndex = normalizeProfilesIndex(payload.profiles);
+          state.profileIndexLoaded = true;
+          state.wizardProfileId = payload.created_profile.id;
+          state.wizardStep = "import";
+          state.selectedProfileId = payload.created_profile.id;
+          state.adminStatus = { kind: "ready", message: `Created profile ${payload.created_profile.name}.` };
+          await loadBootstrapStatus(true);
+          requestRender();
+        } catch (error) {
+          state.adminStatus = { kind: "error", message: error.message || "Could not create the profile." };
+          requestRender();
+        }
       });
     }
+
+    const wizardImportProfileButton = document.getElementById("wizardImportProfileButton");
+    if (wizardImportProfileButton) {
+      wizardImportProfileButton.addEventListener("click", async () => {
+        const input = document.getElementById("wizardImportProfileInput");
+        const file = input?.files?.[0];
+        if (!file) {
+          state.adminStatus = { kind: "error", message: "Choose a profile ZIP to import first." };
+          requestRender();
+          return;
+        }
+        try {
+          const response = await apiBinary(`/api/profiles/${encodeURIComponent(state.wizardProfileId)}/import`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/zip",
+            },
+            body: file,
+          });
+          const payload = await response.json();
+          state.profilesIndex = normalizeProfilesIndex(payload.profiles);
+          state.profileIndexLoaded = true;
+          state.selectedProfileId = payload.profile.id;
+          state.adminStatus = { kind: "ready", message: `Imported data into ${payload.profile.name}.` };
+          state.wizardStep = "build";
+          await loadBootstrapStatus(true);
+          requestRender();
+        } catch (error) {
+          state.adminStatus = { kind: "error", message: error.message || "Could not import the profile archive." };
+          requestRender();
+        }
+      });
+    }
+
+    const wizardSkipImportButton = document.getElementById("wizardSkipImportButton");
+    if (wizardSkipImportButton) {
+      wizardSkipImportButton.addEventListener("click", () => {
+        state.adminStatus = { kind: "idle", message: "" };
+        state.wizardStep = "build";
+        requestRender();
+      });
+    }
+
+    const wizardRetryBuildButton = document.getElementById("wizardRetryBuildButton");
+    if (wizardRetryBuildButton) {
+      wizardRetryBuildButton.addEventListener("click", async () => {
+        state.wizardBuildAutoStarted = false;
+        state.wizardBuildStartedAt = null;
+        state.adminStatus = { kind: "idle", message: "" };
+        requestRender();
+      });
+    }
+  }
+
+  function renderAdminPage() {
+    const activeJob = state.adminJobs.active_job;
+    const recentJobs = asArray(state.adminJobs.recent_jobs);
+    const activeProfile = getActiveProfile();
+    const profiles = state.profilesIndex.profiles;
+    const rosterEntityKey = defaultEntityKeyForMode("roster");
+    const referenceEntityKey = defaultEntityKeyForMode("reference");
+    const latestUpdateJob = [activeJob, ...recentJobs].find((job) => job?.type === "update") || null;
+    const updateProgress = getUpdateProgress(latestUpdateJob);
+    const updateCurrentTask = latestUpdateJob?.current_task || "Idle";
+    const updateProgressText = activeJob?.type === "update" && activeJob.status === "running"
+      ? (activeJob.message || "Update in progress...")
+      : latestUpdateJob?.status === "succeeded"
+        ? "Last update completed."
+        : latestUpdateJob?.status === "failed"
+          ? "Last update failed."
+          : (state.bootstrapStatus?.has_reference_db ? "Reference is ready." : "No update has been run yet.");
+
+    profileGateEl.innerHTML = `
+      <div class="profile-landing admin-landing">
+        <div class="profile-top-meta">
+          <nav class="mode-nav admin-page-nav" aria-label="Administration navigation">
+            <button class="mode-button" type="button" data-mode="roster" data-target-entity="${escapeHtml(rosterEntityKey)}">
+              My Roster
+            </button>
+            <button class="mode-button" type="button" data-mode="reference" data-target-entity="${escapeHtml(referenceEntityKey)}">
+              Catalog
+            </button>
+          </nav>
+        </div>
+        <div class="profile-landing-copy">
+          <h2>Administration</h2>
+          <p class="source-note ${state.adminStatus.kind === "error" ? "error-text" : ""}">${escapeHtml(state.adminStatus.message || "Manage updates, backups and local profiles from a single page.")}</p>
+        </div>
+        <div class="admin-layout">
+          <section class="profile-list-shell">
+            <div class="profile-section-heading profile-section-heading-split">
+              <div class="profile-section-heading-copy">
+                <h3>Reference maintenance</h3>
+                <p class="source-note">Trigger a local update and follow the current job state.</p>
+              </div>
+              <div class="admin-section-actions">
+                <button type="button" class="button-strong" id="adminRunUpdateButton" ${activeJob ? "disabled" : ""}>Run update</button>
+                <button type="button" class="button-secondary" id="adminRefreshButton">Refresh status</button>
+              </div>
+            </div>
+            <div class="admin-meta-grid">
+              <div class="admin-meta-card"><span class="meta-label">Last build</span><strong>${escapeHtml(formatDateTime(data.reference.generated_at || "-"))}</strong></div>
+              <div class="admin-meta-card"><span class="meta-label">Reference DB</span><strong>${state.bootstrapStatus?.has_reference_db ? "Ready" : "Missing"}</strong></div>
+              <div class="admin-meta-card"><span class="meta-label">Active job</span><strong>${escapeHtml(activeJob ? `${activeJob.type} / ${activeJob.status}` : "Idle")}</strong></div>
+            </div>
+            <div class="admin-progress-shell">
+              <div class="admin-progress-head">
+                <strong>Update progress</strong>
+                <span>${escapeHtml(`${updateProgress}%`)}</span>
+              </div>
+              <div class="wizard-progress-track">
+                <div class="wizard-progress-bar" style="width:${escapeHtml(updateProgress)}%"></div>
+              </div>
+              <p class="source-note">${escapeHtml(updateProgressText)}</p>
+              <div class="wizard-task-card admin-task-card">
+                <strong>Current task</strong>
+                <span class="source-note">${escapeHtml(updateCurrentTask)}</span>
+              </div>
+              ${renderJobCheckpointList(latestUpdateJob, "job-checkpoint-list")}
+            </div>
+            <div class="admin-job-list-shell">
+              <div class="admin-job-list">
+              ${recentJobs.length ? recentJobs.map((job) => `
+                <article class="admin-job-item">
+                  <strong>${escapeHtml(job.type)}</strong>
+                  <span>${escapeHtml(job.status)}</span>
+                  <span>${escapeHtml(formatDateTime(job.finished_at || job.started_at || job.created_at))}</span>
+                </article>
+              `).join("") : "<p class='source-note'>No admin job has been recorded yet.</p>"}
+              </div>
+            </div>
+          </section>
+          <section class="profile-list-shell">
+            <div class="profile-section-heading profile-section-heading-split">
+              <div class="profile-section-heading-copy">
+                <h3>Backups</h3>
+                <p class="source-note">Create and restore full local backups.</p>
+              </div>
+              <div class="admin-section-actions">
+                <button type="button" class="button-strong" id="adminCreateBackupButton" ${activeJob ? "disabled" : ""}>Create backup</button>
+              </div>
+            </div>
+            <div class="admin-list">
+              ${state.backups.length ? state.backups.map((backup) => `
+                <article class="admin-list-item">
+                  <div class="admin-list-copy">
+                    <strong>${escapeHtml(backup.filename)}</strong>
+                    <span class="source-note">${escapeHtml(formatDateTime(backup.created_at))} | ${escapeHtml(`${Math.round((backup.size_bytes || 0) / 1024)} KB`)}</span>
+                  </div>
+                  <div class="admin-inline-actions">
+                    <button type="button" data-backup-download="${escapeHtml(backup.id)}">Download</button>
+                    <button type="button" class="button-secondary" data-backup-restore="${escapeHtml(backup.id)}" ${activeJob ? "disabled" : ""}>Restore</button>
+                    <button type="button" class="button-danger" data-backup-delete="${escapeHtml(backup.id)}">Delete</button>
+                  </div>
+                </article>
+              `).join("") : "<p class='source-note'>No local backup yet.</p>"}
+            </div>
+          </section>
+          <section class="profile-list-shell admin-profiles-shell">
+            <div class="profile-section-heading">
+              <h3>Profiles</h3>
+              <p class="source-note">Create, rename, export, import and delete local profiles.</p>
+            </div>
+            <form id="adminCreateProfileForm" class="profile-form">
+              <label class="field-label" for="adminProfileNameInput">Create profile</label>
+              <div class="admin-inline-form">
+                <input id="adminProfileNameInput" name="profile_name" type="text" maxlength="80" placeholder="New profile" required>
+                <button type="submit" class="button-strong">Create</button>
+              </div>
+            </form>
+            <div class="profile-form">
+              <label class="field-label" for="adminImportProfileInput">Import profile ZIP</label>
+              <div class="admin-inline-form">
+                <input id="adminImportProfileInput" type="file" accept=".zip,application/zip">
+                <button type="button" class="button-secondary" id="adminImportProfileButton">Import</button>
+              </div>
+            </div>
+            <div class="admin-list">
+              ${profiles.map((profile) => `
+                <article class="admin-list-item">
+                  <div class="admin-list-copy">
+                    <strong>${escapeHtml(profile.name)}</strong>
+                    <span class="source-note">${escapeHtml(profile.id)}${profile.id === activeProfile?.id ? " | Active" : ""}</span>
+                  </div>
+                  <div class="admin-inline-actions">
+                    <button type="button" data-profile-rename="${escapeHtml(profile.id)}">Rename</button>
+                    <button type="button" class="button-secondary" data-profile-export="${escapeHtml(profile.id)}">Export</button>
+                    <button type="button" class="button-danger" data-profile-delete-admin="${escapeHtml(profile.id)}">Delete</button>
+                  </div>
+                </article>
+              `).join("")}
+            </div>
+          </section>
+        </div>
+      </div>
+    `;
+
+    profileGateEl.querySelectorAll(".admin-page-nav [data-mode]").forEach((button) => {
+      button.addEventListener("click", () => {
+        setBrowseHash(button.dataset.mode, button.dataset.targetEntity, null);
+      });
+    });
+
+    const adminRunUpdateButton = document.getElementById("adminRunUpdateButton");
+    if (adminRunUpdateButton) {
+      adminRunUpdateButton.addEventListener("click", async () => {
+        await runAdminJob("Update", "/api/admin/jobs/update");
+        await refreshAdminData(true);
+      });
+    }
+
+    const adminCreateBackupButton = document.getElementById("adminCreateBackupButton");
+    if (adminCreateBackupButton) {
+      adminCreateBackupButton.addEventListener("click", async () => {
+        await runAdminJob("Backup", "/api/admin/jobs/backup");
+        await refreshAdminData(true);
+      });
+    }
+
+    const adminRefreshButton = document.getElementById("adminRefreshButton");
+    if (adminRefreshButton) {
+      adminRefreshButton.addEventListener("click", async () => {
+        await refreshAdminData(true);
+        requestRender();
+      });
+    }
+
+    const adminCreateProfileForm = document.getElementById("adminCreateProfileForm");
+    if (adminCreateProfileForm) {
+      adminCreateProfileForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const formData = new FormData(adminCreateProfileForm);
+        const name = String(formData.get("profile_name") || "").trim();
+        if (!name) {
+          return;
+        }
+        try {
+          const payload = await apiJson("/api/profiles", {
+            method: "POST",
+            body: JSON.stringify({ name }),
+          });
+          state.profilesIndex = normalizeProfilesIndex(payload.profiles);
+          state.profileIndexLoaded = true;
+          state.adminStatus = { kind: "ready", message: `Created profile ${payload.created_profile.name}.` };
+          syncSelectedProfileId();
+          await loadBootstrapStatus(true);
+          requestRender();
+        } catch (error) {
+          state.adminStatus = { kind: "error", message: error.message || "Could not create the profile." };
+          requestRender();
+        }
+      });
+    }
+
+    const adminImportProfileButton = document.getElementById("adminImportProfileButton");
+    if (adminImportProfileButton) {
+      adminImportProfileButton.addEventListener("click", async () => {
+        const input = document.getElementById("adminImportProfileInput");
+        const file = input?.files?.[0];
+        if (!file) {
+          state.adminStatus = { kind: "error", message: "Choose a profile ZIP to import first." };
+          requestRender();
+          return;
+        }
+        try {
+          const createdProfile = await importProfileArchive(file);
+          state.adminStatus = { kind: "ready", message: `Imported profile ${createdProfile.name}.` };
+          syncSelectedProfileId();
+          requestRender();
+        } catch (error) {
+          state.adminStatus = { kind: "error", message: error.message || "Could not import the profile archive." };
+          requestRender();
+        }
+      });
+    }
+
+    profileGateEl.querySelectorAll("[data-profile-rename]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const profileId = button.dataset.profileRename;
+        const profile = profiles.find((entry) => entry.id === profileId);
+        if (!profile) {
+          return;
+        }
+        const nextName = window.prompt("Rename profile", profile.name);
+        if (!nextName || nextName.trim() === profile.name) {
+          return;
+        }
+        try {
+          await renameProfileAndRefresh(profileId, nextName.trim());
+          state.adminStatus = { kind: "ready", message: `Renamed profile to ${nextName.trim()}.` };
+        } catch (error) {
+          state.adminStatus = { kind: "error", message: error.message || "Could not rename the profile." };
+        }
+        requestRender();
+      });
+    });
+
+    profileGateEl.querySelectorAll("[data-profile-export]").forEach((button) => {
+      button.addEventListener("click", () => {
+        downloadProfileExport(button.dataset.profileExport);
+      });
+    });
+
+    profileGateEl.querySelectorAll("[data-profile-delete-admin]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const profileId = button.dataset.profileDeleteAdmin;
+        const profile = profiles.find((entry) => entry.id === profileId);
+        if (!profile || !window.confirm(`Delete profile "${profile.name}" and its local roster data?`)) {
+          return;
+        }
+        try {
+          await deleteProfileAndRefresh(profileId);
+          state.adminStatus = { kind: "ready", message: `Deleted profile ${profile.name}.` };
+        } catch (error) {
+          state.adminStatus = { kind: "error", message: error.message || "Could not delete the profile." };
+          requestRender();
+        }
+      });
+    });
+
+    profileGateEl.querySelectorAll("[data-backup-download]").forEach((button) => {
+      button.addEventListener("click", () => downloadBackup(button.dataset.backupDownload));
+    });
+
+    profileGateEl.querySelectorAll("[data-backup-restore]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const backupId = button.dataset.backupRestore;
+        if (!window.confirm(`Restore backup ${backupId}? This will replace local app data.`)) {
+          return;
+        }
+        await restoreBackupAndRefresh(backupId);
+      });
+    });
+
+    profileGateEl.querySelectorAll("[data-backup-delete]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const backupId = button.dataset.backupDelete;
+        if (!window.confirm(`Delete backup ${backupId}?`)) {
+          return;
+        }
+        try {
+          const payload = await apiJson(`/api/admin/backups/${encodeURIComponent(backupId)}`, { method: "DELETE" });
+          state.backups = asArray(payload.items);
+          state.adminStatus = { kind: "ready", message: `Deleted backup ${backupId}.` };
+        } catch (error) {
+          state.adminStatus = { kind: "error", message: error.message || "Could not delete the backup." };
+        }
+        requestRender();
+      });
+    });
+  }
+
+  function renderProfileGate(route) {
+    if (!profileGateEl) {
+      return;
+    }
+
+    if (route.page === "wizard") {
+      renderWizardPage();
+      return;
+    }
+
+    if (route.page === "admin") {
+      renderAdminPage();
+      return;
+    }
+
+    renderProfilesPage();
   }
 
   function renderNav(mode, activeKey) {
@@ -1775,20 +2308,39 @@
     const activeProfile = getActiveProfile();
 
     activeProfileNameEl.textContent = activeProfile ? activeProfile.name : "No profile selected";
-    changeProfileButton.hidden = route.page === "profiles" || !activeProfile;
+    changeProfileButton.hidden = (route.page === "profiles" || route.page === "wizard" || !activeProfile);
+    if (adminButton) {
+      adminButton.hidden = (route.page === "profiles" || route.page === "wizard" || route.page === "admin" || !activeProfile);
+    }
     if (activeProfileBlock) {
-      activeProfileBlock.hidden = route.page === "profiles" || route.mode === "reference" || !activeProfile;
+      activeProfileBlock.hidden = ((route.page === "profiles" || route.page === "wizard") || (route.page === "browse" && route.mode === "reference") || !activeProfile);
     }
     if (lastBuildBlock) {
-      lastBuildBlock.hidden = route.page === "profiles" || route.mode === "roster";
+      lastBuildBlock.hidden = (route.page === "profiles" || route.page === "wizard" || (route.page === "browse" && route.mode === "roster"));
     }
     if (refreshCommandBlock) {
-      refreshCommandBlock.hidden = route.page === "profiles" || route.mode === "roster";
+      refreshCommandBlock.hidden = (route.page === "profiles" || route.page === "wizard" || (route.page === "browse" && route.mode === "roster"));
+    }
+
+    if (route.page === "wizard") {
+      pageTitleEl.textContent = "Bootstrap Wizard";
+      summaryText.textContent = "Create your first profile, prepare local data and enter My Roster.";
+      datasetHeadingEl.textContent = "Bootstrap";
+      return;
     }
 
     if (route.page === "profiles") {
       pageTitleEl.textContent = "Choose your local profile";
-      summaryText.textContent = "Select an existing profile or create a new one before entering your local roster.";
+      summaryText.textContent = "Select an existing profile before entering your local roster.";
+      datasetHeadingEl.textContent = "Profiles";
+      return;
+    }
+
+    if (route.page === "admin") {
+      pageTitleEl.textContent = "Administration";
+      summaryText.textContent = activeProfile
+        ? `Local maintenance and profile management for ${activeProfile.name}.`
+        : "Local maintenance and profile management.";
       datasetHeadingEl.textContent = "Profiles";
       return;
     }
@@ -1808,28 +2360,31 @@
   }
 
   function syncShellVisibility(route) {
-    const isProfilesPage = route.page === "profiles";
-    profileGateEl.hidden = !isProfilesPage;
+    const isGatePage = route.page === "profiles" || route.page === "wizard" || route.page === "admin";
+    const isProfilesLikePage = route.page === "profiles" || route.page === "wizard" || route.page === "admin";
+    profileGateEl.hidden = !isGatePage;
     if (topHeaderEl) {
-      topHeaderEl.hidden = isProfilesPage;
+      topHeaderEl.hidden = isProfilesLikePage;
     }
-    datasetBarEl.hidden = isProfilesPage;
-    toolbarEl.hidden = isProfilesPage;
+    datasetBarEl.hidden = isGatePage;
+    toolbarEl.hidden = isGatePage;
     if (resultsPanelEl) {
-      resultsPanelEl.hidden = isProfilesPage;
+      resultsPanelEl.hidden = isGatePage;
     }
-    detailColumnEl.hidden = isProfilesPage;
-    backToTopButton.hidden = isProfilesPage;
-    document.body.classList.toggle("route-profiles", isProfilesPage);
-    document.body.classList.toggle("route-roster", !isProfilesPage && route.mode === "roster");
-    document.body.classList.toggle("route-catalog", !isProfilesPage && route.mode === "reference");
+    detailColumnEl.hidden = isGatePage;
+    backToTopButton.hidden = isGatePage;
+    document.body.classList.toggle("route-profiles", route.page === "profiles");
+    document.body.classList.toggle("route-wizard", route.page === "wizard");
+    document.body.classList.toggle("route-admin", route.page === "admin");
+    document.body.classList.toggle("route-roster", route.page === "browse" && route.mode === "roster");
+    document.body.classList.toggle("route-catalog", route.page === "browse" && route.mode === "reference");
 
     if (profileBackgroundMediaEl) {
-      profileBackgroundMediaEl.hidden = !isProfilesPage;
+      profileBackgroundMediaEl.hidden = !(route.page === "profiles" || route.page === "wizard");
     }
 
     if (profileBackgroundVideoEl) {
-      if (isProfilesPage) {
+      if (route.page === "profiles" || route.page === "wizard") {
         const playPromise = profileBackgroundVideoEl.play();
         if (playPromise && typeof playPromise.catch === "function") {
           playPromise.catch(() => {});
@@ -1906,6 +2461,29 @@
     return payload;
   }
 
+  async function apiBinary(url, options) {
+    const response = await fetch(url, options);
+    if (!response.ok) {
+      let payload = null;
+      try {
+        payload = await response.json();
+      } catch (error) {
+        payload = null;
+      }
+      throw new Error(payload?.error || `Request failed with status ${response.status}.`);
+    }
+    return response;
+  }
+
+  async function loadBootstrapStatus(force) {
+    if (state.bootstrapStatusLoaded && !force) {
+      return;
+    }
+
+    state.bootstrapStatus = await apiJson("/api/app/bootstrap-status");
+    state.bootstrapStatusLoaded = true;
+  }
+
   async function loadProfilesIndex(force) {
     if (state.profileIndexLoaded && !force) {
       return;
@@ -1915,6 +2493,9 @@
       state.profilesIndex = normalizeProfilesIndex(await apiJson("/api/profiles"));
       state.profileIndexLoaded = true;
       state.profilesApiStatus = { kind: "ready", message: "" };
+      if (!state.activeProfileId && state.profilesIndex.last_profile_id) {
+        state.activeProfileId = state.profilesIndex.last_profile_id;
+      }
       if (state.activeProfileId && !state.profilesIndex.profiles.some((profile) => profile.id === state.activeProfileId)) {
         state.activeProfileId = null;
         state.rosterProfileId = null;
@@ -1934,6 +2515,25 @@
       };
       throw error;
     }
+  }
+
+  async function loadAdminJobs(force) {
+    if (!force && state.adminJobs.active_job && state.adminJobs.active_job.status === "running") {
+      state.adminJobs = await apiJson("/api/admin/jobs");
+      return;
+    }
+    if (!force && state.adminJobs.recent_jobs.length) {
+      return;
+    }
+    state.adminJobs = await apiJson("/api/admin/jobs");
+  }
+
+  async function loadBackups(force) {
+    if (!force && state.backups.length) {
+      return;
+    }
+    const payload = await apiJson("/api/admin/backups");
+    state.backups = asArray(payload.items);
   }
 
   async function loadRosterForProfile(profileId, force) {
@@ -1960,6 +2560,7 @@
     state.profilesIndex = normalizeProfilesIndex(payload.profiles);
     state.profileIndexLoaded = true;
     state.selectedProfileId = payload.created_profile.id;
+    await loadBootstrapStatus(true);
     await openProfile(payload.created_profile.id, true);
   }
 
@@ -1974,9 +2575,54 @@
       state.rosterProfileId = null;
       state.rosterDocument = normalizeRosterDocument(null);
     }
+    if (state.wizardProfileId === profileId) {
+      state.wizardProfileId = null;
+    }
 
     syncSelectedProfileId();
+    await loadBootstrapStatus(true);
     setProfilesHash();
+  }
+
+  async function renameProfileAndRefresh(profileId, name) {
+    const payload = await apiJson(`/api/profiles/${encodeURIComponent(profileId)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ name }),
+    });
+    state.profilesIndex = normalizeProfilesIndex(payload.profiles);
+    state.profileIndexLoaded = true;
+    if (state.activeProfileId === profileId) {
+      const updated = state.profilesIndex.profiles.find((profile) => profile.id === profileId);
+      if (updated) {
+        activeProfileNameEl.textContent = updated.name;
+      }
+    }
+    syncSelectedProfileId();
+    requestRender();
+  }
+
+  async function importProfileArchive(file) {
+    const response = await apiBinary("/api/profiles/import", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/zip",
+      },
+      body: file,
+    });
+    const payload = await response.json();
+    state.profilesIndex = normalizeProfilesIndex(payload.profiles);
+    state.profileIndexLoaded = true;
+    state.selectedProfileId = payload.created_profile.id;
+    await loadBootstrapStatus(true);
+    return payload.created_profile;
+  }
+
+  function downloadProfileExport(profileId) {
+    window.location.href = `/api/profiles/${encodeURIComponent(profileId)}/export`;
+  }
+
+  function downloadBackup(backupId) {
+    window.location.href = `/api/admin/backups/${encodeURIComponent(backupId)}`;
   }
 
   async function openProfile(profileId, profilesAlreadyFresh) {
@@ -1992,8 +2638,42 @@
     await loadProfilesIndex(true);
     state.activeProfileId = profileId;
     state.selectedProfileId = profileId;
+    state.wizardProfileId = null;
+    state.wizardStep = "create";
+    state.wizardBuildStartedAt = null;
+    state.wizardBuildAutoStarted = false;
+    state.wizardRedirectScheduled = false;
     await loadRosterForProfile(profileId, true);
     setBrowseHash("roster", "characters", null);
+  }
+
+  async function runAdminJob(jobType, endpoint) {
+    state.adminStatus = { kind: "working", message: `${jobType} started...` };
+    requestRender();
+
+    try {
+      const job = await apiJson(endpoint, { method: "POST" });
+      state.adminJobs = {
+        active_job: job,
+        recent_jobs: asArray(state.adminJobs.recent_jobs),
+      };
+      await loadAdminJobs(true);
+      state.adminStatus = { kind: "ready", message: `${jobType} is running in background.` };
+    } catch (error) {
+      state.adminStatus = { kind: "error", message: error.message || `Could not start ${jobType}.` };
+    }
+
+    requestRender();
+  }
+
+  async function refreshAdminData(force) {
+    await loadAdminJobs(force);
+    await loadBackups(force);
+    await loadBootstrapStatus(true);
+  }
+
+  async function restoreBackupAndRefresh(backupId) {
+    await runAdminJob("Restore", `/api/admin/backups/${encodeURIComponent(backupId)}/restore`);
   }
 
   function collectRosterFormData(entityKey, item, formEl) {
@@ -2106,18 +2786,86 @@
     const token = ++state.renderToken;
 
     await loadProfilesIndex(false);
+    await loadBootstrapStatus(false);
     if (token !== state.renderToken) {
       return;
     }
 
     const route = currentRouteState();
 
-    if (route.page !== "profiles" && !state.activeProfileId) {
-      setProfilesHash();
+    if (!state.bootstrapStatus?.has_profiles) {
+      if (route.page !== "wizard") {
+        setWizardHash();
+        return;
+      }
+    } else if (route.page === "wizard" && !state.wizardProfileId) {
+      if (state.bootstrapStatus.recommended_entry === "roster" && state.profilesIndex.last_profile_id) {
+        state.activeProfileId = state.profilesIndex.last_profile_id;
+        setBrowseHash("roster", "characters", null);
+      } else {
+        setProfilesHash();
+      }
       return;
     }
 
-    if (route.page !== "profiles" && state.activeProfileId) {
+    if (route.page === "admin") {
+      await refreshAdminData(true);
+      if (token !== state.renderToken) {
+        return;
+      }
+    } else if (route.page === "wizard" && state.adminJobs.active_job?.status === "running") {
+      await refreshAdminData(true);
+      if (token !== state.renderToken) {
+        return;
+      }
+    }
+
+    if (!hasLoadedReferenceBundle && state.bootstrapStatus?.has_reference_meta && state.bootstrapStatus?.has_reference_db) {
+      window.location.reload();
+      return;
+    }
+
+    if (route.page === "wizard" && state.wizardProfileId && state.wizardStep === "build") {
+      const updateJob = state.adminJobs.active_job?.type === "update" ? state.adminJobs.active_job : null;
+      const needsReferenceBuild = wizardNeedsReferenceBuild();
+
+      if (updateJob?.status === "failed") {
+        state.wizardBuildAutoStarted = false;
+      }
+
+      if (needsReferenceBuild && !updateJob && !state.wizardBuildAutoStarted) {
+        state.wizardBuildAutoStarted = true;
+        state.wizardBuildStartedAt = Date.now();
+        await runAdminJob("Local base creation", "/api/admin/jobs/update");
+        await refreshAdminData(true);
+        if (token !== state.renderToken) {
+          return;
+        }
+      }
+
+      if (!needsReferenceBuild && !state.wizardRedirectScheduled) {
+        state.wizardRedirectScheduled = true;
+        window.setTimeout(() => {
+          if (currentRouteState().page === "wizard" && state.wizardProfileId) {
+            openProfile(state.wizardProfileId, true).catch((error) => {
+              state.adminStatus = { kind: "error", message: error.message || "Could not open the new profile." };
+              requestRender();
+            });
+          }
+        }, 700);
+      }
+    }
+
+    if (route.page === "browse" && !state.activeProfileId) {
+      if (state.profilesIndex.last_profile_id) {
+        state.activeProfileId = state.profilesIndex.last_profile_id;
+      } else {
+        setProfilesHash();
+        return;
+      }
+    }
+
+    if (route.page === "browse" && state.activeProfileId) {
       await loadRosterForProfile(state.activeProfileId, false);
       if (token !== state.renderToken) {
         return;
@@ -2128,10 +2876,17 @@
     renderModeNav(route);
     syncShellVisibility(route);
 
-    if (route.page === "profiles") {
-      renderProfileGate();
+    if (route.page === "profiles" || route.page === "wizard" || route.page === "admin") {
+      renderProfileGate(route);
       syncLayoutMode(false);
       window.requestAnimationFrame(syncToolbarMetrics);
+      if ((route.page === "wizard" || route.page === "admin") && state.adminJobs.active_job?.status === "running") {
+        window.setTimeout(() => {
+          if (currentRouteState().page === route.page) {
+            requestRender();
+          }
+        }, 2000);
+      }
       return;
     }
 
@@ -2143,10 +2898,10 @@
     render().catch((error) => {
       console.error(error);
       const route = currentRouteState();
-      if (route.page === "profiles") {
+      if (route.page === "profiles" || route.page === "wizard" || route.page === "admin") {
         syncShellVisibility(route);
         renderModeNav(route);
-        renderProfileGate();
+        renderProfileGate(route);
         window.requestAnimationFrame(syncToolbarMetrics);
         return;
       }
@@ -2175,6 +2930,12 @@
   if (changeProfileButton) {
     changeProfileButton.addEventListener("click", () => {
       setProfilesHash();
+    });
+  }
+
+  if (adminButton) {
+    adminButton.addEventListener("click", () => {
+      setAdminHash();
     });
   }
 

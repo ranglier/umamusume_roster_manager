@@ -1,4 +1,4 @@
-# Umamusume Pretty Derby Local Reference
+# Umamusume Roster Manager
 
 Referentiel local et roster manager pour `Umamusume Pretty Derby`, alimente depuis GameTora, stocke localement, consultable hors ligne et mettable a jour via une commande dediee.
 
@@ -12,7 +12,9 @@ Le projet couvre aujourd'hui:
 - `g1_factors`
 - `compatibility`
 - profils locaux
+- wizard de premier demarrage
 - roster personnel local pour `characters` et `supports`
+- administration locale
 
 Hors perimetre a ce stade:
 
@@ -27,6 +29,7 @@ Le projet suit une separation simple et stable:
 
 - `data/raw/`: sources GameTora telechargees telles quelles
 - `data/normalized/`: schema local stable
+- `data/runtime/`: base SQLite locale de reference
 - `dist/`: application statique et donnees servies localement
 
 L'application ne depend pas de GameTora a l'execution. Tout est importe puis consulte localement.
@@ -49,7 +52,8 @@ Strategie retenue:
 2. resolution des datasets JSON versionnes
 3. telechargement des sources utiles depuis `https://gametora.com/data/umamusume/...`
 4. normalisation vers un schema local stable
-5. construction d'un bundle statique local
+5. materialisation d'une base SQLite locale
+6. construction d'un bundle statique local
 
 Pourquoi:
 
@@ -67,6 +71,7 @@ Umamusume_Roster_Manager/
 |- data/
 |  |- raw/
 |  |- normalized/
+|  |- runtime/
 |  `- user/
 |  `- ...
 |- dist/
@@ -78,7 +83,8 @@ Umamusume_Roster_Manager/
 |  |- update_reference.py
 |  |- serve_reference.py
 |  `- lib/
-|     `- gametora_reference.py
+|     |- gametora_reference.py
+|     `- sqlite_reference.py
 `- src/
    `- ui/
       |- index.html
@@ -91,6 +97,7 @@ Umamusume_Roster_Manager/
 Principes:
 
 - pipeline `raw -> normalized -> served`
+- migration runtime en cours vers SQLite
 - UI statique locale
 - assets visuels caches localement
 - `compatibility` traitee comme une vraie entite de referentiel
@@ -195,6 +202,7 @@ Fichiers principaux:
 - [`data/normalized/g1_factors.json`](c:\Users\034927N\PERSO\Umamusume_Roster_Manager\data\normalized\g1_factors.json)
 - [`data/normalized/compatibility.json`](c:\Users\034927N\PERSO\Umamusume_Roster_Manager\data\normalized\compatibility.json)
 - [`data/normalized/reference-meta.json`](c:\Users\034927N\PERSO\Umamusume_Roster_Manager\data\normalized\reference-meta.json)
+- `data/runtime/reference.sqlite`
 
 Resume du modele:
 
@@ -206,13 +214,21 @@ Resume du modele:
 - `g1_factors`: facteurs G1 et courses associees
 - `compatibility`: groupes de relation et top matches pour l'inheritance futur
 
+Note runtime:
+
+- `reference.sqlite` est reconstruit a chaque update
+- il prepare la migration des lectures UI / API vers des requetes locales plus fines
+- l'UI actuelle continue encore d'utiliser le bundle `dist/data/reference-data.js` pendant la transition
+
 ## Interface locale
 
 L'UI locale permet:
 
+- wizard de premier demarrage si aucun profil n'existe
 - selection de profil
 - `My Roster` pour les `characters` / `supports` possedes
 - `Catalog` pour parcourir la reference et alimenter le roster
+- `Administration` pour les updates, backups et profils
 - navigation par dataset
 - recherche texte
 - filtres
@@ -221,6 +237,12 @@ L'UI locale permet:
 - navigation croisee entre entites
 - edition locale des entrees possedees
 - affichage de la source et de la date d'import locale
+
+Pendant la creation initiale de la base locale:
+
+- une barre de progression est affichee
+- la tache courante est visible
+- certaines etapes peuvent prendre plusieurs minutes, surtout la synchronisation des assets
 
 L'UI source est dans:
 
@@ -233,6 +255,7 @@ Le bundle servi localement est dans:
 - `dist/index.html`
 - `dist/assets/app.js`
 - `dist/assets/app.css`
+- `dist/assets/favicon.svg`
 - `dist/data/reference-data.js`
 
 Note:
@@ -243,8 +266,10 @@ Note:
 
 - configuration des sources: `config/sources.json`
 - pipeline import / normalisation / build: `scripts/lib/gametora_reference.py`
+- materialisation SQLite locale: `scripts/lib/sqlite_reference.py`
 - commande d'update: `scripts/update_reference.py`
 - serveur local de consultation: `scripts/serve_reference.py`
+- UI source: `src/ui/index.html`, `src/ui/assets/app.js`, `src/ui/assets/app.css`
 - metadonnees raw: `data/raw/metadata.json`
 - catalogue assets: `data/raw/assets/metadata.json`
 
@@ -254,17 +279,20 @@ Note:
 - `compatibility` est conservee comme base de calcul, sans integration directe des bonus G1 dans un score compose.
 - le roster personnel reste local, sans sync cloud ni multi-utilisateur
 - l'updater repose sur Python standard library pour rester cross-OS sans dependances externes
+- SQLite est utilise via `sqlite3` standard library, sans service externe ni ORM
 - la consultation locale est recommandee via HTTP local pour rester cross-navigateur
 - le depot Git ne contient pas les donnees GameTora importees; elles doivent etre regenerees localement
+- la creation initiale de la base locale peut etre longue a froid, surtout lors du telechargement des assets
 
 ## Revue code
 
-Revue rapide effectuee sur `2026-03-24`.
+Revue rapide effectuee sur `2026-03-26`.
 
 Conclusion:
 
 - pas de dette critique identifiee
 - pas de code mort significatif dans le pipeline d'import
+- pas de regression bloquante detectee sur les changements wizard / admin / progression
 - quelques reliquats UI ont ete nettoyes
 
 Nettoyages appliques:
@@ -272,6 +300,7 @@ Nettoyages appliques:
 - suppression du helper JS mort `formatObjectPairs`
 - suppression du style CSS mort `.eyebrow`
 - simplification de `getMediaEntries()` pour eviter la creation d'un champ `slot` inutilise
+- correction du suivi de job frontend pour que le wizard poll correctement l'update
 
 ## Suite logique
 

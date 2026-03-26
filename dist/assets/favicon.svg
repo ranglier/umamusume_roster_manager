@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="URM">
+  <rect width="256" height="256" rx="48" fill="#fffaf4"/>
+  <path d="M34 52h24v84c0 20 11 31 29 31 18 0 29-11 29-31V52h24v86c0 34-22 54-53 54-31 0-53-20-53-54V52z" fill="#ff7a21"/>
+  <path d="M150 52h40c31 0 50 17 50 45 0 19-10 33-27 40l31 53h-28l-28-48h-14v48h-24V52zm24 22v46h15c18 0 27-8 27-23 0-15-9-23-27-23h-15z" fill="#9a001a"/>
+  <path d="M186 34l8 17 18 3-13 13 3 18-16-9-16 9 3-18-13-13 18-3z" fill="#ffc31a" transform="translate(40 -6) scale(0.9)"/>
+  <text x="176" y="190" font-family="Arial Black, Segoe UI, sans-serif" font-size="92" font-weight="900" fill="#bd7c55">M</text>
+</svg>

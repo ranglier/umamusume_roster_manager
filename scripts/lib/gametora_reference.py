@@ -6,12 +6,15 @@ import urllib.request
 from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
+
+from .sqlite_reference import build_reference_database
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_VERSION = "1.0.0"
 USER_AGENT = "Umamusume-Roster-Manager/1.0 (+local reference build)"
+ProgressCallback = Callable[[dict[str, Any]], None]
 
 TRACK_NAMES = {
     "10001": "Sapporo",
@@ -320,7 +323,7 @@ def new_source_stamp(config: dict[str, Any], metadata: dict[str, Any], entity_ke
     )
 
 
-def sync_reference_raw_data(*, force: bool = False) -> dict[str, Any]:
+def sync_reference_raw_data(*, force: bool = False, progress_callback: ProgressCallback | None = None) -> dict[str, Any]:
     config = get_config()
     raw_root = PROJECT_ROOT / "data" / "raw" / "umamusume"
     manifest_root = PROJECT_ROOT / "data" / "raw" / "manifests"
@@ -334,8 +337,19 @@ def sync_reference_raw_data(*, force: bool = False) -> dict[str, Any]:
     write_utf8_file(manifest_path, manifest_result["Raw"])
 
     dataset_metadata: dict[str, Any] = OrderedDict()
-    for dataset in as_array(config.get("datasets")):
+    datasets = as_array(config.get("datasets"))
+    total_datasets = max(1, len(datasets))
+    for index, dataset in enumerate(datasets, start=1):
         key = dataset["key"]
+        if progress_callback:
+            progress = 4 + round((index - 1) / total_datasets * 12)
+            progress_callback(
+                {
+                    "progress": progress,
+                    "message": f"Syncing source dataset {index}/{total_datasets}: {key}",
+                    "current_task": f"Fetching source dataset {key}",
+                }
+            )
         hash_value = get_named_value(manifest, key)
         if not hash_value:
             raise ValueError(f"Missing manifest hash for dataset key: {key}")
@@ -1721,7 +1735,13 @@ def get_normalized_asset_catalog(normalized: dict[str, Any]) -> dict[str, Any]:
     return catalog
 
 
-def sync_reference_assets(config: dict[str, Any], normalized: dict[str, Any], *, force: bool = False) -> dict[str, Any]:
+def sync_reference_assets(
+    config: dict[str, Any],
+    normalized: dict[str, Any],
+    *,
+    force: bool = False,
+    progress_callback: ProgressCallback | None = None,
+) -> dict[str, Any]:
     raw_asset_root = PROJECT_ROOT / "data" / "raw" / "assets" / "umamusume"
     ensure_directory(raw_asset_root)
 
@@ -1733,8 +1753,19 @@ def sync_reference_assets(config: dict[str, Any], normalized: dict[str, Any], *,
     stale_count = 0
     failed_count = 0
 
-    for asset_key in sorted(catalog.keys()):
+    asset_keys = sorted(catalog.keys())
+    total_assets = max(1, len(asset_keys))
+    for index, asset_key in enumerate(asset_keys, start=1):
         asset = catalog[asset_key]
+        if progress_callback and (index == 1 or index % 25 == 0 or index == total_assets):
+            progress = 28 + round(index / total_assets * 44)
+            progress_callback(
+                {
+                    "progress": progress,
+                    "message": f"Syncing visual assets {index}/{total_assets}",
+                    "current_task": f"Processing asset {asset_key}",
+                }
+            )
         relative_path = Path(asset["relative_path"].replace("/", str(Path("/"))).lstrip("/"))
         local_path = raw_asset_root / relative_path
         previous = get_named_value(existing_metadata.get("assets"), asset_key)
@@ -2262,20 +2293,94 @@ def save_static_app(payload: dict[str, Any], asset_metadata: Any = None) -> None
     write_utf8_file(dist_data / "reference-data.js", f"window.UMA_REFERENCE_DATA = {payload_json};\n", with_bom=True)
 
 
-def update_umamusume_reference(*, force: bool = False) -> dict[str, Any]:
-    print("Step 1/4: syncing raw GameTora datasets...")
-    sync = sync_reference_raw_data(force=force)
+def update_umamusume_reference(*, force: bool = False, progress_callback: ProgressCallback | None = None) -> dict[str, Any]:
+    if progress_callback:
+        progress_callback(
+            {
+                "progress": 2,
+                "message": "Preparing local reference update. This may take several minutes.",
+                "current_task": "Preparing update",
+            }
+        )
 
-    print("Step 2/4: normalizing local reference schemas...")
+    print("Step 1/5: syncing raw GameTora datasets...")
+    sync = sync_reference_raw_data(force=force, progress_callback=progress_callback)
+
+    print("Step 2/5: normalizing local reference schemas...")
+    if progress_callback:
+        progress_callback(
+            {
+                "progress": 18,
+                "message": "Normalizing reference datasets...",
+                "current_task": "Normalizing raw data",
+            }
+        )
     normalized = build_normalized_reference(sync["config"], sync["metadata"])
+    if progress_callback:
+        progress_callback(
+            {
+                "progress": 24,
+                "message": "Saving normalized datasets locally...",
+                "current_task": "Writing normalized JSON files",
+            }
+        )
     save_normalized_reference(normalized)
 
-    print("Step 3/4: syncing local visual assets...")
-    asset_sync = sync_reference_assets(sync["config"], normalized, force=force)
+    print("Step 3/5: syncing local visual assets...")
+    if progress_callback:
+        progress_callback(
+            {
+                "progress": 28,
+                "message": "Syncing local visual assets. This is often the longest step.",
+                "current_task": "Preparing asset synchronization",
+            }
+        )
+    asset_sync = sync_reference_assets(sync["config"], normalized, force=force, progress_callback=progress_callback)
 
-    print("Step 4/4: building static local app bundle...")
+    print("Step 4/5: building static local app bundle...")
+    if progress_callback:
+        progress_callback(
+            {
+                "progress": 74,
+                "message": "Building the local app bundle...",
+                "current_task": "Building static frontend payload",
+            }
+        )
     payload = build_static_app_payload(sync["config"], normalized, asset_sync["metadata"])
+    if progress_callback:
+        progress_callback(
+            {
+                "progress": 80,
+                "message": "Saving local app bundle...",
+                "current_task": "Writing dist files",
+            }
+        )
     save_static_app(payload, asset_sync["metadata"])
+
+    print("Step 5/5: materializing local SQLite reference...")
+    if progress_callback:
+        progress_callback(
+            {
+                "progress": 82,
+                "message": "Materializing the local SQLite reference database...",
+                "current_task": "Preparing SQLite runtime database",
+            }
+        )
+    sqlite_summary = build_reference_database(
+        sync["config"],
+        normalized,
+        asset_sync["metadata"],
+        progress_callback=progress_callback,
+    )
+
+    if progress_callback:
+        progress_callback(
+            {
+                "progress": 100,
+                "message": "Local reference update completed.",
+                "current_task": "Completed",
+            }
+        )
 
     return OrderedDict(
         [
@@ -2284,5 +2389,8 @@ def update_umamusume_reference(*, force: bool = False) -> dict[str, Any]:
             ("assetCount", asset_sync["metadata"]["counts"]["total"]),
             ("assetFailureCount", asset_sync["metadata"]["counts"]["failed"]),
             ("appEntry", str(PROJECT_ROOT / "dist" / "index.html")),
+            ("referenceDbPath", sqlite_summary["path"]),
+            ("referenceDbSizeBytes", sqlite_summary["size_bytes"]),
+            ("referenceDbSchemaVersion", sqlite_summary["runtime_schema_version"]),
         ]
     )
