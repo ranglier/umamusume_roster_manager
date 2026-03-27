@@ -212,6 +212,8 @@ def resolve_support_effect_value(effect: dict, effective_level: int) -> dict:
     current_value = None
     current_stage_index = 0
     max_stage_index = 0
+    current_unlock_level = None
+    next_unlock_level = None
     for value_entry in effect.get("values") or []:
         if not isinstance(value_entry, dict):
             continue
@@ -221,6 +223,9 @@ def resolve_support_effect_value(effect: dict, effective_level: int) -> dict:
         if effective_level >= threshold:
             current_value = value_entry.get("value")
             current_stage_index = stage_index
+            current_unlock_level = threshold
+        elif next_unlock_level is None:
+            next_unlock_level = threshold
     return {
         "effect_id": effect.get("effect_id"),
         "name": effect.get("name"),
@@ -230,6 +235,8 @@ def resolve_support_effect_value(effect: dict, effective_level: int) -> dict:
         "max_value": effect.get("max_value"),
         "current_stage_index": current_stage_index,
         "max_stage_index": max_stage_index,
+        "current_unlock_level": current_unlock_level,
+        "next_unlock_level": next_unlock_level,
     }
 
 

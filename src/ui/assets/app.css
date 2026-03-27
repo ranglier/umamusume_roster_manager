@@ -1504,6 +1504,50 @@ body.route-wizard .profile-gate::after {
   padding: 0 14px 14px;
 }
 
+.support-effect-stack {
+  display: grid;
+  gap: 10px;
+}
+
+.support-effect-card {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid rgba(115, 160, 198, 0.12);
+  border-radius: 14px;
+  background: rgba(8, 17, 26, 0.62);
+}
+
+.support-effect-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.support-effect-head strong {
+  color: var(--ink-deep);
+}
+
+.support-effect-values {
+  color: var(--accent-2);
+  font-weight: 800;
+  font-family: "IBM Plex Mono", "Fira Code", monospace;
+}
+
+.support-effect-description,
+.support-effect-meta {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 0.9rem;
+}
+
+.support-effect-meta {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
 .batch-table-shell {
   width: 100%;
   overflow: visible;

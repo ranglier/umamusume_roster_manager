@@ -937,6 +937,53 @@
     return renderCharacterStatsTable("Hint Gains", columns, [{ label: "Gain", values }]);
   }
 
+  function formatSupportEffectValue(effect, value) {
+    if (value == null || value === "") {
+      return "Locked";
+    }
+    const numericValue = Number(value);
+    const displayValue = Number.isFinite(numericValue) ? `${Number.isInteger(numericValue) ? numericValue : numericValue.toFixed(1)}` : String(value);
+    if (effect?.symbol === "percent") {
+      return `${displayValue}%`;
+    }
+    if (effect?.symbol === "level") {
+      return `Lv ${displayValue}`;
+    }
+    return displayValue;
+  }
+
+  function renderSupportCurrentEffects(projection) {
+    const effects = asArray(projection?.effective_effects);
+    if (!effects.length) {
+      return "<p class='source-note'>No support bonus data.</p>";
+    }
+
+    return `
+      <div class="support-effect-stack">
+        ${effects
+          .map((effect) => {
+            const currentValue = formatSupportEffectValue(effect, effect.current_value);
+            const maxValue = formatSupportEffectValue(effect, effect.max_value);
+            const unlockMeta = effect.current_value == null
+              ? (effect.next_unlock_level ? `Unlocks at Lv ${effect.next_unlock_level}` : "No level unlock data")
+              : (effect.next_unlock_level ? `Current at Lv ${effect.current_unlock_level || 1} | Next upgrade at Lv ${effect.next_unlock_level}` : `Current at Lv ${effect.current_unlock_level || 1} | Maxed`);
+
+            return `
+              <article class="support-effect-card">
+                <div class="support-effect-head">
+                  <strong>${escapeHtml(effect.name || `Effect #${effect.effect_id}`)}</strong>
+                  <span class="support-effect-values">${escapeHtml(`${currentValue} / ${maxValue}`)}</span>
+                </div>
+                ${effect.description ? `<p class="support-effect-description">${escapeHtml(effect.description)}</p>` : ""}
+                <p class="support-effect-meta">${escapeHtml(unlockMeta)}</p>
+              </article>
+            `;
+          })
+          .join("")}
+      </div>
+    `;
+  }
+
   function renderFlagBadgeList(values) {
     const entries = asArray(values).filter(Boolean);
     if (!entries.length) {
@@ -1187,6 +1234,14 @@
 
   function renderSupports(detail, rosterProjection) {
     return `
+      ${rosterProjection
+        ? `
+          <div class="detail-section">
+            <h3>Current Support Bonuses</h3>
+            ${renderSupportCurrentEffects(rosterProjection)}
+          </div>
+        `
+        : ""}
       <div class="detail-section">
         <h3>Unique Effects</h3>
         ${renderSimpleList(detail.unique_effects, (effect) => `${effect.name || `Effect #${effect.effect_id}`} (${effect.value})`)}
