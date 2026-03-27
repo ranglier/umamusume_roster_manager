@@ -7,6 +7,9 @@
       ["races", "Races"],
       ["racetracks", "Racetracks"],
       ["g1_factors", "G1 Factors"],
+      ["cm_targets", "CM Targets"],
+      ["scenarios", "Scenarios"],
+      ["training_events", "Training Events"],
       ["compatibility", "Compatibility"],
     ];
 
@@ -61,6 +64,7 @@
   const toolbarEl = document.getElementById("toolbar");
   const entityTitleEl = document.getElementById("entityTitle");
   const entityMetaEl = document.getElementById("entityMeta");
+  const browseActionsEl = document.getElementById("browseActions");
   const resultCountEl = document.getElementById("resultCount");
   const listEl = document.getElementById("list");
   const detailEl = document.getElementById("detail");
@@ -76,9 +80,12 @@
   const referenceEntityKeys = Object.keys(data.entities);
   const rosterEntityKeys = ["characters", "supports"];
   const inlineMediaEntityKeys = new Set(["characters", "skills", "supports"]);
-  const rosterFilterDefinitions = [
+  const rosterFilterDefinitionsBase = [
     { key: "_roster_favorite", label: "Favorites" },
     { key: "_roster_note", label: "Has note" },
+    { key: "_roster_tag", label: "Tags" },
+    { key: "_roster_status", label: "Status" },
+    { key: "_roster_progress", label: "Progress" },
   ];
 
   const state = {
@@ -90,6 +97,10 @@
     bootstrapStatus: null,
     rosterDocument: normalizeRosterDocument(null),
     rosterProfileId: null,
+    rosterViews: {
+      characters: { profile_id: null, entity: "characters", updated_at: "", entries: {} },
+      supports: { profile_id: null, entity: "supports", updated_at: "", entries: {} },
+    },
     rosterStatus: { kind: "idle", message: "" },
     profilesApiStatus: { kind: "idle", message: "" },
     adminJobs: { active_job: null, recent_jobs: [] },
@@ -153,6 +164,17 @@
       updated_at: roster.updated_at || "",
       characters: roster.characters && typeof roster.characters === "object" ? roster.characters : {},
       supports: roster.supports && typeof roster.supports === "object" ? roster.supports : {},
+    };
+  }
+
+  function normalizeRosterViewPayload(entityKey, payload) {
+    const safePayload = payload && typeof payload === "object" ? payload : {};
+    const entries = safePayload.entries && typeof safePayload.entries === "object" ? safePayload.entries : {};
+    return {
+      profile_id: safePayload.profile_id || null,
+      entity: entityKey,
+      updated_at: safePayload.updated_at || "",
+      entries,
     };
   }
 
@@ -472,6 +494,7 @@
       query: "",
       filters: getDefaultFilters(entityKey, mode),
       selectedId: null,
+      presentation: mode === "roster" ? "detail" : "cards",
     };
   }
 
@@ -489,6 +512,14 @@
 
   function getActiveProfile() {
     return state.profilesIndex.profiles.find((profile) => profile.id === state.activeProfileId) || null;
+  }
+
+  function getRosterViewPayload(entityKey) {
+    return state.rosterViews[entityKey] || { profile_id: null, entity: entityKey, updated_at: "", entries: {} };
+  }
+
+  function getRosterViewEntry(entityKey, item) {
+    return getRosterViewPayload(entityKey).entries?.[item.id] || null;
   }
 
   function syncSelectedProfileId() {
@@ -885,7 +916,124 @@
     return renderCharacterStatsTable("Hint Gains", columns, [{ label: "Gain", values }]);
   }
 
-  function renderCharacters(detail) {
+  function renderFlagBadgeList(values) {
+    const entries = asArray(values).filter(Boolean);
+    if (!entries.length) {
+      return "<p class='source-note'>None</p>";
+    }
+    return `<div class="badge-row">${entries.map((entry) => renderBadge(entry)).join("")}</div>`;
+  }
+
+  function renderCostRows(costs) {
+    return tableFromRows(
+      asArray(costs).map((cost) => [
+        `Slot ${cost.slot_index}`,
+        escapeHtml(`Category ${cost.item_category ?? "-"} | Item ${cost.item_id ?? "-"} | Qty ${cost.item_num ?? "-"}`),
+      ]),
+    );
+  }
+
+  function renderCharacterRosterProjection(projection) {
+    if (!projection) {
+      return "";
+    }
+
+    return `
+      <div class="detail-section roster-derived-section">
+        <h3>Current Progression</h3>
+        ${tableFromRows([
+          ["Stars", escapeHtml(projection.stars)],
+          ["Awakening", escapeHtml(projection.awakening)],
+          ["Unique Level", escapeHtml(projection.unique_level)],
+          ["Progress", escapeHtml(projection.progress_bucket)],
+          ["Unlock State", escapeHtml(projection.unlock_state)],
+        ])}
+        <h4>Local Tags</h4>
+        ${renderFlagBadgeList(projection.custom_tags)}
+        <h4>Status Flags</h4>
+        ${renderFlagBadgeList(projection.status_flags)}
+      </div>
+      <div class="detail-section roster-derived-section">
+        <h3>Unlocked Awakening Skills</h3>
+        ${renderLinkedSkillList(projection.unlocked_awakening_skills)}
+        <h4>Locked Awakening Skills</h4>
+        ${renderLinkedSkillList(projection.locked_awakening_skills)}
+      </div>
+      <div class="detail-section roster-derived-section">
+        <h3>Awakening Costs</h3>
+        <h4>Unlocked Levels</h4>
+        ${asArray(projection.unlocked_awakening_levels).length
+          ? asArray(projection.unlocked_awakening_levels)
+            .map((level) => `
+              <div class="roster-progress-card">
+                <strong>Awakening ${escapeHtml(level.awakening_level)}</strong>
+                ${level.skill ? `<p class="source-note">${escapeHtml(level.skill.name || `Skill #${level.skill.id}`)}</p>` : ""}
+                ${renderCostRows(level.costs)}
+              </div>
+            `)
+            .join("")
+          : "<p class='source-note'>None</p>"}
+        <h4>Locked Levels</h4>
+        ${asArray(projection.locked_awakening_levels).length
+          ? asArray(projection.locked_awakening_levels)
+            .map((level) => `
+              <div class="roster-progress-card">
+                <strong>Awakening ${escapeHtml(level.awakening_level)}</strong>
+                ${level.skill ? `<p class="source-note">${escapeHtml(level.skill.name || `Skill #${level.skill.id}`)}</p>` : ""}
+                ${renderCostRows(level.costs)}
+              </div>
+            `)
+            .join("")
+          : "<p class='source-note'>None</p>"}
+      </div>
+    `;
+  }
+
+  function renderSupportRosterProjection(projection) {
+    if (!projection) {
+      return "";
+    }
+
+    return `
+      <div class="detail-section roster-derived-section">
+        <h3>Current Progression</h3>
+        ${tableFromRows([
+          ["Level", escapeHtml(projection.level)],
+          ["Limit Break", escapeHtml(projection.limit_break)],
+          ["Level Cap", escapeHtml(projection.level_cap)],
+          ["Rarity Max Level", escapeHtml(projection.rarity_max_level)],
+          ["Progress", escapeHtml(projection.progress_bucket)],
+          ["Usable", escapeHtml(projection.usable ? "Yes" : "No")],
+          ["Current EXP", escapeHtml(projection.total_exp ?? "-")],
+          ["Cap EXP", escapeHtml(projection.cap_total_exp ?? "-")],
+        ])}
+        <h4>Local Tags</h4>
+        ${renderFlagBadgeList(projection.custom_tags)}
+        <h4>Status Flags</h4>
+        ${renderFlagBadgeList(projection.status_flags)}
+      </div>
+      <div class="detail-section roster-derived-section">
+        <h3>Effective Support Values</h3>
+        ${tableFromRows(
+          asArray(projection.effective_effects).map((effect) => [
+            effect.name || `Effect #${effect.effect_id}`,
+            escapeHtml(`${effect.current_value ?? "-"} / ${effect.max_value ?? "-"} | stage ${effect.current_stage_index || 0}/${effect.max_stage_index || 0}`),
+          ]),
+        )}
+      </div>
+      <div class="detail-section roster-derived-section">
+        <h3>Unique Effects At Current State</h3>
+        ${tableFromRows(
+          asArray(projection.effective_unique_effects).map((effect) => [
+            effect.name || `Effect #${effect.effect_id}`,
+            escapeHtml(`${effect.unlocked ? "Unlocked" : "Locked"} | ${effect.value ?? "-"}`),
+          ]),
+        )}
+      </div>
+    `;
+  }
+
+  function renderCharacters(detail, rosterProjection) {
     const release = detail.release || {};
     const aptitudes = detail.aptitudes || {};
     const stats = detail.stats || {};
@@ -986,10 +1134,11 @@
           ["Voice Actor", escapeHtml(detail.profile?.voice_actor?.en || detail.profile?.voice_actor?.ja || "-")],
         ])}
       </div>
+      ${renderCharacterRosterProjection(rosterProjection)}
     `;
   }
 
-  function renderSupports(detail) {
+  function renderSupports(detail, rosterProjection) {
     return `
       ${tableFromRows([
         ["Support ID", escapeHtml(detail.support_id)],
@@ -1023,6 +1172,7 @@
         <h3>Stat Gain</h3>
         ${renderSupportStatGainTable(detail.hint_other_effects)}
       </div>
+      ${renderSupportRosterProjection(rosterProjection)}
     `;
   }
 
@@ -1136,6 +1286,108 @@
     `;
   }
 
+  function renderCmTargets(detail) {
+    const race = detail.race_profile || {};
+    return `
+      ${tableFromRows([
+        ["CM ID", escapeHtml(detail.cm_id)],
+        ["Name", escapeHtml(detail.name)],
+        ["Dates", escapeHtml(`${detail.start_at || "-"} -> ${detail.end_at || "-"}`)],
+        ["Track", escapeHtml(race.track_name || "-")],
+        ["Surface", escapeHtml(race.surface || "-")],
+        ["Distance", escapeHtml(`${race.distance_m || "-"}m | ${race.distance_category || "-"}`)],
+        ["Direction", escapeHtml(race.direction || "-")],
+        ["Season", escapeHtml(race.season || "-")],
+        ["Weather", escapeHtml(race.weather || "-")],
+        ["Condition", escapeHtml(race.condition || "-")],
+      ])}
+      <div class="detail-section">
+        <h3>Related Races</h3>
+        ${renderReferenceList(detail.related_races)}
+      </div>
+      <div class="detail-section">
+        <h3>Related Racetracks</h3>
+        ${renderReferenceList(detail.related_racetracks)}
+      </div>
+    `;
+  }
+
+  function renderScenarios(detail) {
+    const statColumns = [
+      { key: "speed", label: "Speed" },
+      { key: "stamina", label: "Stamina" },
+      { key: "power", label: "Power" },
+      { key: "guts", label: "Guts" },
+      { key: "wit", label: "Wit" },
+    ];
+
+    return `
+      ${tableFromRows([
+        ["Scenario ID", escapeHtml(detail.scenario_id)],
+        ["Key", escapeHtml(detail.key || "-")],
+        ["Program", escapeHtml(detail.program_label || "-")],
+        ["Order", escapeHtml(detail.order ?? "-")],
+      ])}
+      <div class="detail-section">
+        <h3>Stat Caps</h3>
+        ${renderCharacterGradeGrid("Caps", statColumns, detail.stat_caps || {}, { compact: true })}
+      </div>
+      <div class="detail-section">
+        <h3>Factor Effects</h3>
+        ${renderSimpleList(detail.factor_effects, (entry) => entry)}
+      </div>
+      <div class="detail-section">
+        <h3>Scenario Factors</h3>
+        ${tableFromRows(
+          asArray(detail.factors).map((factor) => [
+            factor.name || `Factor #${factor.id}`,
+            escapeHtml(asArray(factor.effects).join(", ") || "-"),
+          ]),
+        )}
+      </div>
+    `;
+  }
+
+  function renderTrainingEvents(detail) {
+    return `
+      ${tableFromRows([
+        ["Event Source", escapeHtml(detail.source_label || detail.event_source || "-")],
+        ["Owner ID", escapeHtml(detail.owner_id || "-")],
+        ["Event ID", escapeHtml(detail.event_id || "-")],
+        ["Name Source", escapeHtml(detail.name_source || "-")],
+        ["Branching", escapeHtml(detail.has_branching ? "Yes" : "No")],
+        ["Choice Count", escapeHtml(detail.choice_count ?? 0)],
+      ])}
+      <div class="detail-section">
+        <h3>Linked Entities</h3>
+        ${renderReferenceList(detail.linked_entities)}
+      </div>
+      <div class="detail-section">
+        <h3>Choices</h3>
+        ${tableFromRows(
+          asArray(detail.choices).map((choice) => [
+            choice.choice_label || `Choice ${choice.index}`,
+            escapeHtml(`${choice.effect_count || 0} effect token(s)${choice.choice_token != null ? ` | token ${choice.choice_token}` : ""}`),
+          ]),
+        )}
+      </div>
+      <div class="detail-section">
+        <h3>Raw Event Context</h3>
+        <pre class="code-block">${escapeHtml(
+          JSON.stringify(
+            {
+              raw_choice_token: detail.raw_choice_token,
+              raw_extras: detail.raw_extras,
+              source_metadata: detail.source_metadata,
+            },
+            null,
+            2,
+          ),
+        )}</pre>
+      </div>
+    `;
+  }
+
   function renderCompatibility(detail, model) {
     return `
       ${tableFromRows([
@@ -1177,6 +1429,9 @@
         note: "",
         stars: Number(item?.detail?.rarity) || 0,
         awakening: 0,
+        unique_level: 1,
+        custom_tags: [],
+        status_flags: [],
       };
     }
 
@@ -1187,6 +1442,8 @@
         note: "",
         level: 1,
         limit_break: 0,
+        custom_tags: [],
+        status_flags: [],
       };
     }
 
@@ -1213,6 +1470,12 @@
     Object.keys(defaults).forEach((key) => {
       const value = entry[key];
       const defaultValue = defaults[key];
+      if (Array.isArray(value)) {
+        if (JSON.stringify(value) !== JSON.stringify(defaultValue)) {
+          pruned[key] = value;
+        }
+        return;
+      }
       if (typeof value === "string") {
         if (value !== defaultValue) {
           pruned[key] = value;
@@ -1265,12 +1528,16 @@
       if (entityKey === "characters") {
         badges.push(`${entry.stars}-star`);
         badges.push(`Awk ${entry.awakening}`);
+        badges.push(`U${entry.unique_level || 1}`);
       }
       if (entityKey === "supports") {
         badges.push(`Lv ${entry.level}`);
         badges.push(`LB ${entry.limit_break}`);
       }
     }
+
+    asArray(entry.custom_tags).slice(0, 2).forEach((tag) => badges.push(tag));
+    asArray(entry.status_flags).slice(0, 2).forEach((flag) => badges.push(flag));
 
     return badges;
   }
@@ -1288,7 +1555,69 @@
     if (filterKey === "_roster_note") {
       return [{ value: "yes", label: "Has note", count: rosterCountForEntity(entityKey, (entry) => Boolean(entry.note?.trim())) }];
     }
+    if (filterKey === "_roster_tag") {
+      return buildRosterValueOptions(entityKey, (viewEntry) => viewEntry?.derived?.custom_tags);
+    }
+    if (filterKey === "_roster_status") {
+      return buildRosterValueOptions(entityKey, (viewEntry) => viewEntry?.derived?.status_flags);
+    }
+    if (filterKey === "_roster_progress") {
+      return buildRosterValueOptions(entityKey, (viewEntry) => viewEntry?.derived?.progress_bucket, {
+        labelMap: {
+          base: "Base",
+          started: "Started",
+          advanced: "Advanced",
+          maxed: "Maxed",
+          starter: "Starter",
+          developing: "Developing",
+          usable: "Usable",
+        },
+      });
+    }
+    if (filterKey === "_roster_unlock" && entityKey === "characters") {
+      return buildRosterValueOptions(entityKey, (viewEntry) => viewEntry?.derived?.unlock_state, {
+        labelMap: { none: "No unlock", partial: "Partial", full: "Full" },
+      });
+    }
+    if (filterKey === "_roster_usable" && entityKey === "supports") {
+      return [
+        { value: "yes", label: "Usable", count: rosterCountForEntity(entityKey, (_entry, item) => Boolean(getRosterViewEntry(entityKey, item)?.derived?.usable)) },
+      ];
+    }
     return [];
+  }
+
+  function buildRosterValueOptions(entityKey, selector, options = {}) {
+    const counts = new Map();
+    const payload = getRosterViewPayload(entityKey);
+    Object.values(payload.entries || {}).forEach((viewEntry) => {
+      asArray(selector(viewEntry)).forEach((value) => {
+        const key = String(value || "").trim();
+        if (!key) {
+          return;
+        }
+        counts.set(key, (counts.get(key) || 0) + 1);
+      });
+    });
+
+    return Array.from(counts.entries())
+      .sort((left, right) => left[0].localeCompare(right[0]))
+      .map(([value, count]) => ({
+        value,
+        label: options.labelMap?.[value] || value,
+        count,
+      }));
+  }
+
+  function getRosterFilterDefinitions(entityKey) {
+    const definitions = [...rosterFilterDefinitionsBase];
+    if (entityKey === "characters") {
+      definitions.push({ key: "_roster_unlock", label: "Unlock state" });
+    }
+    if (entityKey === "supports") {
+      definitions.push({ key: "_roster_usable", label: "Usable" });
+    }
+    return definitions;
   }
 
   function getFilterDefinitions(mode, entityKey) {
@@ -1297,7 +1626,7 @@
     if (mode !== "roster") {
       return definitions;
     }
-    return [...definitions, ...rosterFilterDefinitions];
+    return [...definitions, ...getRosterFilterDefinitions(entityKey)];
   }
 
   function getFilterOptions(mode, entityKey, definition) {
@@ -1309,11 +1638,27 @@
 
   function matchesCustomRosterFilter(filterKey, item) {
     const entry = getRosterEntry(item.entityKey || item.__entityKey || "", item);
+    const viewEntry = getRosterViewEntry(item.entityKey || item.__entityKey || "", item);
     if (filterKey === "_roster_favorite") {
-      return entry.favorite;
+      return entry.favorite ? ["yes"] : [];
     }
     if (filterKey === "_roster_note") {
-      return Boolean(entry.note?.trim());
+      return entry.note?.trim() ? ["yes"] : [];
+    }
+    if (filterKey === "_roster_tag") {
+      return asArray(viewEntry?.derived?.custom_tags);
+    }
+    if (filterKey === "_roster_status") {
+      return asArray(viewEntry?.derived?.status_flags);
+    }
+    if (filterKey === "_roster_progress") {
+      return asArray(viewEntry?.derived?.progress_bucket);
+    }
+    if (filterKey === "_roster_unlock") {
+      return asArray(viewEntry?.derived?.unlock_state);
+    }
+    if (filterKey === "_roster_usable") {
+      return viewEntry?.derived?.usable ? ["yes"] : [];
     }
     return true;
   }
@@ -1342,7 +1687,11 @@
         }
 
         if (definition.key.startsWith("_roster_")) {
-          return selected.includes("yes") ? matchesCustomRosterFilter(definition.key, item) : true;
+          const values = asArray(matchesCustomRosterFilter(definition.key, item));
+          if (!values.length) {
+            return false;
+          }
+          return selected.some((value) => values.includes(value));
         }
 
         const rawValue = item.filters?.[definition.key];
@@ -2087,8 +2436,205 @@
     });
   }
 
+  function renderBrowseActions(route, filteredItems) {
+    if (!browseActionsEl) {
+      return;
+    }
+
+    if (route.page !== "browse" || route.mode !== "roster") {
+      browseActionsEl.innerHTML = "";
+      browseActionsEl.hidden = true;
+      return;
+    }
+
+    const localState = getViewState(route.mode, route.entityKey);
+    const isBatch = localState.presentation === "batch";
+    browseActionsEl.hidden = false;
+    browseActionsEl.innerHTML = `
+      <div class="presentation-switch">
+        <button type="button" class="${!isBatch ? "active" : ""}" data-roster-presentation="detail">Detail</button>
+        <button type="button" class="${isBatch ? "active" : ""}" data-roster-presentation="batch">Batch</button>
+      </div>
+      ${isBatch ? `
+        <div class="batch-toolbar">
+          <button type="button" class="button-secondary" data-batch-favorite="yes">Favorite filtered</button>
+          <button type="button" class="button-secondary" data-batch-favorite="no">Unfavorite filtered</button>
+          <button type="button" class="button-secondary" data-batch-tag="add">Add tag</button>
+          <button type="button" class="button-secondary" data-batch-tag="remove">Remove tag</button>
+        </div>
+      ` : ""}
+    `;
+
+    browseActionsEl.querySelectorAll("[data-roster-presentation]").forEach((button) => {
+      button.addEventListener("click", () => {
+        localState.presentation = button.dataset.rosterPresentation;
+        if (localState.presentation === "batch") {
+          localState.selectedId = null;
+        }
+        requestRender();
+      });
+    });
+
+    browseActionsEl.querySelectorAll("[data-batch-favorite]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const nextValue = button.dataset.batchFavorite === "yes";
+        await applyBatchFavorite(route.entityKey, filteredItems, nextValue);
+      });
+    });
+
+    browseActionsEl.querySelectorAll("[data-batch-tag]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const action = button.dataset.batchTag;
+        const value = window.prompt(action === "add" ? "Tag to add to filtered roster entries" : "Tag to remove from filtered roster entries", "");
+        if (!value || !value.trim()) {
+          return;
+        }
+        await applyBatchTag(route.entityKey, filteredItems, action, value.trim());
+      });
+    });
+  }
+
+  async function applyBatchFavorite(entityKey, filteredItems, nextValue) {
+    filteredItems.forEach((item) => {
+      const entry = getRosterEntry(entityKey, item);
+      setRosterEntry(entityKey, item, {
+        ...entry,
+        owned: true,
+        favorite: nextValue,
+      });
+    });
+    await persistRosterDocument(nextValue ? "Filtered roster entries marked as favorites." : "Filtered roster entries removed from favorites.");
+  }
+
+  async function applyBatchTag(entityKey, filteredItems, action, rawTag) {
+    filteredItems.forEach((item) => {
+      const entry = getRosterEntry(entityKey, item);
+      const tags = new Set(asArray(entry.custom_tags));
+      if (action === "add") {
+        tags.add(rawTag);
+      } else {
+        tags.delete(rawTag);
+      }
+      setRosterEntry(entityKey, item, {
+        ...entry,
+        owned: true,
+        custom_tags: Array.from(tags),
+      });
+    });
+    await persistRosterDocument(action === "add" ? `Tag "${rawTag}" added to filtered roster entries.` : `Tag "${rawTag}" removed from filtered roster entries.`);
+  }
+
+  function renderBatchList(entityKey, filteredItems) {
+    if (!filteredItems.length) {
+      listEl.innerHTML = "<div class='empty-state'>No owned entry matches the current roster search and filters.</div>";
+      return;
+    }
+
+    listEl.innerHTML = `
+      <div class="batch-table-shell">
+        <table class="batch-table">
+          <thead>
+            <tr>
+              <th>Entry</th>
+              <th>Favorite</th>
+              ${entityKey === "characters" ? "<th>Stars</th><th>Awk</th><th>Unique</th><th>Unlock</th>" : "<th>Level</th><th>LB</th><th>Cap</th><th>Usable</th>"}
+              <th>Tags</th>
+              <th>Status</th>
+              <th>Progress</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${filteredItems.map((item) => {
+              const entry = getRosterEntry(entityKey, item);
+              const derived = getRosterViewEntry(entityKey, item)?.derived || {};
+              return `
+                <tr data-batch-row="${escapeHtml(item.id)}">
+                  <td>
+                    <button type="button" class="batch-open-button" data-open-item="${escapeHtml(item.id)}">${escapeHtml(item.title)}</button>
+                    <div class="batch-row-subtitle">${escapeHtml(item.subtitle || "")}</div>
+                  </td>
+                  <td><input data-batch-field="favorite" type="checkbox" ${entry.favorite ? "checked" : ""}></td>
+                  ${entityKey === "characters"
+                    ? `
+                      <td><input data-batch-field="stars" type="number" min="0" max="5" value="${escapeHtml(entry.stars)}"></td>
+                      <td><input data-batch-field="awakening" type="number" min="0" max="5" value="${escapeHtml(entry.awakening)}"></td>
+                      <td><input data-batch-field="unique_level" type="number" min="1" max="6" value="${escapeHtml(entry.unique_level || 1)}"></td>
+                      <td>${escapeHtml(derived.unlock_state || "-")}</td>
+                    `
+                    : `
+                      <td><input data-batch-field="level" type="number" min="1" max="50" value="${escapeHtml(entry.level)}"></td>
+                      <td><input data-batch-field="limit_break" type="number" min="0" max="4" value="${escapeHtml(entry.limit_break)}"></td>
+                      <td>${escapeHtml(derived.level_cap || "-")}</td>
+                      <td>${escapeHtml(derived.usable ? "Yes" : "No")}</td>
+                    `}
+                  <td><input data-batch-field="custom_tags" type="text" value="${escapeHtml(asArray(entry.custom_tags).join(", "))}" placeholder="tag, tag"></td>
+                  <td><input data-batch-field="status_flags" type="text" value="${escapeHtml(asArray(entry.status_flags).join(", "))}" placeholder="flag, flag"></td>
+                  <td>${escapeHtml(derived.progress_bucket || "-")}</td>
+                  <td><button type="button" class="button-strong batch-save-button" data-save-batch-row="${escapeHtml(item.id)}">Save</button></td>
+                </tr>
+              `;
+            }).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+
+    listEl.querySelectorAll("[data-open-item]").forEach((button) => {
+      button.addEventListener("click", () => {
+        setBrowseHash("roster", entityKey, button.dataset.openItem);
+      });
+    });
+
+    listEl.querySelectorAll("[data-save-batch-row]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const item = filteredItems.find((entry) => entry.id === button.dataset.saveBatchRow);
+        const row = button.closest("[data-batch-row]");
+        if (!item || !row) {
+          return;
+        }
+        await saveBatchRow(entityKey, item, row);
+      });
+    });
+  }
+
+  function collectBatchRowData(entityKey, item, row) {
+    const defaults = getDefaultRosterEntry(entityKey, item);
+    const baseEntry = {
+      owned: true,
+      favorite: row.querySelector('[data-batch-field="favorite"]')?.checked || false,
+      note: getRosterEntry(entityKey, item).note || "",
+      custom_tags: parseRosterTokenList(row.querySelector('[data-batch-field="custom_tags"]')?.value),
+      status_flags: parseRosterTokenList(row.querySelector('[data-batch-field="status_flags"]')?.value),
+    };
+
+    if (entityKey === "characters") {
+      return {
+        ...baseEntry,
+        stars: clampNumber(row.querySelector('[data-batch-field="stars"]')?.value, 0, 5, defaults.stars),
+        awakening: clampNumber(row.querySelector('[data-batch-field="awakening"]')?.value, 0, 5, defaults.awakening),
+        unique_level: clampNumber(row.querySelector('[data-batch-field="unique_level"]')?.value, 1, 6, defaults.unique_level || 1),
+      };
+    }
+
+    return {
+      ...baseEntry,
+      level: clampNumber(row.querySelector('[data-batch-field="level"]')?.value, 1, 50, defaults.level),
+      limit_break: clampNumber(row.querySelector('[data-batch-field="limit_break"]')?.value, 0, 4, defaults.limit_break),
+    };
+  }
+
+  async function saveBatchRow(entityKey, item, row) {
+    setRosterEntry(entityKey, item, collectBatchRowData(entityKey, item, row));
+    await persistRosterDocument(`Saved ${item.title}.`);
+  }
+
   function renderList(mode, entityKey, filteredItems) {
     const localState = getViewState(mode, entityKey);
+    if (mode === "roster" && localState.presentation === "batch") {
+      renderBatchList(entityKey, filteredItems);
+      return;
+    }
     if (!filteredItems.length) {
       listEl.innerHTML = mode === "roster"
         ? "<div class='empty-state'>No owned entry matches the current roster search and filters. Go to <strong>Catalog</strong> to add the characters and supports you own first.</div>"
@@ -2153,6 +2699,8 @@
     }
 
     const entry = getRosterEntry(entityKey, item);
+    const viewEntry = getRosterViewEntry(entityKey, item);
+    const derived = viewEntry?.derived || null;
     const statusText = state.rosterStatus.message || "Changes are stored locally for the active profile.";
     const progressFields = entityKey === "characters"
       ? `
@@ -2163,6 +2711,10 @@
         <label class="field-stack">
           <span>Awakening</span>
           <input name="awakening" type="number" min="0" max="5" value="${escapeHtml(entry.awakening)}">
+        </label>
+        <label class="field-stack">
+          <span>Unique Level</span>
+          <input name="unique_level" type="number" min="1" max="6" value="${escapeHtml(entry.unique_level || 1)}">
         </label>
       `
       : `
@@ -2190,6 +2742,14 @@
           <div class="roster-field-grid">
             ${progressFields}
             <label class="field-stack field-stack-full">
+              <span>Local Tags</span>
+              <input name="custom_tags" type="text" placeholder="comma, separated, tags" value="${escapeHtml(asArray(entry.custom_tags).join(", "))}">
+            </label>
+            <label class="field-stack field-stack-full">
+              <span>Status Flags</span>
+              <input name="status_flags" type="text" placeholder="ready, farming, candidate" value="${escapeHtml(asArray(entry.status_flags).join(", "))}">
+            </label>
+            <label class="field-stack field-stack-full">
               <span>Note</span>
               <textarea name="note" rows="4" placeholder="Optional local note">${escapeHtml(entry.note || "")}</textarea>
             </label>
@@ -2201,17 +2761,29 @@
           </div>
           <p id="rosterStatus" class="source-note ${state.rosterStatus.kind === "error" ? "error-text" : ""}">${escapeHtml(statusText)}</p>
         </form>
+        ${derived ? `
+          <div class="roster-editor-meta-grid">
+            <div class="admin-meta-card"><span class="meta-label">Progress</span><strong>${escapeHtml(derived.progress_bucket || "-")}</strong></div>
+            ${entityKey === "characters"
+              ? `<div class="admin-meta-card"><span class="meta-label">Unlock State</span><strong>${escapeHtml(derived.unlock_state || "-")}</strong></div>`
+              : `<div class="admin-meta-card"><span class="meta-label">Usable</span><strong>${escapeHtml(derived.usable ? "Yes" : "No")}</strong></div>`}
+            <div class="admin-meta-card"><span class="meta-label">Tags</span><strong>${escapeHtml(asArray(derived.custom_tags).join(", ") || "-")}</strong></div>
+          </div>
+        ` : ""}
       </div>
     `;
   }
 
-  function renderBrowseBody(entityKey, detail) {
-    if (entityKey === "characters") return renderCharacters(detail);
-    if (entityKey === "supports") return renderSupports(detail);
+  function renderBrowseBody(entityKey, detail, rosterProjection) {
+    if (entityKey === "characters") return renderCharacters(detail, rosterProjection);
+    if (entityKey === "supports") return renderSupports(detail, rosterProjection);
     if (entityKey === "skills") return renderSkills(detail);
     if (entityKey === "races") return renderRaces(detail);
     if (entityKey === "racetracks") return renderRacetracks(detail);
     if (entityKey === "g1_factors") return renderG1Factors(detail);
+    if (entityKey === "cm_targets") return renderCmTargets(detail);
+    if (entityKey === "scenarios") return renderScenarios(detail);
+    if (entityKey === "training_events") return renderTrainingEvents(detail);
     if (entityKey === "compatibility") return renderCompatibility(detail, data.entities[entityKey].model);
     return "";
   }
@@ -2243,6 +2815,13 @@
   }
 
   function renderDetail(route, selectedItem) {
+    const localState = route.page === "browse" ? getViewState(route.mode, route.entityKey) : null;
+    const isBatchMode = Boolean(route.mode === "roster" && localState?.presentation === "batch");
+    if (isBatchMode) {
+      detailEl.innerHTML = "<div class='detail-empty'>Batch mode focuses on quick inline maintenance. Use <strong>Open</strong> on a row or switch back to <strong>Detail</strong> mode for the full roster sheet.</div>";
+      return;
+    }
+
     if (!selectedItem) {
       detailEl.innerHTML = route.mode === "roster"
         ? "<div class='detail-empty'>Select an owned entry to inspect its reference data and edit the local roster fields. If the roster is empty, add entries from <strong>Catalog</strong> first.</div>"
@@ -2256,13 +2835,14 @@
     const entity = data.entities[route.entityKey];
     const detail = selectedItem.detail;
     const rosterBadges = getRosterBadges(route.entityKey, selectedItem, route.mode);
+    const rosterProjection = route.mode === "roster" ? getRosterViewEntry(route.entityKey, selectedItem)?.derived || null : null;
 
     detailEl.innerHTML = `
       <button class="detail-close-button" type="button" id="detailCloseButton">Close details</button>
       ${renderDetailHeader(selectedItem, route.entityKey, rosterBadges)}
       ${route.mode === "reference" ? renderReferenceRosterActions(route.entityKey, selectedItem) : ""}
       ${route.mode === "roster" ? renderRosterEditor(route.entityKey, selectedItem) : ""}
-      ${renderBrowseBody(route.entityKey, detail)}
+      ${renderBrowseBody(route.entityKey, detail, rosterProjection)}
       <div class="detail-section">
         <h3>Source</h3>
         <p class="source-note">Imported locally on ${escapeHtml(formatDateTime(entity.source.imported_at || "-"))}.</p>
@@ -2398,6 +2978,7 @@
   function renderBrowse(route) {
     const entity = data.entities[route.entityKey];
     const localState = getViewState(route.mode, route.entityKey);
+    const isBatchMode = route.mode === "roster" && localState.presentation === "batch";
 
     if (route.itemId) {
       localState.selectedId = route.itemId;
@@ -2423,18 +3004,23 @@
     renderFilters(route.mode, route.entityKey);
 
     const filteredItems = getFilteredItems(route.mode, route.entityKey);
+    renderBrowseActions(route, filteredItems);
     resultCountEl.textContent = `${filteredItems.length} visible`;
 
     if (localState.selectedId && !filteredItems.some((item) => item.id === localState.selectedId)) {
       localState.selectedId = null;
     }
 
-    if (!isCompactLayout() && !localState.selectedId) {
+    if (!isCompactLayout() && !localState.selectedId && !isBatchMode) {
       localState.selectedId = filteredItems[0]?.id || null;
     }
 
     const selectedItem = filteredItems.find((item) => item.id === localState.selectedId) || null;
-    syncLayoutMode(Boolean(selectedItem));
+    if (detailColumnEl) {
+      detailColumnEl.hidden = isBatchMode;
+    }
+    document.body.classList.toggle("roster-batch-mode", isBatchMode);
+    syncLayoutMode(Boolean(selectedItem) && !isBatchMode);
     renderList(route.mode, route.entityKey, filteredItems);
     renderDetail(route, selectedItem);
   }
@@ -2500,6 +3086,8 @@
         state.activeProfileId = null;
         state.rosterProfileId = null;
         state.rosterDocument = normalizeRosterDocument(null);
+        state.rosterViews.characters = normalizeRosterViewPayload("characters", null);
+        state.rosterViews.supports = normalizeRosterViewPayload("supports", null);
       }
       syncSelectedProfileId();
     } catch (error) {
@@ -2509,6 +3097,8 @@
       state.activeProfileId = null;
       state.rosterProfileId = null;
       state.rosterDocument = normalizeRosterDocument(null);
+      state.rosterViews.characters = normalizeRosterViewPayload("characters", null);
+      state.rosterViews.supports = normalizeRosterViewPayload("supports", null);
       state.profilesApiStatus = {
         kind: "error",
         message: "Profile API unavailable. Restart the local Python server to enable profile creation and selection.",
@@ -2540,6 +3130,8 @@
     if (!profileId) {
       state.rosterProfileId = null;
       state.rosterDocument = normalizeRosterDocument(null);
+      state.rosterViews.characters = normalizeRosterViewPayload("characters", null);
+      state.rosterViews.supports = normalizeRosterViewPayload("supports", null);
       return;
     }
 
@@ -2550,6 +3142,31 @@
     state.rosterDocument = normalizeRosterDocument(await apiJson(`/api/profiles/${encodeURIComponent(profileId)}/roster`));
     state.rosterProfileId = profileId;
     state.rosterStatus = { kind: "idle", message: "" };
+  }
+
+  async function loadRosterViewsForProfile(profileId, force) {
+    if (!profileId) {
+      state.rosterViews.characters = normalizeRosterViewPayload("characters", null);
+      state.rosterViews.supports = normalizeRosterViewPayload("supports", null);
+      return;
+    }
+
+    const entitiesToLoad = rosterEntityKeys.filter((entityKey) => {
+      const payload = getRosterViewPayload(entityKey);
+      return force || payload.profile_id !== profileId;
+    });
+
+    if (!entitiesToLoad.length) {
+      return;
+    }
+
+    const payloads = await Promise.all(
+      entitiesToLoad.map((entityKey) => apiJson(`/api/profiles/${encodeURIComponent(profileId)}/roster-view/${encodeURIComponent(entityKey)}`)),
+    );
+
+    entitiesToLoad.forEach((entityKey, index) => {
+      state.rosterViews[entityKey] = normalizeRosterViewPayload(entityKey, payloads[index]);
+    });
   }
 
   async function createProfileAndOpen(name) {
@@ -2574,6 +3191,8 @@
       state.activeProfileId = null;
       state.rosterProfileId = null;
       state.rosterDocument = normalizeRosterDocument(null);
+      state.rosterViews.characters = normalizeRosterViewPayload("characters", null);
+      state.rosterViews.supports = normalizeRosterViewPayload("supports", null);
     }
     if (state.wizardProfileId === profileId) {
       state.wizardProfileId = null;
@@ -2644,6 +3263,7 @@
     state.wizardBuildAutoStarted = false;
     state.wizardRedirectScheduled = false;
     await loadRosterForProfile(profileId, true);
+    await loadRosterViewsForProfile(profileId, true);
     setBrowseHash("roster", "characters", null);
   }
 
@@ -2684,6 +3304,8 @@
       owned: true,
       favorite: formData.get("favorite") === "on",
       note,
+      custom_tags: parseRosterTokenList(formData.get("custom_tags")),
+      status_flags: parseRosterTokenList(formData.get("status_flags")),
     };
 
     if (entityKey === "characters") {
@@ -2691,6 +3313,7 @@
         ...baseEntry,
         stars: clampNumber(formData.get("stars"), 0, 5, defaults.stars),
         awakening: clampNumber(formData.get("awakening"), 0, 5, defaults.awakening),
+        unique_level: clampNumber(formData.get("unique_level"), 1, 6, defaults.unique_level || 1),
       };
     }
 
@@ -2709,6 +3332,14 @@
     return Math.max(min, Math.min(max, Math.round(parsed)));
   }
 
+  function parseRosterTokenList(rawValue) {
+    return String(rawValue || "")
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+      .filter((entry, index, entries) => entries.indexOf(entry) === index);
+  }
+
   async function persistRosterDocument(successMessage) {
     if (!state.activeProfileId) {
       return;
@@ -2724,6 +3355,7 @@
       });
       state.rosterDocument = normalizeRosterDocument(savedRoster);
       state.rosterProfileId = state.activeProfileId;
+      await loadRosterViewsForProfile(state.activeProfileId, true);
       state.rosterStatus = {
         kind: "saved",
         message: successMessage || `Saved locally on ${formatDateTime(state.rosterDocument.updated_at)}.`,
@@ -2867,6 +3499,7 @@
 
     if (route.page === "browse" && state.activeProfileId) {
       await loadRosterForProfile(state.activeProfileId, false);
+      await loadRosterViewsForProfile(state.activeProfileId, false);
       if (token !== state.renderToken) {
         return;
       }
@@ -2923,7 +3556,11 @@
     if (route.page !== "browse") {
       return;
     }
+    const preservedPresentation = getViewState(route.mode, route.entityKey).presentation;
     viewStateByKey[`${route.mode}:${route.entityKey}`] = createEntityState(route.mode, route.entityKey);
+    if (route.mode === "roster") {
+      viewStateByKey[`${route.mode}:${route.entityKey}`].presentation = preservedPresentation;
+    }
     requestRender();
   });
 

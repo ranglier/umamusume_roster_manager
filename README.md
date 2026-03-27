@@ -11,6 +11,9 @@ Le projet couvre aujourd'hui:
 - `racetracks`
 - `g1_factors`
 - `compatibility`
+- `cm_targets`
+- `scenarios`
+- `training_events`
 - profils locaux
 - wizard de premier demarrage
 - roster personnel local pour `characters` et `supports`
@@ -126,6 +129,21 @@ Datasets reels consommes:
 - `races`
 - `racetracks`
 - `factors`
+- `events/champions-meeting`
+- `scenarios`
+- `static/scenarios`
+- `static/scenario_factors`
+- `training_events/shared`
+- `training_events/char`
+- `training_events/char_card`
+- `training_events/friend`
+- `training_events/group`
+- `training_events/scenario`
+- `training_events/sr`
+- `training_events/ssr`
+- `dict/te_pairs_en`
+- `db-files/support_card_level`
+- `db-files/card_talent_upgrade`
 - `db-files/succession_relation`
 - `db-files/succession_relation_member`
 
@@ -201,6 +219,9 @@ Fichiers principaux:
 - [`data/normalized/racetracks.json`](c:\Users\034927N\PERSO\Umamusume_Roster_Manager\data\normalized\racetracks.json)
 - [`data/normalized/g1_factors.json`](c:\Users\034927N\PERSO\Umamusume_Roster_Manager\data\normalized\g1_factors.json)
 - [`data/normalized/compatibility.json`](c:\Users\034927N\PERSO\Umamusume_Roster_Manager\data\normalized\compatibility.json)
+- [`data/normalized/cm_targets.json`](c:\Users\034927N\PERSO\Umamusume_Roster_Manager\data\normalized\cm_targets.json)
+- [`data/normalized/scenarios.json`](c:\Users\034927N\PERSO\Umamusume_Roster_Manager\data\normalized\scenarios.json)
+- [`data/normalized/training_events.json`](c:\Users\034927N\PERSO\Umamusume_Roster_Manager\data\normalized\training_events.json)
 - [`data/normalized/reference-meta.json`](c:\Users\034927N\PERSO\Umamusume_Roster_Manager\data\normalized\reference-meta.json)
 - `data/runtime/reference.sqlite`
 
@@ -213,6 +234,11 @@ Resume du modele:
 - `racetracks`: geometrie de piste, phases, pentes, longueurs, layout
 - `g1_factors`: facteurs G1 et courses associees
 - `compatibility`: groupes de relation et top matches pour l'inheritance futur
+- `cm_targets`: editions Champions Meeting, profil de course cible, dates, liens vers races / racetracks candidates
+- `scenarios`: scenarios d'entrainement, caps de stats et scenario factors
+- `training_events`: events d'entrainement agreges avec `event_source`, liens vers characters / supports / scenarios et conservation du brut
+- `character_progression`: paliers d'awakening et skills de progression des characters
+- `support_progression`: courbes de progression des supports par rarete / niveau
 
 Note runtime:
 
@@ -230,12 +256,15 @@ L'UI locale permet:
 - `Catalog` pour parcourir la reference et alimenter le roster
 - `Administration` pour les updates, backups et profils
 - navigation par dataset
+- navigation par `CM Targets`, `Scenarios` et `Training Events`
+- mode roster `detail` et mode roster `batch`
 - recherche texte
 - filtres
 - consultation detaillee
 - affichage des visuels locaux
 - navigation croisee entre entites
 - edition locale des entrees possedees
+- edition inline par lot pour `characters` et `supports`
 - affichage de la source et de la date d'import locale
 
 Pendant la creation initiale de la base locale:
@@ -243,6 +272,39 @@ Pendant la creation initiale de la base locale:
 - une barre de progression est affichee
 - la tache courante est visible
 - certaines etapes peuvent prendre plusieurs minutes, surtout la synchronisation des assets
+
+Le roster personnel stocke maintenant aussi des champs locaux d'organisation et de progression:
+
+- `characters`
+  - `owned`
+  - `favorite`
+  - `note`
+  - `stars`
+  - `awakening`
+  - `unique_level`
+  - `custom_tags`
+  - `status_flags`
+- `supports`
+  - `owned`
+  - `favorite`
+  - `note`
+  - `level`
+  - `limit_break`
+  - `custom_tags`
+  - `status_flags`
+
+Le serveur expose en plus des projections enrichies, fusionnant roster + reference:
+
+- `GET /api/profiles/<id>/roster-view/characters`
+- `GET /api/profiles/<id>/roster-view/supports`
+
+Ces projections servent a afficher localement:
+
+- les skills d'awakening actuellement debloquees / verrouillees
+- un resume de progression des characters
+- les valeurs effectives d'une support a son niveau / LB reels
+- les hint skills / event skills disponibles dans l'etat reel de la carte
+- des filtres roster derives utilisables en UI
 
 L'UI source est dans:
 
@@ -283,6 +345,7 @@ Note:
 - la consultation locale est recommandee via HTTP local pour rester cross-navigateur
 - le depot Git ne contient pas les donnees GameTora importees; elles doivent etre regenerees localement
 - la creation initiale de la base locale peut etre longue a froid, surtout lors du telechargement des assets
+- `training_events` reste volontairement conservateur: les choix et outcomes sont preserves et relies, mais leur semantique fine n'est pas encore completement decodee pour du scoring
 
 ## Revue code
 
@@ -308,7 +371,7 @@ Phase suivante recommandee:
 
 1. enrichir le roster personnel au-dela de la possession simple
 2. conserver la separation stricte entre reference globale et donnees utilisateur
-3. preparer ensuite les vues et heuristiques pour les builds / Champions Meeting
+3. exploiter `cm_targets`, `scenarios` et `training_events` pour la couche `legacies`, puis les builds / Champions Meeting
 
 Document de cadrage associe:
 

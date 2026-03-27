@@ -1,5 +1,34 @@
 # CM Build Plan
 
+## Etat actuel du projet
+
+Depuis cette version du projet, le referentiel local integre deja:
+
+- `cm_targets`
+- `scenarios`
+- `training_events`
+
+La phase "fondations reference" du plan est donc en partie realisee:
+
+- les editions Champions Meeting sont stockees localement
+- les scenarios d'entrainement sont stockes localement
+- les events d'entrainement sont agreges dans une entite unique avec `event_source`
+
+Ce document reste le cadrage de la suite, mais il faut maintenant le lire comme la preparation de:
+
+- l'exploitation du roster enrichi
+- `legacies`
+- `builds`
+- `run_results`
+- scoring / faisabilite CM
+
+Le projet a aussi demarre une tranche importante sur le roster reel `characters` / `supports`:
+
+- progression locale enrichie pour les characters
+- progression locale enrichie pour les supports
+- projections derivees exposees par le serveur pour raisonner a partir du roster reel
+- mode `batch` dans `My Roster` pour la maintenance rapide
+
 ## Objet
 
 Ce document prepare la future couche `builds / Champions Meeting` du projet.
@@ -314,6 +343,12 @@ Attention:
 - ils seront probablement utiles pour une phase avancee d'assistance et de simulation
 - ils ne sont pas necessaires pour une v1 de planning de build
 
+Mise a jour:
+
+- cette famille est maintenant deja integree au referentiel
+- le projet la modele comme une entite unique `training_events`
+- les choix et outcomes sont conserves de facon prudente, sans moteur metier complet de decodage
+
 ### 9. Les race instances / planning de course
 
 Pour optimiser un run, il faudra probablement raisonner sur les courses accessibles pendant l'entrainement:
@@ -391,6 +426,12 @@ Objectif:
 - pouvoir selectionner une edition CM precise
 - en deriver un profil de build unique
 
+Statut:
+
+- implemente dans le referentiel local
+- visible dans l'UI
+- materialise dans SQLite
+
 ### Etape 2. Scenarios normalises
 
 Ajouter une entite:
@@ -406,6 +447,12 @@ Source principale:
 Objectif:
 
 - pouvoir attacher un build a un scenario concret
+
+Statut:
+
+- implemente dans le referentiel local
+- visible dans l'UI
+- materialise dans SQLite
 
 ### Etape 3. Legacies utilisateur
 

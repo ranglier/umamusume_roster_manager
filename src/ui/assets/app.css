@@ -399,6 +399,48 @@ body.route-catalog .compact-heading {
   margin: 4px 0 0;
 }
 
+.toolbar-top-side {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.browse-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.presentation-switch,
+.batch-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.presentation-switch {
+  padding: 4px;
+  border: 1px solid rgba(115, 160, 198, 0.16);
+  border-radius: 999px;
+  background: rgba(8, 17, 26, 0.84);
+}
+
+.presentation-switch button {
+  min-width: 88px;
+  padding: 7px 12px;
+}
+
+.presentation-switch button.active {
+  background: linear-gradient(135deg, rgba(166, 102, 47, 0.96), rgba(102, 54, 28, 0.94));
+  border-color: rgba(244, 187, 98, 0.42);
+  color: var(--ink-deep);
+}
+
 .entity-nav {
   display: flex;
   gap: 8px;
@@ -491,6 +533,18 @@ body.route-catalog .entity-button::before {
 
 .entity-button[data-entity="g1_factors"]::before {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 28'%3E%3Crect width='28' height='28' rx='9' fill='%23aa5f1f'/%3E%3Cpath d='M9 8h10v3a5 5 0 0 1-3 4.6V19h2v2h-8v-2h2v-3.4A5 5 0 0 1 9 11z' fill='white'/%3E%3C/svg%3E");
+}
+
+.entity-button[data-entity="cm_targets"]::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 28'%3E%3Crect width='28' height='28' rx='9' fill='%23a84a1e'/%3E%3Cpath d='M10 8h8v3a4 4 0 0 1-2.6 3.7V18h2.1v2h-7v-2h2.1v-3.3A4 4 0 0 1 10 11V8zm-2 1.5H10v1.3a3.8 3.8 0 0 1-1.6 3H7.8a1.8 1.8 0 0 1-1.8-1.8V9.5zm12 0h2.2V12a1.8 1.8 0 0 1-1.8 1.8h-.6a3.8 3.8 0 0 1-1.6-3V9.5z' fill='white'/%3E%3C/svg%3E");
+}
+
+.entity-button[data-entity="scenarios"]::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 28'%3E%3Crect width='28' height='28' rx='9' fill='%235068c7'/%3E%3Cpath d='M8 8.5A2.5 2.5 0 0 1 10.5 6H20v15h-9.5A2.5 2.5 0 0 0 8 23V8.5zm2.5-.5A1.5 1.5 0 0 0 9 9.5V20a3.4 3.4 0 0 1 1.5-.4H18V8h-7.5zm2 2h4.5v1.8h-4.5V10zm0 3.2h4.5V15h-4.5v-1.8z' fill='white'/%3E%3C/svg%3E");
+}
+
+.entity-button[data-entity="training_events"]::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 28'%3E%3Crect width='28' height='28' rx='9' fill='%23208b76'/%3E%3Cpath d='M14 6l-4.3 7h3l-1.2 9L18.3 15h-3.1L18 6h-4z' fill='white'/%3E%3C/svg%3E");
 }
 
 .entity-button[data-entity="compatibility"]::before {
@@ -1247,6 +1301,82 @@ body.route-wizard .profile-gate::after {
   gap: 10px;
 }
 
+.roster-editor-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.roster-derived-section .roster-progress-card {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid rgba(115, 160, 198, 0.14);
+  border-radius: 14px;
+  background: rgba(7, 15, 23, 0.48);
+}
+
+.batch-table-shell {
+  width: 100%;
+  overflow: auto;
+  border: 1px solid rgba(115, 160, 198, 0.12);
+  border-radius: 16px;
+}
+
+.batch-table {
+  width: 100%;
+  min-width: 980px;
+  border-collapse: collapse;
+  background: rgba(10, 19, 29, 0.92);
+}
+
+.batch-table th,
+.batch-table td {
+  padding: 10px 10px;
+  border-bottom: 1px solid rgba(115, 160, 198, 0.08);
+  text-align: left;
+  vertical-align: top;
+}
+
+.batch-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: rgba(15, 27, 39, 0.98);
+  color: var(--ink-deep);
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.batch-table td input[type="text"],
+.batch-table td input[type="number"] {
+  width: 100%;
+  min-width: 84px;
+}
+
+.batch-open-button {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--ink-deep);
+  font-size: 1rem;
+  font-weight: 700;
+  text-align: left;
+}
+
+.batch-row-subtitle {
+  margin-top: 6px;
+  color: var(--text-soft);
+  font-size: 0.9rem;
+}
+
+.batch-save-button {
+  white-space: nowrap;
+}
+
 .error-text {
   color: #ff9c9c;
 }
@@ -1389,6 +1519,14 @@ body.route-wizard .profile-gate::after {
 .detail-column {
   min-width: 0;
   align-self: stretch;
+}
+
+body.roster-batch-mode .app-layout {
+  grid-template-columns: 1fr;
+}
+
+body.roster-batch-mode .detail-column {
+  display: none;
 }
 
 .detail-close-button {
@@ -1842,6 +1980,11 @@ code {
     flex-wrap: wrap;
   }
 
+  .toolbar-top-side {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
   .count-chip {
     align-self: flex-start;
   }
@@ -1894,6 +2037,10 @@ code {
 
   .wizard-grid,
   .admin-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .roster-editor-meta-grid {
     grid-template-columns: 1fr;
   }
 }

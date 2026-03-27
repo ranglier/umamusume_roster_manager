@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import urllib.request
 from collections import OrderedDict
@@ -100,6 +101,46 @@ SKILL_TAG_DISPLAY_LABELS = {
     "l_3": "Last Spurt",
     "dbf": "Debuff",
     "nac": "General",
+}
+
+WEATHER_LABELS = {
+    1: "Sunny",
+    2: "Cloudy",
+    3: "Rain",
+    4: "Snow",
+    99999: "Varies",
+}
+
+TRACK_CONDITION_LABELS = {
+    1: "Good",
+    2: "Yielding",
+    3: "Soft",
+    4: "Heavy",
+    99999: "Varies",
+}
+
+TRAINING_EVENT_SOURCE_LABELS = {
+    "shared": "Shared",
+    "char": "Character",
+    "char_card": "Character Card",
+    "friend": "Friend",
+    "group": "Group",
+    "scenario": "Scenario",
+    "sr": "SR Support",
+    "ssr": "SSR Support",
+}
+
+SCENARIO_DISPLAY_NAMES = {
+    "scenario_ura": "URA Finale",
+    "scenario_aoharu": "Aoharu Cup",
+    "scenario_make_a_new_track": "Make a New Track",
+    "scenario_gl": "Grand Live",
+    "scenario_gm": "Grand Masters",
+    "scenario_larc": "Project L'Arc",
+    "scenario_uaf": "U.A.F. Ready GO!",
+    "scenario_cooking": "Harvest Festival",
+    "scenario_mecha": "Run! Mecha Umamusume",
+    "scenario_legend": "Twinkle Legends",
 }
 
 
@@ -447,6 +488,22 @@ def get_time_of_day_slug(value: Any) -> str:
     return {1: "morning", 2: "daytime", 3: "evening", 4: "night"}.get(int(value), "unknown")
 
 
+def get_weather_label(value: Any) -> str:
+    return WEATHER_LABELS.get(int(value), f"Weather {value}")
+
+
+def get_weather_slug(value: Any) -> str:
+    return slugify_text(get_weather_label(value))
+
+
+def get_track_condition_label(value: Any) -> str:
+    return TRACK_CONDITION_LABELS.get(int(value), f"Condition {value}")
+
+
+def get_track_condition_slug(value: Any) -> str:
+    return slugify_text(get_track_condition_label(value))
+
+
 def get_course_layout_label(value: Any) -> str:
     return {1: "Main", 2: "Inner", 3: "Outer", 4: "Outer to Inner", 99999: "Varies"}.get(int(value), "Unknown")
 
@@ -505,6 +562,66 @@ def get_race_grade_label(group: Any, grade: Any) -> str:
 
 def get_sex_label(value: Any) -> str:
     return {1: "Mare", 2: "Stallion"}.get(int(value), "Unknown")
+
+
+def slugify_text(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    if not text:
+        return ""
+    slug = re.sub(r"[^a-z0-9]+", "-", text)
+    return slug.strip("-")
+
+
+def unix_timestamp_to_iso(value: Any) -> str | None:
+    if value is None:
+        return None
+    try:
+        return datetime.fromtimestamp(int(value), timezone.utc).isoformat()
+    except (TypeError, ValueError, OSError):
+        return None
+
+
+def get_training_event_source_label(value: Any) -> str:
+    return TRAINING_EVENT_SOURCE_LABELS.get(str(value), convert_display_label(str(value), None) or str(value))
+
+
+def get_scenario_display_name(key: Any, factor_name: Any = None) -> str:
+    key_str = str(key or "").strip()
+    if key_str in SCENARIO_DISPLAY_NAMES:
+        return SCENARIO_DISPLAY_NAMES[key_str]
+    if factor_name:
+        return str(factor_name)
+    normalized = key_str.replace("scenario_", "").replace("_", " ").strip()
+    return normalized.title() if normalized else "Scenario"
+
+
+def build_reference_entry(entity_key: str, item: Any, *, subtitle: str | None = None) -> dict[str, Any] | None:
+    if item is None:
+        return None
+
+    item_id = str(get_named_value(item, "id") or "").strip()
+    if not item_id:
+        return None
+
+    title = coalesce(get_named_value(item, "name"), get_named_value(item, "title"), item_id)
+    resolved_subtitle = subtitle if subtitle is not None else get_named_value(item, "subtitle")
+    availability_en = None
+    release = get_named_value(item, "release")
+    available = get_named_value(item, "available")
+    if release is not None:
+        availability_en = "available" if get_named_value(release, "en") else "unreleased"
+    elif isinstance(available, dict):
+        availability_en = "available" if available.get("en") else "unreleased"
+
+    return OrderedDict(
+        [
+            ("entityKey", entity_key),
+            ("id", item_id),
+            ("title", str(title)),
+            ("subtitle", resolved_subtitle),
+            ("availabilityEn", availability_en),
+        ]
+    )
 
 
 def convert_skill_ref(skill_id: Any, skill_lookup: dict[str, Any]) -> dict[str, Any] | None:
@@ -674,6 +791,98 @@ def build_group_lookup(items: Any, prop: str) -> dict[str, list[Any]]:
             continue
         lookup.setdefault(value, []).append(item)
     return lookup
+
+
+def is_training_event_entry(value: Any) -> bool:
+    return isinstance(value, list) and len(value) >= 3 and isinstance(value[2], (int, str))
+
+
+def is_training_event_group(value: Any) -> bool:
+    return isinstance(value, list) and len(value) > 0 and all(is_training_event_entry(entry) for entry in value)
+
+
+def normalize_training_event_choices(choices: Any) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    for index, choice in enumerate(as_array(choices), start=1):
+        if isinstance(choice, list) and len(choice) >= 2:
+            token = choice[0]
+            effect_tokens = as_array(choice[1])
+        else:
+            token = None
+            effect_tokens = as_array(choice)
+        normalized.append(
+            OrderedDict(
+                [
+                    ("index", index),
+                    ("choice_token", token),
+                    ("choice_label", convert_display_label(str(token), None) if token is not None else f"Choice {index}"),
+                    ("effect_tokens", effect_tokens),
+                    ("effect_count", len(effect_tokens)),
+                ]
+            )
+        )
+    return normalized
+
+
+def build_training_event_name_lookup(te_pairs_en: Any) -> dict[str, list[str]]:
+    lookup: dict[str, list[str]] = {}
+    for pair in as_array(te_pairs_en):
+        if not isinstance(pair, list) or len(pair) < 2:
+            continue
+        name = str(pair[0] or "").strip()
+        owner_id = str(pair[1] or "").strip()
+        if not name or not owner_id:
+            continue
+        lookup.setdefault(owner_id, []).append(name)
+    return lookup
+
+
+def build_character_card_reference_from_raw(card: Any) -> dict[str, Any] | None:
+    if card is None:
+        return None
+    return OrderedDict(
+        [
+            ("entityKey", "characters"),
+            ("id", str(card["card_id"])),
+            ("title", coalesce(card.get("name_en"), card.get("name_jp"), card["card_id"])),
+            ("subtitle", f"{coalesce(card.get('title_en_gl'), card.get('title_jp'), 'Variant')} | {card['rarity']}-star"),
+            ("availabilityEn", "available" if card.get("release_en") else "unreleased"),
+        ]
+    )
+
+
+def build_support_reference_from_raw(card: Any) -> dict[str, Any] | None:
+    if card is None:
+        return None
+    rarity_label = {1: "R", 2: "SR", 3: "SSR"}.get(int(card["rarity"]), f"R{card['rarity']}")
+    return OrderedDict(
+        [
+            ("entityKey", "supports"),
+            ("id", str(card["support_id"])),
+            ("title", coalesce(card.get("char_name"), card.get("name_jp"), card["support_id"])),
+            ("subtitle", f"{card.get('type') or 'Support'} | {rarity_label}"),
+            ("availabilityEn", "available" if card.get("release_en") else "unreleased"),
+        ]
+    )
+
+
+def build_scenario_reference_from_raw(scenario_id: Any, scenario_entry: Any) -> dict[str, Any] | None:
+    if scenario_id is None:
+        return None
+    scenario_key = get_named_value(scenario_entry, "str")
+    factors = as_array(get_named_value(scenario_entry, "factors"))
+    first_factor = factors[0] if factors else None
+    title = get_scenario_display_name(scenario_key, coalesce(get_named_value(first_factor, "name_en"), get_named_value(first_factor, "name_ja")))
+    subtitle = convert_display_label(str(scenario_key).replace("scenario_", ""), None) if scenario_key else None
+    return OrderedDict(
+        [
+            ("entityKey", "scenarios"),
+            ("id", str(scenario_id)),
+            ("title", title),
+            ("subtitle", subtitle),
+            ("availabilityEn", None),
+        ]
+    )
 
 
 def normalize_characters(
@@ -1042,6 +1251,151 @@ def normalize_supports(
             ("generated_at", get_now_iso()),
             ("source", new_source_stamp(config, metadata, "supports")),
             ("effect_catalog", effect_catalog),
+            ("items", items),
+        ]
+    )
+
+
+def normalize_character_progression(
+    config: dict[str, Any],
+    metadata: dict[str, Any],
+    character_cards: Any,
+    card_talent_upgrade: Any,
+    skills: Any,
+) -> dict[str, Any]:
+    skill_lookup = build_lookup(skills, "id")
+    cost_lookup: dict[str, list[dict[str, Any]]] = {}
+
+    for upgrade in as_array(card_talent_upgrade):
+        talent_group_id = str(upgrade.get("talent_group_id") or "").strip()
+        if not talent_group_id:
+            continue
+
+        costs: list[dict[str, Any]] = []
+        for slot_index in range(1, 9):
+            item_category = upgrade.get(f"item_category_{slot_index}")
+            item_id = upgrade.get(f"item_id_{slot_index}")
+            item_num = upgrade.get(f"item_num_{slot_index}")
+            if item_category is None and item_id is None and item_num is None:
+                continue
+            costs.append(
+                OrderedDict(
+                    [
+                        ("slot_index", slot_index),
+                        ("item_category", item_category),
+                        ("item_id", item_id),
+                        ("item_num", item_num),
+                    ]
+                )
+            )
+
+        cost_lookup.setdefault(talent_group_id, []).append(
+            OrderedDict(
+                [
+                    ("talent_level", int(upgrade.get("talent_level") or 0)),
+                    ("costs", costs),
+                ]
+            )
+        )
+
+    items: list[dict[str, Any]] = []
+    for card in as_array(character_cards):
+        card_id = str(card.get("card_id") or "").strip()
+        if not card_id:
+            continue
+
+        talent_group_id = int(card.get("talent_group") or card.get("talent_group_id") or card.get("card_id") or 0)
+        awakening_skills = convert_skill_id_list(card.get("skills_awakening"), skill_lookup)
+        awakening_levels: list[dict[str, Any]] = []
+        for level_entry in sorted(cost_lookup.get(str(talent_group_id), []), key=lambda entry: entry.get("talent_level") or 0):
+            talent_level = int(level_entry.get("talent_level") or 0)
+            awakening_skills_index = max(0, talent_level - 2)
+            awakening_skill = awakening_skills[awakening_skills_index] if awakening_skills_index < len(awakening_skills) else None
+            awakening_levels.append(
+                OrderedDict(
+                    [
+                        ("talent_level", talent_level),
+                        ("awakening_level", talent_level),
+                        ("skill", awakening_skill),
+                        ("costs", level_entry.get("costs") or []),
+                    ]
+                )
+            )
+
+        items.append(
+            OrderedDict(
+                [
+                    ("id", card_id),
+                    ("card_id", int(card.get("card_id") or 0)),
+                    ("base_character_id", int(card.get("char_id") or 0)),
+                    ("talent_group_id", talent_group_id),
+                    ("name", coalesce(card.get("name_en"), card.get("name_jp"))),
+                    ("awakening_skill_count", len(awakening_skills)),
+                    ("awakening_levels", awakening_levels),
+                ]
+            )
+        )
+
+    return OrderedDict(
+        [
+            ("schema_version", SCHEMA_VERSION),
+            ("entity", "character_progression"),
+            ("generated_at", get_now_iso()),
+            ("source", new_source_stamp(config, metadata, "character_progression")),
+            ("items", items),
+        ]
+    )
+
+
+def normalize_support_progression(
+    config: dict[str, Any],
+    metadata: dict[str, Any],
+    support_card_level: Any,
+    support_cards: Any,
+) -> dict[str, Any]:
+    cards_by_rarity: dict[int, int] = {}
+    for card in as_array(support_cards):
+        rarity = int(card.get("rarity") or 0)
+        cards_by_rarity[rarity] = cards_by_rarity.get(rarity, 0) + 1
+
+    curve_by_rarity: dict[int, list[dict[str, Any]]] = {}
+    for row in as_array(support_card_level):
+        rarity = int(row.get("rarity") or 0)
+        level = int(row.get("level") or 0)
+        if rarity <= 0 or level <= 0:
+            continue
+        curve_by_rarity.setdefault(rarity, []).append(
+            OrderedDict(
+                [
+                    ("curve_id", int(row.get("id") or 0)),
+                    ("level", level),
+                    ("total_exp", int(row.get("total_exp") or 0)),
+                ]
+            )
+        )
+
+    items: list[dict[str, Any]] = []
+    for rarity, levels in sorted(curve_by_rarity.items()):
+        ordered_levels = sorted(levels, key=lambda entry: entry["level"])
+        items.append(
+            OrderedDict(
+                [
+                    ("id", f"rarity_{rarity}"),
+                    ("rarity", rarity),
+                    ("label", {1: "R", 2: "SR", 3: "SSR"}.get(rarity, f"R{rarity}")),
+                    ("card_count", cards_by_rarity.get(rarity, 0)),
+                    ("max_level", ordered_levels[-1]["level"] if ordered_levels else 0),
+                    ("levels", ordered_levels),
+                ]
+            )
+        )
+
+    return OrderedDict(
+        [
+            ("schema_version", SCHEMA_VERSION),
+            ("entity", "support_progression"),
+            ("generated_at", get_now_iso()),
+            ("source", new_source_stamp(config, metadata, "support_progression")),
             ("items", items),
         ]
     )
@@ -1622,6 +1976,341 @@ def normalize_compatibility(
     )
 
 
+def normalize_cm_targets(
+    config: dict[str, Any],
+    metadata: dict[str, Any],
+    cm_events: Any,
+    races: Any,
+    racetracks: Any,
+) -> dict[str, Any]:
+    items: list[dict[str, Any]] = []
+    for event in as_array(cm_events):
+        race = event.get("race") or {}
+        track_id = str(race.get("track") or "")
+        surface = get_terrain_label(race.get("ground", 99999))
+        distance_m = int(race.get("distance") or 0)
+        distance_category = get_distance_category_label(distance_m if distance_m else 99999)
+        direction = get_direction_label(race.get("turn", 99999))
+        season = get_season_label(race.get("season", 99999))
+        weather = get_weather_label(race.get("weather", 99999))
+        condition = get_track_condition_label(race.get("condition", 99999))
+
+        related_races: list[dict[str, Any]] = []
+        for candidate in as_array(races):
+            if str(candidate.get("track")) != track_id:
+                continue
+            if int(candidate.get("terrain", -1)) != int(race.get("ground", -1)):
+                continue
+            if int(candidate.get("distance", -1)) != distance_m:
+                continue
+            if int(candidate.get("direction", -1)) != int(race.get("turn", -1)):
+                continue
+            if int(candidate.get("season", -1)) != int(race.get("season", -1)):
+                continue
+            related_races.append(
+                OrderedDict(
+                    [
+                        ("entityKey", "races"),
+                        ("id", str(candidate["id"])),
+                        ("title", coalesce(candidate.get("name_en"), candidate.get("name_jp"), candidate["id"])),
+                        ("subtitle", f"{get_track_name(track_id)} | {get_race_grade_label(candidate['group'], candidate['grade'])} | {candidate['distance']}m"),
+                    ]
+                )
+            )
+
+        related_racetracks: list[dict[str, Any]] = []
+        for track in as_array(racetracks):
+            if str(track.get("id")) != track_id:
+                continue
+            for course in as_array(track.get("courses")):
+                if int(course.get("terrain", -1)) != int(race.get("ground", -1)):
+                    continue
+                if get_distance_category_from_code(course.get("distance", 99999)) != distance_category:
+                    continue
+                if get_direction_label(course.get("turn", 99999)) != direction:
+                    continue
+                related_racetracks.append(
+                    OrderedDict(
+                        [
+                            ("entityKey", "racetracks"),
+                            ("id", str(course["id"])),
+                            ("title", f"{get_track_name(track_id)} #{course['id']}"),
+                            ("subtitle", f"{surface} | {get_distance_category_from_code(course['distance'])} | {course['length']}m"),
+                        ]
+                    )
+                )
+
+        name = coalesce(event.get("name_en"), event.get("name"), f"CM {event['id']}")
+        items.append(
+            OrderedDict(
+                [
+                    ("id", f"cm_{int(event['id']):03d}"),
+                    ("cm_id", int(event["id"])),
+                    ("resource_id", int(event["resource_id"])) if event.get("resource_id") is not None else ("resource_id", None),
+                    ("slug", slugify_text(coalesce(event.get("name_en"), event.get("name"), event["id"])) or f"cm-{event['id']}"),
+                    ("name", name),
+                    (
+                        "names",
+                        OrderedDict(
+                            [
+                                ("en", event.get("name_en")),
+                                ("ja", event.get("name")),
+                            ]
+                        ),
+                    ),
+                    ("start_at", unix_timestamp_to_iso(event.get("start"))),
+                    ("end_at", unix_timestamp_to_iso(event.get("end"))),
+                    ("start_ts", int(event["start"])) if event.get("start") is not None else ("start_ts", None),
+                    ("end_ts", int(event["end"])) if event.get("end") is not None else ("end_ts", None),
+                    (
+                        "race_profile",
+                        OrderedDict(
+                            [
+                                ("track_id", track_id),
+                                ("track_name", get_track_name(track_id)),
+                                ("track_slug", get_track_slug(track_id)),
+                                ("surface", surface),
+                                ("surface_slug", get_terrain_slug(race.get("ground", 99999))),
+                                ("distance_m", distance_m),
+                                ("distance_category", distance_category),
+                                ("distance_category_slug", get_distance_category_slug(distance_m if distance_m else 99999)),
+                                ("direction", direction),
+                                ("direction_slug", get_direction_slug(race.get("turn", 99999))),
+                                ("season", season),
+                                ("season_slug", get_season_slug(race.get("season", 99999))),
+                                ("weather", weather),
+                                ("weather_slug", get_weather_slug(race.get("weather", 99999))),
+                                ("condition", condition),
+                                ("condition_slug", get_track_condition_slug(race.get("condition", 99999))),
+                            ]
+                        ),
+                    ),
+                    ("related_races", related_races),
+                    ("related_racetracks", related_racetracks),
+                ]
+            )
+        )
+
+    return OrderedDict(
+        [
+            ("schema_version", SCHEMA_VERSION),
+            ("entity", "cm_targets"),
+            ("generated_at", get_now_iso()),
+            ("source", new_source_stamp(config, metadata, "cm_targets")),
+            ("items", items),
+        ]
+    )
+
+
+def normalize_scenarios(
+    config: dict[str, Any],
+    metadata: dict[str, Any],
+    scenarios: Any,
+    static_scenarios: Any,
+    scenario_factors: Any,
+) -> dict[str, Any]:
+    scenario_lookup = build_lookup(scenarios, "id")
+    static_lookup = build_lookup(static_scenarios, "id")
+    factor_lookup = build_lookup(scenario_factors, "id")
+    all_ids = sorted(set(scenario_lookup.keys()) | set(static_lookup.keys()) | set(factor_lookup.keys()), key=lambda value: int(value))
+    items: list[dict[str, Any]] = []
+
+    stat_keys = ["speed", "stamina", "power", "guts", "wit"]
+    for scenario_id in all_ids:
+        dynamic = get_named_value(scenario_lookup, scenario_id) or {}
+        static = get_named_value(static_lookup, scenario_id) or {}
+        factor_source = get_named_value(factor_lookup, scenario_id) or {}
+        factors = as_array(static.get("factors")) or as_array(factor_source.get("factors"))
+        first_factor = factors[0] if factors else None
+        scenario_key = coalesce(static.get("str"), factor_source.get("str"), f"scenario_{scenario_id}")
+        factor_rows: list[dict[str, Any]] = []
+        factor_effects: list[str] = []
+        for factor in factors:
+            effect_labels = [convert_display_label(effect, None) for effect in [factor.get("effect_1"), factor.get("effect_2")] if effect]
+            factor_effects.extend(effect_labels)
+            factor_rows.append(
+                OrderedDict(
+                    [
+                        ("id", int(factor["id"])) if factor.get("id") is not None else ("id", None),
+                        ("name", coalesce(factor.get("name_en"), factor.get("name_ja"), factor.get("id"))),
+                        (
+                            "names",
+                            OrderedDict(
+                                [
+                                    ("en", factor.get("name_en")),
+                                    ("ja", factor.get("name_ja")),
+                                    ("ko", factor.get("name_ko")),
+                                    ("zh_tw", factor.get("name_zh_tw")),
+                                ]
+                            ),
+                        ),
+                        ("effects", effect_labels),
+                    ]
+                )
+            )
+
+        stats_values = as_array(dynamic.get("stats"))
+        stat_caps = OrderedDict((stat_key, int(stats_values[index])) for index, stat_key in enumerate(stat_keys) if index < len(stats_values))
+        name = get_scenario_display_name(scenario_key, coalesce(get_named_value(first_factor, "name_en"), get_named_value(first_factor, "name_ja")))
+        items.append(
+            OrderedDict(
+                [
+                    ("id", str(scenario_id)),
+                    ("scenario_id", int(scenario_id)),
+                    ("key", scenario_key),
+                    ("slug", slugify_text(scenario_key)),
+                    ("name", name),
+                    ("order", int(dynamic["order"])) if dynamic.get("order") is not None else ("order", None),
+                    ("program", int(dynamic["program"])) if dynamic.get("program") is not None else ("program", None),
+                    ("program_label", f"Program {dynamic['program']}") if dynamic.get("program") is not None else ("program_label", None),
+                    ("stat_caps", stat_caps),
+                    ("factor_effects", _sorted_unique([label for label in factor_effects if label], key=str)),
+                    ("factors", factor_rows),
+                ]
+            )
+        )
+
+    return OrderedDict(
+        [
+            ("schema_version", SCHEMA_VERSION),
+            ("entity", "scenarios"),
+            ("generated_at", get_now_iso()),
+            ("source", new_source_stamp(config, metadata, "scenarios")),
+            ("items", items),
+        ]
+    )
+
+
+def normalize_training_events(
+    config: dict[str, Any],
+    metadata: dict[str, Any],
+    datasets: dict[str, Any],
+    character_cards: Any,
+    support_cards: Any,
+    static_scenarios: Any,
+) -> dict[str, Any]:
+    names_by_owner = build_training_event_name_lookup(datasets.get("te_pairs_en"))
+    character_card_lookup = build_lookup(character_cards, "card_id")
+    character_cards_by_base = build_group_lookup(character_cards, "char_id")
+    support_lookup = build_lookup(support_cards, "support_id")
+    scenario_lookup = build_lookup(static_scenarios, "id")
+
+    items: list[dict[str, Any]] = []
+    source_order = ["shared", "char", "char_card", "friend", "group", "scenario", "sr", "ssr"]
+    for source_key in source_order:
+        dataset = datasets.get(source_key)
+        if dataset is None:
+            continue
+
+        for row in as_array(dataset):
+            if not isinstance(row, list) or len(row) < 2:
+                continue
+
+            owner_id = str(row[0])
+            segments = row[1:]
+            metadata_segments = [segment for segment in segments if not is_training_event_group(segment)]
+            event_groups = [segment for segment in segments if is_training_event_group(segment)]
+            known_names = names_by_owner.get(owner_id, [])
+            flat_index = 0
+
+            linked_entities: list[dict[str, Any]] = []
+            linked_character_ids: list[str] = []
+            linked_support_id: str | None = None
+            linked_scenario_id: str | None = None
+            group_member_character_refs: list[dict[str, Any]] = []
+
+            if source_key in {"shared", "char"}:
+                for card in as_array(get_named_value(character_cards_by_base, owner_id)):
+                    ref = build_character_card_reference_from_raw(card)
+                    if ref is not None:
+                        linked_entities.append(ref)
+                        linked_character_ids.append(ref["id"])
+            elif source_key == "char_card":
+                card = get_named_value(character_card_lookup, owner_id)
+                ref = build_character_card_reference_from_raw(card)
+                if ref is not None:
+                    linked_entities.append(ref)
+                    linked_character_ids.append(ref["id"])
+            elif source_key in {"friend", "group", "sr", "ssr"}:
+                support = get_named_value(support_lookup, owner_id)
+                ref = build_support_reference_from_raw(support)
+                if ref is not None:
+                    linked_entities.append(ref)
+                    linked_support_id = ref["id"]
+                if source_key == "group" and len(row) > 1 and isinstance(row[1], list):
+                    for member_base_id in as_array(row[1]):
+                        for card in as_array(get_named_value(character_cards_by_base, str(member_base_id))):
+                            member_ref = build_character_card_reference_from_raw(card)
+                            if member_ref is not None and member_ref["id"] not in linked_character_ids:
+                                linked_character_ids.append(member_ref["id"])
+                                group_member_character_refs.append(member_ref)
+            elif source_key == "scenario":
+                scenario_entry = get_named_value(scenario_lookup, owner_id)
+                ref = build_scenario_reference_from_raw(owner_id, scenario_entry)
+                if ref is not None:
+                    linked_entities.append(ref)
+                    linked_scenario_id = ref["id"]
+
+            linked_entities.extend(group_member_character_refs)
+
+            for group_index, group in enumerate(event_groups, start=1):
+                for sequence_index, event in enumerate(group, start=1):
+                    flat_index += 1
+                    event_id = str(event[2])
+                    choices = normalize_training_event_choices(event[1] if len(event) > 1 else [])
+                    event_name = known_names[flat_index - 1] if flat_index - 1 < len(known_names) else None
+                    if not event_name:
+                        event_name = f"Event {event_id}"
+
+                    subtitle_parts = [get_training_event_source_label(source_key), f"Owner {owner_id}"]
+                    if linked_support_id:
+                        subtitle_parts.append(f"Support {linked_support_id}")
+                    elif linked_scenario_id:
+                        subtitle_parts.append(f"Scenario {linked_scenario_id}")
+                    elif linked_character_ids:
+                        subtitle_parts.append(f"{len(linked_character_ids)} linked character(s)")
+
+                    items.append(
+                        OrderedDict(
+                            [
+                                ("id", f"{source_key}:{owner_id}:{event_id}:{group_index}:{sequence_index}"),
+                                ("event_source", source_key),
+                                ("source_label", get_training_event_source_label(source_key)),
+                                ("owner_id", owner_id),
+                                ("event_id", event_id),
+                                ("group_index", group_index),
+                                ("sequence_index", sequence_index),
+                                ("name", event_name),
+                                ("name_source", "te_pairs_en" if flat_index - 1 < len(known_names) else "fallback_event_id"),
+                                ("title", event_name),
+                                ("subtitle", " | ".join(subtitle_parts)),
+                                ("linked_character_ids", linked_character_ids),
+                                ("linked_support_id", linked_support_id),
+                                ("linked_scenario_id", linked_scenario_id),
+                                ("linked_entities", linked_entities),
+                                ("group_member_character_refs", group_member_character_refs),
+                                ("choice_count", len(choices)),
+                                ("has_branching", len(choices) > 1),
+                                ("choices", choices),
+                                ("raw_choice_token", event[0] if len(event) > 0 else None),
+                                ("raw_extras", event[3:] if len(event) > 3 else []),
+                                ("source_metadata", metadata_segments),
+                                ("raw_payload", event),
+                            ]
+                        )
+                    )
+
+    return OrderedDict(
+        [
+            ("schema_version", SCHEMA_VERSION),
+            ("entity", "training_events"),
+            ("generated_at", get_now_iso()),
+            ("source", new_source_stamp(config, metadata, "training_events")),
+            ("items", items),
+        ]
+    )
+
+
 def build_normalized_reference(config: dict[str, Any], metadata: dict[str, Any]) -> dict[str, Any]:
     raw = OrderedDict(
         [
@@ -1635,19 +2324,78 @@ def build_normalized_reference(config: dict[str, Any], metadata: dict[str, Any])
             ("races", load_raw_dataset_by_key(metadata, "races")),
             ("racetracks", load_raw_dataset_by_key(metadata, "racetracks")),
             ("factors", load_raw_dataset_by_key(metadata, "factors")),
+            ("cm_targets", load_raw_dataset_by_key(metadata, "events/champions-meeting")),
+            ("scenarios", load_raw_dataset_by_key(metadata, "scenarios")),
+            ("static_scenarios", load_raw_dataset_by_key(metadata, "static/scenarios")),
+            ("scenario_factors", load_raw_dataset_by_key(metadata, "static/scenario_factors")),
+            ("training_events_shared", load_raw_dataset_by_key(metadata, "training_events/shared")),
+            ("training_events_char", load_raw_dataset_by_key(metadata, "training_events/char")),
+            ("training_events_char_card", load_raw_dataset_by_key(metadata, "training_events/char_card")),
+            ("training_events_friend", load_raw_dataset_by_key(metadata, "training_events/friend")),
+            ("training_events_group", load_raw_dataset_by_key(metadata, "training_events/group")),
+            ("training_events_scenario", load_raw_dataset_by_key(metadata, "training_events/scenario")),
+            ("training_events_sr", load_raw_dataset_by_key(metadata, "training_events/sr")),
+            ("training_events_ssr", load_raw_dataset_by_key(metadata, "training_events/ssr")),
+            ("training_event_names", load_raw_dataset_by_key(metadata, "dict/te_pairs_en")),
             ("succession_relation", load_raw_dataset_by_key(metadata, "db-files/succession_relation")),
             ("succession_relation_member", load_raw_dataset_by_key(metadata, "db-files/succession_relation_member")),
+            ("support_card_level", load_raw_dataset_by_key(metadata, "db-files/support_card_level")),
+            ("card_talent_upgrade", load_raw_dataset_by_key(metadata, "db-files/card_talent_upgrade")),
         ]
     )
 
     return OrderedDict(
         [
             ("characters", normalize_characters(config, metadata, raw["characters"], raw["character_cards"], raw["skills"])),
+            (
+                "character_progression",
+                normalize_character_progression(
+                    config,
+                    metadata,
+                    raw["character_cards"],
+                    raw["card_talent_upgrade"],
+                    raw["skills"],
+                ),
+            ),
             ("supports", normalize_supports(config, metadata, raw["support_cards"], raw["support_effects"], raw["skills"])),
+            (
+                "support_progression",
+                normalize_support_progression(
+                    config,
+                    metadata,
+                    raw["support_card_level"],
+                    raw["support_cards"],
+                ),
+            ),
             ("skills", normalize_skills(config, metadata, raw["skills"], raw["skill_effect_values"], raw["skill_condition_values"])),
             ("races", normalize_races(config, metadata, raw["races"])),
             ("racetracks", normalize_racetracks(config, metadata, raw["racetracks"])),
             ("g1_factors", normalize_g1_factors(config, metadata, raw["factors"], raw["races"], raw["skills"])),
+            ("cm_targets", normalize_cm_targets(config, metadata, raw["cm_targets"], raw["races"], raw["racetracks"])),
+            ("scenarios", normalize_scenarios(config, metadata, raw["scenarios"], raw["static_scenarios"], raw["scenario_factors"])),
+            (
+                "training_events",
+                normalize_training_events(
+                    config,
+                    metadata,
+                    OrderedDict(
+                        [
+                            ("shared", raw["training_events_shared"]),
+                            ("char", raw["training_events_char"]),
+                            ("char_card", raw["training_events_char_card"]),
+                            ("friend", raw["training_events_friend"]),
+                            ("group", raw["training_events_group"]),
+                            ("scenario", raw["training_events_scenario"]),
+                            ("sr", raw["training_events_sr"]),
+                            ("ssr", raw["training_events_ssr"]),
+                            ("te_pairs_en", raw["training_event_names"]),
+                        ]
+                    ),
+                    raw["character_cards"],
+                    raw["support_cards"],
+                    raw["static_scenarios"],
+                ),
+            ),
             (
                 "compatibility",
                 normalize_compatibility(
@@ -1980,6 +2728,27 @@ def build_static_app_payload(config: dict[str, Any], normalized: dict[str, Any],
         new_filter_definition("availability_en", "EN Availability", {"available": "Available", "unreleased": "Unreleased"}),
         new_filter_definition("score_band", "Top Match Score"),
     ]
+    cm_defs = [
+        new_filter_definition("track_name", "Track"),
+        new_filter_definition("surface", "Surface"),
+        new_filter_definition("distance", "Distance"),
+        new_filter_definition("direction", "Direction"),
+        new_filter_definition("season", "Season"),
+        new_filter_definition("weather", "Weather"),
+        new_filter_definition("condition", "Condition"),
+    ]
+    scenarios_defs = [
+        new_filter_definition("program", "Program"),
+        new_filter_definition("scenario_key", "Scenario Key"),
+        new_filter_definition("factor_effect", "Factor Effect"),
+    ]
+    training_events_defs = [
+        new_filter_definition("event_source", "Event Source", TRAINING_EVENT_SOURCE_LABELS),
+        new_filter_definition("linked_character", "Linked Character"),
+        new_filter_definition("linked_support", "Linked Support"),
+        new_filter_definition("linked_scenario", "Linked Scenario"),
+        new_filter_definition("has_branching", "Branching", {"yes": "Yes", "no": "No"}),
+    ]
 
     characters_items: list[dict[str, Any]] = []
     for item in as_array(normalized["characters"]["items"]):
@@ -2192,6 +2961,91 @@ def build_static_app_payload(config: dict[str, Any], normalized: dict[str, Any],
             )
         )
 
+    cm_items: list[dict[str, Any]] = []
+    for item in as_array(normalized["cm_targets"]["items"]):
+        race_profile = item.get("race_profile") or {}
+        cm_items.append(
+            OrderedDict(
+                [
+                    ("id", item["id"]),
+                    ("title", item["name"]),
+                    ("subtitle", f"{race_profile.get('track_name')} | {race_profile.get('distance_m')}m | {race_profile.get('season')}"),
+                    ("badges", [race_profile.get("surface"), race_profile.get("distance_category"), race_profile.get("direction")]),
+                    ("search_text", join_search_text([item["name"], item["names"]["ja"], race_profile.get("track_name"), race_profile.get("surface"), race_profile.get("distance_category"), race_profile.get("season"), race_profile.get("weather"), race_profile.get("condition")])),
+                    (
+                        "filters",
+                        OrderedDict(
+                            [
+                                ("track_name", race_profile.get("track_name")),
+                                ("surface", race_profile.get("surface")),
+                                ("distance", race_profile.get("distance_category")),
+                                ("direction", race_profile.get("direction")),
+                                ("season", race_profile.get("season")),
+                                ("weather", race_profile.get("weather")),
+                                ("condition", race_profile.get("condition")),
+                            ]
+                        ),
+                    ),
+                    ("detail", item),
+                ]
+            )
+        )
+
+    scenarios_items: list[dict[str, Any]] = []
+    for item in as_array(normalized["scenarios"]["items"]):
+        scenarios_items.append(
+            OrderedDict(
+                [
+                    ("id", item["id"]),
+                    ("title", item["name"]),
+                    ("subtitle", f"{item.get('program_label') or 'Program -'} | {len(as_array(item.get('factors')))} factor(s)"),
+                    ("badges", as_array(item.get("factor_effects"))[:4]),
+                    ("search_text", join_search_text([item["name"], item.get("key"), item.get("program_label"), item.get("factor_effects"), [factor.get("name") for factor in as_array(item.get("factors"))]])),
+                    (
+                        "filters",
+                        OrderedDict(
+                            [
+                                ("program", item.get("program_label")),
+                                ("scenario_key", item.get("key")),
+                                ("factor_effect", item.get("factor_effects")),
+                            ]
+                        ),
+                    ),
+                    ("detail", item),
+                ]
+            )
+        )
+
+    training_events_items: list[dict[str, Any]] = []
+    for item in as_array(normalized["training_events"]["items"]):
+        linked_characters = [entry.get("title") for entry in as_array(item.get("linked_entities")) if entry.get("entityKey") == "characters"]
+        linked_supports = [entry.get("title") for entry in as_array(item.get("linked_entities")) if entry.get("entityKey") == "supports"]
+        linked_scenarios = [entry.get("title") for entry in as_array(item.get("linked_entities")) if entry.get("entityKey") == "scenarios"]
+        training_events_items.append(
+            OrderedDict(
+                [
+                    ("id", item["id"]),
+                    ("title", item["name"]),
+                    ("subtitle", item["subtitle"]),
+                    ("badges", [item.get("source_label"), "Branching" if item.get("has_branching") else None, f"{item.get('choice_count')} choice(s)"]),
+                    ("search_text", join_search_text([item["name"], item.get("subtitle"), item.get("event_source"), item.get("source_label"), item.get("event_id"), linked_characters, linked_supports, linked_scenarios])),
+                    (
+                        "filters",
+                        OrderedDict(
+                            [
+                                ("event_source", item.get("event_source")),
+                                ("linked_character", linked_characters),
+                                ("linked_support", linked_supports),
+                                ("linked_scenario", linked_scenarios),
+                                ("has_branching", "yes" if item.get("has_branching") else "no"),
+                            ]
+                        ),
+                    ),
+                    ("detail", item),
+                ]
+            )
+        )
+
     payload = OrderedDict(
         [
             (
@@ -2224,6 +3078,9 @@ def build_static_app_payload(config: dict[str, Any], normalized: dict[str, Any],
                                     ("races", OrderedDict([("count", len(races_items)), ("imported_at", normalized["races"]["source"]["imported_at"])])),
                                     ("racetracks", OrderedDict([("count", len(racetracks_items)), ("imported_at", normalized["racetracks"]["source"]["imported_at"])])),
                                     ("g1_factors", OrderedDict([("count", len(g1_items)), ("imported_at", normalized["g1_factors"]["source"]["imported_at"])])),
+                                    ("cm_targets", OrderedDict([("count", len(cm_items)), ("imported_at", normalized["cm_targets"]["source"]["imported_at"])])),
+                                    ("scenarios", OrderedDict([("count", len(scenarios_items)), ("imported_at", normalized["scenarios"]["source"]["imported_at"])])),
+                                    ("training_events", OrderedDict([("count", len(training_events_items)), ("imported_at", normalized["training_events"]["source"]["imported_at"])])),
                                     ("compatibility", OrderedDict([("count", len(compat_items)), ("imported_at", normalized["compatibility"]["source"]["imported_at"])])),
                                 ]
                             ),
@@ -2241,6 +3098,9 @@ def build_static_app_payload(config: dict[str, Any], normalized: dict[str, Any],
                         ("races", new_app_entity("Races", normalized["races"]["source"], races_defs, races_items)),
                         ("racetracks", new_app_entity("Racetracks", normalized["racetracks"]["source"], racetracks_defs, racetracks_items)),
                         ("g1_factors", new_app_entity("G1 Factors", normalized["g1_factors"]["source"], g1_defs, g1_items)),
+                        ("cm_targets", new_app_entity("CM Targets", normalized["cm_targets"]["source"], cm_defs, cm_items)),
+                        ("scenarios", new_app_entity("Scenarios", normalized["scenarios"]["source"], scenarios_defs, scenarios_items)),
+                        ("training_events", new_app_entity("Training Events", normalized["training_events"]["source"], training_events_defs, training_events_items)),
                         ("compatibility", new_app_entity("Compatibility", normalized["compatibility"]["source"], compat_defs, compat_items, normalized["compatibility"]["model"])),
                     ]
                 ),

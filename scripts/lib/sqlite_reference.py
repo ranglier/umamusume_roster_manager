@@ -8,7 +8,7 @@ from typing import Any, Callable
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-SQLITE_RUNTIME_SCHEMA_VERSION = "1.0.0"
+SQLITE_RUNTIME_SCHEMA_VERSION = "1.2.0"
 
 APTITUDE_DISPLAY_LABELS = {
     "turf": "Turf",
@@ -188,6 +188,27 @@ CREATE TABLE character_skill_links (
   FOREIGN KEY (character_id) REFERENCES characters(id) ON DELETE CASCADE
 );
 
+CREATE TABLE character_progression (
+  character_id TEXT PRIMARY KEY,
+  card_id INTEGER NOT NULL,
+  base_character_id INTEGER NOT NULL,
+  talent_group_id INTEGER,
+  awakening_skill_count INTEGER NOT NULL DEFAULT 0,
+  payload_json TEXT NOT NULL,
+  FOREIGN KEY (character_id) REFERENCES characters(id) ON DELETE CASCADE
+);
+
+CREATE TABLE character_progression_levels (
+  character_id TEXT NOT NULL,
+  awakening_level INTEGER NOT NULL,
+  linked_skill_id TEXT,
+  linked_skill_name TEXT,
+  costs_json TEXT,
+  payload_json TEXT,
+  PRIMARY KEY (character_id, awakening_level),
+  FOREIGN KEY (character_id) REFERENCES characters(id) ON DELETE CASCADE
+);
+
 CREATE TABLE supports (
   id TEXT PRIMARY KEY,
   support_id INTEGER NOT NULL,
@@ -252,6 +273,23 @@ CREATE TABLE support_hint_other_effects (
   payload_json TEXT,
   PRIMARY KEY (support_id, slot_index),
   FOREIGN KEY (support_id) REFERENCES supports(id) ON DELETE CASCADE
+);
+
+CREATE TABLE support_progression (
+  rarity INTEGER PRIMARY KEY,
+  label TEXT,
+  card_count INTEGER NOT NULL DEFAULT 0,
+  max_level INTEGER NOT NULL DEFAULT 0,
+  payload_json TEXT NOT NULL
+);
+
+CREATE TABLE support_progression_levels (
+  rarity INTEGER NOT NULL,
+  level INTEGER NOT NULL,
+  total_exp INTEGER NOT NULL,
+  curve_id INTEGER,
+  PRIMARY KEY (rarity, level),
+  FOREIGN KEY (rarity) REFERENCES support_progression(rarity) ON DELETE CASCADE
 );
 
 CREATE TABLE skills (
@@ -384,6 +422,136 @@ CREATE TABLE g1_factor_related_races (
   FOREIGN KEY (factor_id) REFERENCES g1_factors(id) ON DELETE CASCADE
 );
 
+CREATE TABLE cm_targets (
+  id TEXT PRIMARY KEY,
+  cm_id INTEGER NOT NULL,
+  resource_id INTEGER,
+  slug TEXT,
+  name TEXT NOT NULL,
+  name_en TEXT,
+  name_ja TEXT,
+  start_at TEXT,
+  end_at TEXT,
+  start_ts INTEGER,
+  end_ts INTEGER,
+  track_id TEXT,
+  track_name TEXT,
+  track_slug TEXT,
+  surface TEXT,
+  surface_slug TEXT,
+  distance_m INTEGER,
+  distance_category TEXT,
+  distance_category_slug TEXT,
+  direction TEXT,
+  direction_slug TEXT,
+  season TEXT,
+  season_slug TEXT,
+  weather TEXT,
+  weather_slug TEXT,
+  condition TEXT,
+  condition_slug TEXT,
+  title TEXT NOT NULL,
+  subtitle TEXT,
+  badges_json TEXT NOT NULL,
+  search_text TEXT NOT NULL,
+  payload_json TEXT NOT NULL
+);
+
+CREATE TABLE cm_target_related_entities (
+  cm_target_id TEXT NOT NULL,
+  relation_type TEXT NOT NULL,
+  slot_index INTEGER NOT NULL,
+  entity_key TEXT NOT NULL,
+  entity_id TEXT NOT NULL,
+  title TEXT,
+  subtitle TEXT,
+  payload_json TEXT NOT NULL,
+  PRIMARY KEY (cm_target_id, relation_type, slot_index),
+  FOREIGN KEY (cm_target_id) REFERENCES cm_targets(id) ON DELETE CASCADE
+);
+
+CREATE TABLE scenarios (
+  id TEXT PRIMARY KEY,
+  scenario_id INTEGER NOT NULL,
+  scenario_key TEXT,
+  slug TEXT,
+  name TEXT NOT NULL,
+  order_index INTEGER,
+  program INTEGER,
+  program_label TEXT,
+  title TEXT NOT NULL,
+  subtitle TEXT,
+  badges_json TEXT NOT NULL,
+  search_text TEXT NOT NULL,
+  payload_json TEXT NOT NULL
+);
+
+CREATE TABLE scenario_stat_caps (
+  scenario_id TEXT NOT NULL,
+  stat_key TEXT NOT NULL,
+  stat_value INTEGER NOT NULL,
+  sort_order INTEGER NOT NULL,
+  PRIMARY KEY (scenario_id, stat_key),
+  FOREIGN KEY (scenario_id) REFERENCES scenarios(id) ON DELETE CASCADE
+);
+
+CREATE TABLE scenario_factors (
+  scenario_id TEXT NOT NULL,
+  slot_index INTEGER NOT NULL,
+  factor_id INTEGER,
+  name TEXT,
+  effects_json TEXT,
+  payload_json TEXT NOT NULL,
+  PRIMARY KEY (scenario_id, slot_index),
+  FOREIGN KEY (scenario_id) REFERENCES scenarios(id) ON DELETE CASCADE
+);
+
+CREATE TABLE training_events (
+  id TEXT PRIMARY KEY,
+  event_source TEXT NOT NULL,
+  source_label TEXT,
+  owner_id TEXT NOT NULL,
+  event_id TEXT NOT NULL,
+  group_index INTEGER NOT NULL,
+  sequence_index INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  name_source TEXT,
+  linked_support_id TEXT,
+  linked_scenario_id TEXT,
+  choice_count INTEGER NOT NULL,
+  has_branching INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  subtitle TEXT,
+  badges_json TEXT NOT NULL,
+  search_text TEXT NOT NULL,
+  payload_json TEXT NOT NULL
+);
+
+CREATE TABLE training_event_linked_entities (
+  training_event_id TEXT NOT NULL,
+  slot_index INTEGER NOT NULL,
+  entity_key TEXT NOT NULL,
+  entity_id TEXT NOT NULL,
+  title TEXT,
+  subtitle TEXT,
+  availability_en TEXT,
+  payload_json TEXT NOT NULL,
+  PRIMARY KEY (training_event_id, slot_index),
+  FOREIGN KEY (training_event_id) REFERENCES training_events(id) ON DELETE CASCADE
+);
+
+CREATE TABLE training_event_choices (
+  training_event_id TEXT NOT NULL,
+  slot_index INTEGER NOT NULL,
+  choice_token TEXT,
+  choice_label TEXT,
+  effect_count INTEGER NOT NULL,
+  effect_tokens_json TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  PRIMARY KEY (training_event_id, slot_index),
+  FOREIGN KEY (training_event_id) REFERENCES training_events(id) ON DELETE CASCADE
+);
+
 CREATE TABLE compatibility (
   id TEXT PRIMARY KEY,
   character_id INTEGER NOT NULL,
@@ -476,17 +644,57 @@ CREATE INDEX idx_racetracks_distance_category ON racetracks(distance_category);
 CREATE INDEX idx_racetracks_has_slopes ON racetracks(has_slopes);
 
 CREATE INDEX idx_g1_factor_related_races_track_name ON g1_factor_related_races(track_name);
+CREATE INDEX idx_cm_targets_track_name ON cm_targets(track_name);
+CREATE INDEX idx_cm_targets_surface ON cm_targets(surface);
+CREATE INDEX idx_cm_targets_distance_category ON cm_targets(distance_category);
+CREATE INDEX idx_cm_targets_direction ON cm_targets(direction);
+CREATE INDEX idx_cm_targets_season ON cm_targets(season);
+CREATE INDEX idx_scenarios_program ON scenarios(program);
+CREATE INDEX idx_scenarios_key ON scenarios(scenario_key);
+CREATE INDEX idx_training_events_source ON training_events(event_source);
+CREATE INDEX idx_training_events_owner ON training_events(owner_id);
+CREATE INDEX idx_training_events_linked_support ON training_events(linked_support_id);
+CREATE INDEX idx_training_events_linked_scenario ON training_events(linked_scenario_id);
 CREATE INDEX idx_compatibility_available_en ON compatibility(available_en);
 CREATE INDEX idx_compatibility_top_score ON compatibility(top_score DESC);
 CREATE INDEX idx_compatibility_matches_character_id ON compatibility_top_matches(character_id);
+CREATE INDEX idx_character_progression_talent_group ON character_progression(talent_group_id);
+CREATE INDEX idx_support_progression_levels_rarity ON support_progression_levels(rarity);
 
 CREATE VIEW browse_characters AS
 SELECT id, title, subtitle, badges_json, media_json, search_text, rarity, availability_en
 FROM characters;
 
+CREATE VIEW roster_character_projection AS
+SELECT
+  c.id,
+  c.card_id,
+  c.base_character_id,
+  c.title,
+  c.subtitle,
+  c.rarity,
+  c.availability_en,
+  cp.talent_group_id,
+  cp.awakening_skill_count
+FROM characters c
+LEFT JOIN character_progression cp ON cp.character_id = c.id;
+
 CREATE VIEW browse_supports AS
 SELECT id, title, subtitle, badges_json, media_json, search_text, type, rarity, availability_en
 FROM supports;
+
+CREATE VIEW roster_support_projection AS
+SELECT
+  s.id,
+  s.support_id,
+  s.character_id,
+  s.title,
+  s.subtitle,
+  s.rarity,
+  s.availability_en,
+  sp.max_level AS rarity_max_level
+FROM supports s
+LEFT JOIN support_progression sp ON sp.rarity = s.rarity;
 
 CREATE VIEW browse_skills AS
 SELECT id, title, subtitle, badges_json, media_json, search_text, rarity, cost, character_specific
@@ -503,6 +711,18 @@ FROM racetracks;
 CREATE VIEW browse_g1_factors AS
 SELECT id, title, subtitle, badges_json, search_text
 FROM g1_factors;
+
+CREATE VIEW browse_cm_targets AS
+SELECT id, title, subtitle, badges_json, search_text, track_name, surface, distance_category, direction, season, weather, condition
+FROM cm_targets;
+
+CREATE VIEW browse_scenarios AS
+SELECT id, title, subtitle, badges_json, search_text, program, scenario_key
+FROM scenarios;
+
+CREATE VIEW browse_training_events AS
+SELECT id, title, subtitle, badges_json, search_text, event_source, linked_support_id, linked_scenario_id, has_branching
+FROM training_events;
 
 CREATE VIEW browse_compatibility AS
 SELECT id, title, subtitle, badges_json, search_text, available_en, top_score, score_band
@@ -642,9 +862,11 @@ def build_reference_database(
             if progress_callback:
                 progress_callback({"progress": 88, "message": "Importing characters into SQLite...", "current_task": "Writing characters"})
             _insert_characters(connection, normalized["characters"])
+            _insert_character_progression(connection, normalized["character_progression"])
             if progress_callback:
                 progress_callback({"progress": 90, "message": "Importing supports into SQLite...", "current_task": "Writing supports"})
             _insert_supports(connection, normalized["supports"])
+            _insert_support_progression(connection, normalized["support_progression"])
             if progress_callback:
                 progress_callback({"progress": 92, "message": "Importing skills into SQLite...", "current_task": "Writing skills"})
             _insert_skills(connection, normalized["skills"])
@@ -653,6 +875,9 @@ def build_reference_database(
             _insert_races(connection, normalized["races"])
             _insert_racetracks(connection, normalized["racetracks"])
             _insert_g1_factors(connection, normalized["g1_factors"])
+            _insert_cm_targets(connection, normalized["cm_targets"])
+            _insert_scenarios(connection, normalized["scenarios"])
+            _insert_training_events(connection, normalized["training_events"])
             _insert_compatibility(connection, normalized["compatibility"])
             if progress_callback:
                 progress_callback({"progress": 97, "message": "Finalizing SQLite indexes...", "current_task": "Running ANALYZE"})
@@ -1036,6 +1261,47 @@ def _insert_characters(connection: sqlite3.Connection, dataset: dict[str, Any]) 
             )
 
 
+def _insert_character_progression(connection: sqlite3.Connection, dataset: dict[str, Any]) -> None:
+    for item in as_array(dataset.get("items")):
+        character_id = str(item.get("id") or "")
+        if not character_id:
+            continue
+
+        connection.execute(
+            """
+            INSERT INTO character_progression (
+              character_id, card_id, base_character_id, talent_group_id, awakening_skill_count, payload_json
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                character_id,
+                int(item.get("card_id") or 0),
+                int(item.get("base_character_id") or 0),
+                int(item.get("talent_group_id") or 0) if item.get("talent_group_id") is not None else None,
+                int(item.get("awakening_skill_count") or 0),
+                encode_json(item),
+            ),
+        )
+
+        for level in as_array(item.get("awakening_levels")):
+            skill = level.get("skill") or {}
+            connection.execute(
+                """
+                INSERT INTO character_progression_levels (
+                  character_id, awakening_level, linked_skill_id, linked_skill_name, costs_json, payload_json
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    character_id,
+                    int(level.get("awakening_level") or level.get("talent_level") or 0),
+                    str(skill.get("id")) if skill.get("id") is not None else None,
+                    skill.get("name"),
+                    encode_json(level.get("costs") or []),
+                    encode_json(level),
+                ),
+            )
+
+
 def _insert_supports(connection: sqlite3.Connection, dataset: dict[str, Any]) -> None:
     for effect in as_array(dataset.get("effect_catalog")):
         connection.execute(
@@ -1176,6 +1442,41 @@ def _insert_supports(connection: sqlite3.Connection, dataset: dict[str, Any]) ->
                     int(effect["hint_value"]) if effect.get("hint_value") is not None else None,
                     SUPPORT_STAT_GAIN_LABELS.get(hint_type),
                     encode_json(effect),
+                ),
+            )
+
+
+def _insert_support_progression(connection: sqlite3.Connection, dataset: dict[str, Any]) -> None:
+    for item in as_array(dataset.get("items")):
+        rarity = int(item.get("rarity") or 0)
+        if rarity <= 0:
+            continue
+
+        connection.execute(
+            """
+            INSERT INTO support_progression (rarity, label, card_count, max_level, payload_json)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                rarity,
+                item.get("label"),
+                int(item.get("card_count") or 0),
+                int(item.get("max_level") or 0),
+                encode_json(item),
+            ),
+        )
+
+        for level in as_array(item.get("levels")):
+            connection.execute(
+                """
+                INSERT INTO support_progression_levels (rarity, level, total_exp, curve_id)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    rarity,
+                    int(level.get("level") or 0),
+                    int(level.get("total_exp") or 0),
+                    int(level.get("curve_id") or 0) if level.get("curve_id") is not None else None,
                 ),
             )
 
@@ -1466,6 +1767,277 @@ def _insert_g1_factors(connection: sqlite3.Connection, dataset: dict[str, Any]) 
                     int(race["distance_m"]) if race.get("distance_m") is not None else None,
                     race.get("grade"),
                     encode_json(race),
+                ),
+            )
+
+
+def _insert_cm_targets(connection: sqlite3.Connection, dataset: dict[str, Any]) -> None:
+    for item in as_array(dataset.get("items")):
+        race_profile = item.get("race_profile") or {}
+        filters = OrderedDict(
+            [
+                ("track_name", race_profile.get("track_name")),
+                ("surface", race_profile.get("surface")),
+                ("distance", race_profile.get("distance_category")),
+                ("direction", race_profile.get("direction")),
+                ("season", race_profile.get("season")),
+                ("weather", race_profile.get("weather")),
+                ("condition", race_profile.get("condition")),
+            ]
+        )
+        badges = [race_profile.get("surface"), race_profile.get("distance_category"), race_profile.get("direction")]
+        subtitle = f"{race_profile.get('track_name')} | {race_profile.get('distance_m')}m | {race_profile.get('season')}"
+        search_text = join_search_text(
+            [
+                item.get("name"),
+                item.get("names", {}).get("ja"),
+                race_profile.get("track_name"),
+                race_profile.get("surface"),
+                race_profile.get("distance_category"),
+                race_profile.get("direction"),
+                race_profile.get("season"),
+                race_profile.get("weather"),
+                race_profile.get("condition"),
+            ]
+        )
+
+        connection.execute(
+            """
+            INSERT INTO cm_targets (
+              id, cm_id, resource_id, slug, name, name_en, name_ja, start_at, end_at, start_ts, end_ts,
+              track_id, track_name, track_slug, surface, surface_slug, distance_m, distance_category,
+              distance_category_slug, direction, direction_slug, season, season_slug, weather, weather_slug,
+              condition, condition_slug, title, subtitle, badges_json, search_text, payload_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(item["id"]),
+                int(item["cm_id"]),
+                int(item["resource_id"]) if item.get("resource_id") is not None else None,
+                item.get("slug"),
+                item.get("name"),
+                item.get("names", {}).get("en"),
+                item.get("names", {}).get("ja"),
+                item.get("start_at"),
+                item.get("end_at"),
+                int(item["start_ts"]) if item.get("start_ts") is not None else None,
+                int(item["end_ts"]) if item.get("end_ts") is not None else None,
+                race_profile.get("track_id"),
+                race_profile.get("track_name"),
+                race_profile.get("track_slug"),
+                race_profile.get("surface"),
+                race_profile.get("surface_slug"),
+                int(race_profile["distance_m"]) if race_profile.get("distance_m") is not None else None,
+                race_profile.get("distance_category"),
+                race_profile.get("distance_category_slug"),
+                race_profile.get("direction"),
+                race_profile.get("direction_slug"),
+                race_profile.get("season"),
+                race_profile.get("season_slug"),
+                race_profile.get("weather"),
+                race_profile.get("weather_slug"),
+                race_profile.get("condition"),
+                race_profile.get("condition_slug"),
+                item.get("name"),
+                subtitle,
+                encode_json([badge for badge in badges if badge]),
+                search_text,
+                encode_json(item),
+            ),
+        )
+        _insert_filter_values(connection, "cm_targets", str(item["id"]), filters)
+
+        for relation_type in ("related_races", "related_racetracks"):
+            for slot_index, related in enumerate(as_array(item.get(relation_type))):
+                connection.execute(
+                    """
+                    INSERT INTO cm_target_related_entities (
+                      cm_target_id, relation_type, slot_index, entity_key, entity_id, title, subtitle, payload_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        str(item["id"]),
+                        relation_type,
+                        slot_index,
+                        related.get("entityKey"),
+                        related.get("id"),
+                        related.get("title"),
+                        related.get("subtitle"),
+                        encode_json(related),
+                    ),
+                )
+
+
+def _insert_scenarios(connection: sqlite3.Connection, dataset: dict[str, Any]) -> None:
+    stat_order = {"speed": 1, "stamina": 2, "power": 3, "guts": 4, "wit": 5}
+    for item in as_array(dataset.get("items")):
+        filters = OrderedDict(
+            [
+                ("program", item.get("program_label")),
+                ("scenario_key", item.get("key")),
+                ("factor_effect", item.get("factor_effects")),
+            ]
+        )
+        subtitle = f"{item.get('program_label') or 'Program -'} | {len(as_array(item.get('factors')))} factor(s)"
+        search_text = join_search_text(
+            [
+                item.get("name"),
+                item.get("key"),
+                item.get("program_label"),
+                item.get("factor_effects"),
+                [factor.get("name") for factor in as_array(item.get("factors"))],
+            ]
+        )
+
+        connection.execute(
+            """
+            INSERT INTO scenarios (
+              id, scenario_id, scenario_key, slug, name, order_index, program, program_label,
+              title, subtitle, badges_json, search_text, payload_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(item["id"]),
+                int(item["scenario_id"]),
+                item.get("key"),
+                item.get("slug"),
+                item.get("name"),
+                int(item["order"]) if item.get("order") is not None else None,
+                int(item["program"]) if item.get("program") is not None else None,
+                item.get("program_label"),
+                item.get("name"),
+                subtitle,
+                encode_json(as_array(item.get("factor_effects"))[:4]),
+                search_text,
+                encode_json(item),
+            ),
+        )
+        _insert_filter_values(connection, "scenarios", str(item["id"]), filters)
+
+        for stat_key, stat_value in (item.get("stat_caps") or {}).items():
+            connection.execute(
+                """
+                INSERT INTO scenario_stat_caps (scenario_id, stat_key, stat_value, sort_order)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    str(item["id"]),
+                    stat_key,
+                    int(stat_value),
+                    stat_order.get(stat_key, 99),
+                ),
+            )
+
+        for slot_index, factor in enumerate(as_array(item.get("factors"))):
+            connection.execute(
+                """
+                INSERT INTO scenario_factors (scenario_id, slot_index, factor_id, name, effects_json, payload_json)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(item["id"]),
+                    slot_index,
+                    int(factor["id"]) if factor.get("id") is not None else None,
+                    factor.get("name"),
+                    encode_json(as_array(factor.get("effects"))),
+                    encode_json(factor),
+                ),
+            )
+
+
+def _insert_training_events(connection: sqlite3.Connection, dataset: dict[str, Any]) -> None:
+    for item in as_array(dataset.get("items")):
+        linked_characters = [entry.get("title") for entry in as_array(item.get("linked_entities")) if entry.get("entityKey") == "characters"]
+        linked_supports = [entry.get("title") for entry in as_array(item.get("linked_entities")) if entry.get("entityKey") == "supports"]
+        linked_scenarios = [entry.get("title") for entry in as_array(item.get("linked_entities")) if entry.get("entityKey") == "scenarios"]
+        filters = OrderedDict(
+            [
+                ("event_source", item.get("event_source")),
+                ("linked_character", linked_characters),
+                ("linked_support", linked_supports),
+                ("linked_scenario", linked_scenarios),
+                ("has_branching", "yes" if item.get("has_branching") else "no"),
+            ]
+        )
+        badges = [item.get("source_label"), "Branching" if item.get("has_branching") else None, f"{item.get('choice_count')} choice(s)"]
+        search_text = join_search_text(
+            [
+                item.get("name"),
+                item.get("subtitle"),
+                item.get("event_source"),
+                item.get("source_label"),
+                item.get("event_id"),
+                linked_characters,
+                linked_supports,
+                linked_scenarios,
+            ]
+        )
+
+        connection.execute(
+            """
+            INSERT INTO training_events (
+              id, event_source, source_label, owner_id, event_id, group_index, sequence_index, name, name_source,
+              linked_support_id, linked_scenario_id, choice_count, has_branching, title, subtitle, badges_json,
+              search_text, payload_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(item["id"]),
+                item.get("event_source"),
+                item.get("source_label"),
+                str(item.get("owner_id")),
+                str(item.get("event_id")),
+                int(item["group_index"]),
+                int(item["sequence_index"]),
+                item.get("name"),
+                item.get("name_source"),
+                item.get("linked_support_id"),
+                item.get("linked_scenario_id"),
+                int(item.get("choice_count") or 0),
+                bool_int(item.get("has_branching")),
+                item.get("title") or item.get("name"),
+                item.get("subtitle"),
+                encode_json([badge for badge in badges if badge]),
+                search_text,
+                encode_json(item),
+            ),
+        )
+        _insert_filter_values(connection, "training_events", str(item["id"]), filters)
+
+        for slot_index, linked in enumerate(as_array(item.get("linked_entities"))):
+            connection.execute(
+                """
+                INSERT INTO training_event_linked_entities (
+                  training_event_id, slot_index, entity_key, entity_id, title, subtitle, availability_en, payload_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(item["id"]),
+                    slot_index,
+                    linked.get("entityKey"),
+                    linked.get("id"),
+                    linked.get("title"),
+                    linked.get("subtitle"),
+                    linked.get("availabilityEn"),
+                    encode_json(linked),
+                ),
+            )
+
+        for slot_index, choice in enumerate(as_array(item.get("choices"))):
+            connection.execute(
+                """
+                INSERT INTO training_event_choices (
+                  training_event_id, slot_index, choice_token, choice_label, effect_count, effect_tokens_json, payload_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(item["id"]),
+                    slot_index,
+                    str(choice.get("choice_token")) if choice.get("choice_token") is not None else None,
+                    choice.get("choice_label"),
+                    int(choice.get("effect_count") or 0),
+                    encode_json(as_array(choice.get("effect_tokens"))),
+                    encode_json(choice),
                 ),
             )
 

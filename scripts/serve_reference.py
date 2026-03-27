@@ -29,6 +29,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DIST_ROOT = PROJECT_ROOT / "dist"
 REFERENCE_META_PATH = DIST_ROOT / "data" / "reference-meta.json"
 REFERENCE_DB_PATH = get_reference_database_path()
+NORMALIZED_ROOT = PROJECT_ROOT / "data" / "normalized"
 USER_DATA_ROOT = PROJECT_ROOT / "data" / "user"
 BACKUP_ROOT = PROJECT_ROOT / "data" / "backups"
 PROFILES_INDEX_PATH = USER_DATA_ROOT / "profiles.json"
@@ -38,6 +39,8 @@ BACKUP_ID_PATTERN = re.compile(r"^backup_\d{8}_\d{6}_[0-9a-f]{8}$")
 PROFILE_EXPORT_KIND = "umamusume-profile-export"
 FULL_BACKUP_KIND = "umamusume-full-backup"
 ADMIN_JOB_HISTORY_LIMIT = 12
+SUPPORT_STAGE_LEVELS = [1, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50]
+SUPPORT_BASE_CAP_BY_RARITY = {1: 20, 2: 25, 3: 30}
 
 JOB_LOCK = threading.Lock()
 ACTIVE_ADMIN_JOB: dict | None = None
@@ -82,6 +85,237 @@ def read_json(path: Path, fallback_factory):
         return json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, json.JSONDecodeError):
         return fallback_factory()
+
+
+def get_reference_entity_path(entity_key: str) -> Path:
+    return NORMALIZED_ROOT / f"{entity_key}.json"
+
+
+def load_reference_entity(entity_key: str) -> dict:
+    path = get_reference_entity_path(entity_key)
+    if not path.exists():
+        raise FileNotFoundError(entity_key)
+    payload = json.loads(path.read_text(encoding="utf-8-sig"))
+    if not isinstance(payload, dict):
+        raise ValueError(entity_key)
+    return payload
+
+
+def load_reference_items_lookup(entity_key: str) -> dict[str, dict]:
+    payload = load_reference_entity(entity_key)
+    return {
+        str(item.get("id")): item
+        for item in payload.get("items", [])
+        if isinstance(item, dict) and str(item.get("id") or "").strip()
+    }
+
+
+def normalize_string_list(value: object, *, field_name: str) -> list[str]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError(f"{field_name} must be a list of strings.")
+
+    normalized: list[str] = []
+    for entry in value:
+        if not isinstance(entry, str):
+            raise ValueError(f"{field_name} must be a list of strings.")
+        cleaned = entry.strip()
+        if not cleaned:
+            continue
+        if len(cleaned) > 64:
+            raise ValueError(f"{field_name} entries are too long.")
+        if cleaned not in normalized:
+            normalized.append(cleaned)
+    return normalized
+
+
+def clamp_int(value: object, minimum: int, maximum: int, fallback: int) -> int:
+    if not isinstance(value, int):
+        return fallback
+    return max(minimum, min(maximum, value))
+
+
+def get_support_level_cap(rarity: int, limit_break: int) -> int:
+    base_cap = SUPPORT_BASE_CAP_BY_RARITY.get(rarity, 30)
+    return min(50, base_cap + (max(0, min(4, limit_break)) * 5))
+
+
+def build_character_progression_lookup() -> dict[str, dict]:
+    return load_reference_items_lookup("character_progression")
+
+
+def build_support_progression_lookup() -> dict[int, dict]:
+    lookup: dict[int, dict] = {}
+    for item in load_reference_entity("support_progression").get("items", []):
+        if not isinstance(item, dict):
+            continue
+        rarity = int(item.get("rarity") or 0)
+        if rarity > 0:
+            lookup[rarity] = item
+    return lookup
+
+
+def get_support_curve_progress(progression_item: dict | None, level: int, cap: int) -> dict:
+    levels = progression_item.get("levels") if isinstance(progression_item, dict) else []
+    total_exp_by_level = {
+        int(entry.get("level") or 0): int(entry.get("total_exp") or 0)
+        for entry in levels or []
+        if isinstance(entry, dict)
+    }
+    effective_level = max(1, min(level, cap))
+    return {
+        "level": effective_level,
+        "cap": cap,
+        "total_exp": total_exp_by_level.get(effective_level),
+        "cap_total_exp": total_exp_by_level.get(cap),
+    }
+
+
+def summarize_character_progression(entry: dict, detail: dict, progression: dict | None) -> dict:
+    awakening_skills = list((detail.get("skill_links") or {}).get("awakening") or [])
+    awakening_level = clamp_int(entry.get("awakening"), 0, 5, 0)
+    unlocked_count = max(0, min(len(awakening_skills), awakening_level - 1))
+    unlocked_skills = awakening_skills[:unlocked_count]
+    locked_skills = awakening_skills[unlocked_count:]
+    awakening_levels = list((progression or {}).get("awakening_levels") or [])
+    unlocked_levels = [level for level in awakening_levels if int(level.get("awakening_level") or 0) <= awakening_level]
+    locked_levels = [level for level in awakening_levels if int(level.get("awakening_level") or 0) > awakening_level]
+
+    if awakening_level >= 5 and int(entry.get("stars") or 0) >= 5:
+        progress_bucket = "maxed"
+    elif awakening_level >= 4 or int(entry.get("stars") or 0) >= 4:
+        progress_bucket = "advanced"
+    elif awakening_level >= 2 or int(entry.get("stars") or 0) >= 3:
+        progress_bucket = "started"
+    else:
+        progress_bucket = "base"
+
+    unlock_state = "full" if locked_skills == [] and awakening_skills else "partial" if unlocked_skills else "none"
+    return {
+        "stars": int(entry.get("stars") or 0),
+        "awakening": awakening_level,
+        "unique_level": int(entry.get("unique_level") or 1),
+        "custom_tags": list(entry.get("custom_tags") or []),
+        "status_flags": list(entry.get("status_flags") or []),
+        "progress_bucket": progress_bucket,
+        "unlock_state": unlock_state,
+        "unlocked_skill_nodes": unlocked_count,
+        "unlocked_awakening_skills": unlocked_skills,
+        "locked_awakening_skills": locked_skills,
+        "unlocked_awakening_levels": unlocked_levels,
+        "locked_awakening_levels": locked_levels,
+    }
+
+
+def resolve_support_effect_value(effect: dict, effective_level: int) -> dict:
+    current_value = None
+    current_stage_index = 0
+    max_stage_index = 0
+    for value_entry in effect.get("values") or []:
+        if not isinstance(value_entry, dict):
+            continue
+        stage_index = int(value_entry.get("stage_index") or 0)
+        max_stage_index = max(max_stage_index, stage_index)
+        threshold = SUPPORT_STAGE_LEVELS[min(max(stage_index, 1), len(SUPPORT_STAGE_LEVELS)) - 1]
+        if effective_level >= threshold:
+            current_value = value_entry.get("value")
+            current_stage_index = stage_index
+    return {
+        "effect_id": effect.get("effect_id"),
+        "name": effect.get("name"),
+        "description": effect.get("description"),
+        "symbol": effect.get("symbol"),
+        "current_value": current_value,
+        "max_value": effect.get("max_value"),
+        "current_stage_index": current_stage_index,
+        "max_stage_index": max_stage_index,
+    }
+
+
+def summarize_support_progression(entry: dict, detail: dict, progression: dict | None) -> dict:
+    rarity = int(detail.get("rarity") or 0)
+    limit_break = clamp_int(entry.get("limit_break"), 0, 4, 0)
+    cap = get_support_level_cap(rarity, limit_break)
+    level = clamp_int(entry.get("level"), 1, cap, 1)
+    curve_progress = get_support_curve_progress(progression, level, cap)
+    effective_effects = [resolve_support_effect_value(effect, curve_progress["level"]) for effect in (detail.get("effects") or [])]
+    unique_unlock_level = detail.get("unique_effect_unlock_level")
+    unique_effects = []
+    for effect in detail.get("unique_effects") or []:
+        unique_effects.append(
+            {
+                "effect_id": effect.get("effect_id"),
+                "name": effect.get("name"),
+                "description": effect.get("description"),
+                "value": effect.get("value"),
+                "unlocked": bool(unique_unlock_level is None or curve_progress["level"] >= int(unique_unlock_level)),
+            }
+        )
+
+    level_ratio = curve_progress["level"] / max(1, cap)
+    if curve_progress["level"] >= cap:
+        progress_bucket = "maxed"
+    elif level_ratio >= 0.75:
+        progress_bucket = "usable"
+    elif level_ratio >= 0.4:
+        progress_bucket = "developing"
+    else:
+        progress_bucket = "starter"
+
+    return {
+        "level": curve_progress["level"],
+        "limit_break": limit_break,
+        "level_cap": cap,
+        "rarity_max_level": int((progression or {}).get("max_level") or cap),
+        "total_exp": curve_progress["total_exp"],
+        "cap_total_exp": curve_progress["cap_total_exp"],
+        "progress_bucket": progress_bucket,
+        "usable": progress_bucket in {"usable", "maxed"},
+        "custom_tags": list(entry.get("custom_tags") or []),
+        "status_flags": list(entry.get("status_flags") or []),
+        "effective_effects": effective_effects,
+        "effective_unique_effects": unique_effects,
+        "available_hint_skills": list(detail.get("hint_skills") or []),
+        "available_event_skills": list(detail.get("event_skills") or []),
+    }
+
+
+def build_roster_view(profile_id: str, entity_key: str) -> dict:
+    if entity_key not in {"characters", "supports"}:
+        raise ValueError("Unsupported roster entity.")
+
+    roster = load_roster(profile_id)
+    reference_lookup = load_reference_items_lookup(entity_key)
+    progression_lookup = build_character_progression_lookup() if entity_key == "characters" else build_support_progression_lookup()
+
+    entries: dict[str, dict] = {}
+    for item_id, roster_entry in (roster.get(entity_key) or {}).items():
+        if not isinstance(roster_entry, dict) or not roster_entry.get("owned"):
+            continue
+
+        reference_item = reference_lookup.get(str(item_id))
+        if reference_item is None:
+            continue
+
+        detail = reference_item.get("detail") if isinstance(reference_item, dict) and reference_item.get("detail") else reference_item
+        if entity_key == "characters":
+            derived = summarize_character_progression(roster_entry, detail, progression_lookup.get(str(item_id)))
+        else:
+            derived = summarize_support_progression(roster_entry, detail, progression_lookup.get(int(detail.get("rarity") or 0)))
+
+        entries[str(item_id)] = {
+            "item_id": str(item_id),
+            "roster": roster_entry,
+            "derived": derived,
+        }
+
+    return {
+        "profile_id": profile_id,
+        "entity": entity_key,
+        "updated_at": roster.get("updated_at"),
+        "entries": entries,
+    }
 
 
 def atomic_write_json(path: Path, payload: object) -> None:
@@ -176,6 +410,12 @@ def normalize_roster_entry(entity_key: str, raw_entry: object) -> dict | None:
             raise ValueError(f"{entity_key}.note is too long.")
         normalized["note"] = note
 
+    if "custom_tags" in raw_entry:
+        normalized["custom_tags"] = normalize_string_list(raw_entry["custom_tags"], field_name=f"{entity_key}.custom_tags")
+
+    if "status_flags" in raw_entry:
+        normalized["status_flags"] = normalize_string_list(raw_entry["status_flags"], field_name=f"{entity_key}.status_flags")
+
     if entity_key == "characters":
         if "stars" in raw_entry:
             stars = raw_entry["stars"]
@@ -187,6 +427,11 @@ def normalize_roster_entry(entity_key: str, raw_entry: object) -> dict | None:
             if not isinstance(awakening, int) or awakening < 0 or awakening > 5:
                 raise ValueError("characters.awakening must be an integer between 0 and 5.")
             normalized["awakening"] = awakening
+        if "unique_level" in raw_entry:
+            unique_level = raw_entry["unique_level"]
+            if not isinstance(unique_level, int) or unique_level < 1 or unique_level > 6:
+                raise ValueError("characters.unique_level must be an integer between 1 and 6.")
+            normalized["unique_level"] = unique_level
 
     if entity_key == "supports":
         if "level" in raw_entry:
@@ -722,6 +967,63 @@ class ReferenceRequestHandler(http.server.SimpleHTTPRequestHandler):
             self._send_json(load_profiles_index())
             return
 
+        if request_path == "/api/reference":
+            if not NORMALIZED_ROOT.exists():
+                self._send_api_error(404, "Normalized reference data not found. Run the update command first.")
+                return
+
+            items = []
+            for path in sorted(NORMALIZED_ROOT.glob("*.json")):
+                if path.name == "reference-meta.json":
+                    continue
+                try:
+                    payload = json.loads(path.read_text(encoding="utf-8-sig"))
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(payload, dict):
+                    continue
+                items.append(
+                    {
+                        "entity": path.stem,
+                        "count": len(payload.get("items") or []),
+                        "generated_at": payload.get("generated_at"),
+                        "source": payload.get("source"),
+                    }
+                )
+            self._send_json({"items": items})
+            return
+
+        match = re.fullmatch(r"/api/reference/([a-z_]+)", request_path)
+        if match:
+            entity_key = match.group(1)
+            try:
+                self._send_json(load_reference_entity(entity_key))
+            except FileNotFoundError:
+                self._send_api_error(404, "Reference entity not found.")
+            except ValueError:
+                self._send_api_error(500, "Reference entity payload is invalid.")
+            return
+
+        match = re.fullmatch(r"/api/reference/([a-z_]+)/([^/]+)", request_path)
+        if match:
+            entity_key = match.group(1)
+            item_id = match.group(2)
+            try:
+                payload = load_reference_entity(entity_key)
+            except FileNotFoundError:
+                self._send_api_error(404, "Reference entity not found.")
+                return
+            except ValueError:
+                self._send_api_error(500, "Reference entity payload is invalid.")
+                return
+
+            item = next((entry for entry in payload.get("items") or [] if str(entry.get("id")) == item_id), None)
+            if item is None:
+                self._send_api_error(404, "Reference item not found.")
+                return
+            self._send_json(item)
+            return
+
         match = re.fullmatch(r"/api/profiles/(p_\d{3,})/export", request_path)
         if match:
             try:
@@ -740,6 +1042,21 @@ class ReferenceRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self._send_bytes(backup_path.read_bytes(), content_type="application/zip", filename=info["filename"])
             except FileNotFoundError:
                 self._send_api_error(404, "Backup not found.")
+            return
+
+        roster_view_match = re.fullmatch(r"/api/profiles/(p_\d{3,})/roster-view/(characters|supports)", request_path)
+        if roster_view_match:
+            roster_profile_id = roster_view_match.group(1)
+            entity_key = roster_view_match.group(2)
+            if not profile_exists(roster_profile_id):
+                self._send_api_error(404, "Profile not found.")
+                return
+            try:
+                self._send_json(build_roster_view(roster_profile_id, entity_key))
+            except FileNotFoundError:
+                self._send_api_error(404, "Reference data not found. Run the update command first.")
+            except ValueError as exc:
+                self._send_api_error(400, str(exc))
             return
 
         roster_profile_id = self._match_profile_roster_path(request_path)

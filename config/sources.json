@@ -76,12 +76,72 @@
       "pageUrl": "https://gametora.com/umamusume/g1-race-factor-list"
     },
     {
+      "key": "events/champions-meeting",
+      "pageUrl": "https://gametora.com/umamusume"
+    },
+    {
+      "key": "scenarios",
+      "pageUrl": "https://gametora.com/umamusume"
+    },
+    {
+      "key": "static/scenarios",
+      "pageUrl": "https://gametora.com/umamusume"
+    },
+    {
+      "key": "static/scenario_factors",
+      "pageUrl": "https://gametora.com/umamusume"
+    },
+    {
+      "key": "training_events/shared",
+      "pageUrl": "https://gametora.com/umamusume"
+    },
+    {
+      "key": "training_events/char",
+      "pageUrl": "https://gametora.com/umamusume"
+    },
+    {
+      "key": "training_events/char_card",
+      "pageUrl": "https://gametora.com/umamusume"
+    },
+    {
+      "key": "training_events/friend",
+      "pageUrl": "https://gametora.com/umamusume"
+    },
+    {
+      "key": "training_events/group",
+      "pageUrl": "https://gametora.com/umamusume"
+    },
+    {
+      "key": "training_events/scenario",
+      "pageUrl": "https://gametora.com/umamusume"
+    },
+    {
+      "key": "training_events/sr",
+      "pageUrl": "https://gametora.com/umamusume"
+    },
+    {
+      "key": "training_events/ssr",
+      "pageUrl": "https://gametora.com/umamusume"
+    },
+    {
+      "key": "dict/te_pairs_en",
+      "pageUrl": "https://gametora.com/umamusume"
+    },
+    {
       "key": "db-files/succession_relation",
       "pageUrl": "https://gametora.com/umamusume/compatibility"
     },
     {
       "key": "db-files/succession_relation_member",
       "pageUrl": "https://gametora.com/umamusume/compatibility"
+    },
+    {
+      "key": "db-files/support_card_level",
+      "pageUrl": "https://gametora.com/umamusume/supports"
+    },
+    {
+      "key": "db-files/card_talent_upgrade",
+      "pageUrl": "https://gametora.com/umamusume/characters"
     }
   ],
   "entities": [
@@ -164,6 +224,76 @@
         "db-files/succession_relation_member",
         "characters",
         "character-cards"
+      ]
+    },
+    {
+      "key": "cm_targets",
+      "label": "CM Targets",
+      "pageUrls": [
+        "https://gametora.com/umamusume"
+      ],
+      "datasetKeys": [
+        "events/champions-meeting",
+        "races",
+        "racetracks"
+      ]
+    },
+    {
+      "key": "scenarios",
+      "label": "Scenarios",
+      "pageUrls": [
+        "https://gametora.com/umamusume"
+      ],
+      "datasetKeys": [
+        "scenarios",
+        "static/scenarios",
+        "static/scenario_factors"
+      ]
+    },
+    {
+      "key": "training_events",
+      "label": "Training Events",
+      "pageUrls": [
+        "https://gametora.com/umamusume"
+      ],
+      "datasetKeys": [
+        "training_events/shared",
+        "training_events/char",
+        "training_events/char_card",
+        "training_events/friend",
+        "training_events/group",
+        "training_events/scenario",
+        "training_events/sr",
+        "training_events/ssr",
+        "dict/te_pairs_en",
+        "characters",
+        "character-cards",
+        "support-cards",
+        "static/scenarios"
+      ]
+    },
+    {
+      "key": "character_progression",
+      "label": "Character Progression",
+      "pageUrls": [
+        "https://gametora.com/umamusume/characters"
+      ],
+      "datasetKeys": [
+        "character-cards",
+        "db-files/card_talent_upgrade",
+        "skills"
+      ]
+    },
+    {
+      "key": "support_progression",
+      "label": "Support Progression",
+      "pageUrls": [
+        "https://gametora.com/umamusume/supports"
+      ],
+      "datasetKeys": [
+        "support-cards",
+        "support_effects",
+        "db-files/support_card_level"
       ]
     }
   ]

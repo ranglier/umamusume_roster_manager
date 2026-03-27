@@ -13,6 +13,9 @@ Le scope actuellement implemente est:
 - `racetracks`
 - `g1_factors`
 - `compatibility`
+- `cm_targets`
+- `scenarios`
+- `training_events`
 
 Les builds, les parents personnels et l'optimisation Champions Meeting ne sont pas encore traites.
 
@@ -82,6 +85,8 @@ Une couche utilisateur locale a ete ajoutee via le serveur Python:
 - `My Roster` limite aux personnages et supports possedes
 - `Catalog` pour ajouter / retirer les personnages et supports possedes
 - edition locale des personnages et supports depuis `My Roster`
+- mode `detail` pour l'edition fine
+- mode `batch` pour la maintenance rapide du roster
 - fond video local sur la page de selection de profil
 
 API locale ajoutee:
@@ -92,8 +97,45 @@ API locale ajoutee:
 - `DELETE /api/profiles/<id>`
 - `GET /api/profiles/<id>/roster`
 - `PUT /api/profiles/<id>/roster`
+- `GET /api/profiles/<id>/roster-view/characters`
+- `GET /api/profiles/<id>/roster-view/supports`
 
-### 5. Administration locale
+### 5. Approfondissement du roster characters / supports
+
+Le roster local n'est plus seulement une couche de possession simple.
+
+Les entrees `characters` et `supports` stockent maintenant des champs reels supplementaires:
+
+- `characters`
+  - `unique_level`
+  - `custom_tags`
+  - `status_flags`
+- `supports`
+  - `custom_tags`
+  - `status_flags`
+
+Le serveur calcule aussi des projections derivees a partir de la reference et du roster:
+
+- `characters`
+  - skills d'awakening debloquees / verrouillees
+  - niveaux d'awakening accessibles
+  - resume de progression et etat d'unlock
+- `supports`
+  - cap de niveau reel selon LB
+  - progression effective par rapport a la rarete
+  - snapshot des effets utilisables au niveau reel
+  - hint skills et event skills disponibles dans l'etat reel de la carte
+
+Pour cela, le referentiel a ete complete avec deux familles techniques:
+
+- `character_progression`
+  - base sur `db-files/card_talent_upgrade`
+- `support_progression`
+  - base sur `db-files/support_card_level`
+
+Ces donnees restent internes au moteur roster/build et ne sont pas exposees comme datasets top-level dans la navbar.
+
+### 6. Administration locale
 
 Une page d'administration locale a ete ajoutee pour centraliser:
 
@@ -108,7 +150,7 @@ Le wizard et l'admin affichent maintenant une progression plus lisible pendant l
 - progression basee sur des checkpoints backend
 - affichage de la tache courante en cours
 
-### 6. Assets visuels locaux
+### 7. Assets visuels locaux
 
 Le projet telecharge et sert localement:
 
@@ -120,7 +162,7 @@ Le projet telecharge et sert localement:
 
 Le but est d'eviter tout appel a GameTora au moment de la consultation.
 
-### 7. Donnees relationnelles utiles pour la suite
+### 8. Donnees relationnelles utiles pour la suite
 
 Des liens utiles ont ete preserves dans le referentiel:
 
@@ -129,7 +171,28 @@ Des liens utiles ont ete preserves dans le referentiel:
 - navigation inverse depuis un skill vers characters / supports
 - `compatibility` comme entite de reference, pas comme simple outil annexe
 
-### 8. Migration SQLite demarree
+### 9. Extension CM et scenarios
+
+Le referentiel local integre maintenant aussi:
+
+- `cm_targets`
+  - editions Champions Meeting
+  - dates
+  - profil de course cible
+  - liens vers `races` et `racetracks` candidates quand resolubles
+- `scenarios`
+  - scenarios d'entrainement
+  - caps de stats
+  - scenario factors
+- `training_events`
+  - entite agregree
+  - `event_source` pour distinguer `shared`, `char`, `char_card`, `friend`, `group`, `scenario`, `sr`, `ssr`
+  - liens vers characters / supports / scenarios quand disponibles
+  - conservation des choix, outcomes bruts et metadonnees source pour la suite
+
+Le choix structurel retenu est de garder `training_events` comme une seule entite de reference, avec filtrage par source, au lieu de multiplier les entites top-level.
+
+### 10. Migration SQLite demarree
 
 Une premiere couche SQLite locale a ete ajoutee pour la reference:
 
@@ -137,6 +200,9 @@ Une premiere couche SQLite locale a ete ajoutee pour la reference:
 - schema relationnel pour les entites principales et leurs liens utiles
 - conservation de `payload_json` pour ne pas perdre de detail pendant la transition
 - metadonnees SQLite exposees via `__meta`
+- vues techniques preparees pour le roster:
+  - `roster_character_projection`
+  - `roster_support_projection`
 
 L'UI continue encore de lire le bundle statique existant; la bascule des lectures vers SQLite sera la tranche suivante.
 
@@ -186,6 +252,10 @@ Ajouts recents:
 - page d'administration locale
 - favicon `URM`
 - progression d'update rendue plus explicite pour les longues operations
+- nouveaux datasets visibles immediatement dans la navbar:
+  - `CM Targets`
+  - `Scenarios`
+  - `Training Events`
 
 ### Assets caches localement
 
@@ -279,12 +349,15 @@ Apres clonage, un import local est donc necessaire pour regenerer les donnees et
 - logique de builds
 - parents personnels
 - heuristiques Champions Meeting
+- decodage semantique fin des outcomes de `training_events`
 
 ## Prochaine etape logique
 
 La suite naturelle est maintenant d'enrichir la phase 2:
 
-- enrichir le roster personnel au-dela de la possession simple
+- exploiter le roster enrichi pour la future couche `legacies`
+- ajouter la couche `legacies`
+- exploiter `cm_targets` et `scenarios` comme vraies cibles de planification
 - conserver la separation stricte entre reference globale et donnees utilisateur
 - preparer ensuite les croisements necessaires a la phase builds / CM
 
