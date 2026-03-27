@@ -1,4 +1,4 @@
-﻿:root {
+:root {
   --bg: #110d0a;
   --panel: rgba(24, 18, 15, 0.84);
   --panel-strong: rgba(29, 22, 17, 0.94);
@@ -1301,11 +1301,162 @@ body.route-wizard .profile-gate::after {
   gap: 10px;
 }
 
+.roster-editor-highlight {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.roster-editor-highlight h4 {
+  margin: 0;
+  color: var(--ink-deep);
+}
+
 .roster-editor-meta-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
   margin-top: 10px;
+}
+
+.meta-eyebrow {
+  margin: 0 0 6px;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.roster-progress-hero {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 12px;
+  padding: 14px;
+  border: 1px solid rgba(115, 160, 198, 0.14);
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at top right, rgba(55, 199, 255, 0.08), transparent 32%),
+    linear-gradient(180deg, rgba(11, 22, 33, 0.9), rgba(8, 17, 26, 0.86));
+}
+
+.roster-progress-hero-top {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: start;
+}
+
+.roster-progress-hero-top strong {
+  color: var(--ink-deep);
+  font-size: 1.15rem;
+}
+
+.roster-progress-hero-track,
+.result-card-overall-track,
+.progress-metric-track {
+  position: relative;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(15, 30, 45, 0.92);
+  box-shadow: inset 0 0 0 1px rgba(115, 160, 198, 0.12);
+}
+
+.roster-progress-hero-track {
+  height: 12px;
+}
+
+.roster-progress-hero-track span,
+.result-card-overall-track span,
+.progress-metric-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent-3), #66e2ff, #85ffc4);
+}
+
+.roster-progress-hero-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.progress-metric {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid rgba(115, 160, 198, 0.12);
+  border-radius: 14px;
+  background: rgba(8, 17, 26, 0.7);
+}
+
+.progress-metric-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  color: var(--text-soft);
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.progress-metric-head strong {
+  color: var(--ink-deep);
+  font-size: 0.95rem;
+}
+
+.progress-metric-track {
+  height: 8px;
+}
+
+.progress-metric-amber .progress-metric-track span {
+  background: linear-gradient(90deg, #cb7a29, #f5c35c);
+}
+
+.progress-metric-violet .progress-metric-track span {
+  background: linear-gradient(90deg, #8558d8, #bf7dff);
+}
+
+.progress-metric-green .progress-metric-track span {
+  background: linear-gradient(90deg, #1da168, #8bf8b2);
+}
+
+.progress-metric-cyan .progress-metric-track span {
+  background: linear-gradient(90deg, #1797c5, #71ecff);
+}
+
+.state-pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.state-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(115, 160, 198, 0.14);
+  background: rgba(8, 17, 26, 0.76);
+  color: var(--text-soft);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.state-pill strong {
+  color: var(--ink-deep);
+}
+
+.state-pill-green {
+  border-color: rgba(82, 218, 143, 0.26);
+  background: rgba(18, 59, 42, 0.56);
+}
+
+.state-pill-amber {
+  border-color: rgba(236, 183, 88, 0.24);
+  background: rgba(73, 49, 20, 0.56);
 }
 
 .roster-derived-section .roster-progress-card {
@@ -1318,23 +1469,58 @@ body.route-wizard .profile-gate::after {
   background: rgba(7, 15, 23, 0.48);
 }
 
+.roster-collapsible {
+  border: 1px solid rgba(115, 160, 198, 0.12);
+  border-radius: 14px;
+  background: rgba(8, 17, 26, 0.62);
+}
+
+.roster-collapsible summary {
+  padding: 12px 14px;
+  color: var(--ink-deep);
+  font-weight: 700;
+  cursor: pointer;
+  list-style: none;
+}
+
+.roster-collapsible summary::-webkit-details-marker {
+  display: none;
+}
+
+.roster-collapsible summary::after {
+  content: "+";
+  float: right;
+  color: var(--accent);
+  font-size: 1rem;
+}
+
+.roster-collapsible[open] summary::after {
+  content: "−";
+}
+
+.roster-collapsible-body {
+  display: grid;
+  gap: 12px;
+  padding: 0 14px 14px;
+}
+
 .batch-table-shell {
   width: 100%;
-  overflow: auto;
+  overflow: visible;
   border: 1px solid rgba(115, 160, 198, 0.12);
   border-radius: 16px;
 }
 
 .batch-table {
   width: 100%;
-  min-width: 980px;
   border-collapse: collapse;
+  table-layout: fixed;
   background: rgba(10, 19, 29, 0.92);
 }
 
 .batch-table th,
 .batch-table td {
-  padding: 10px 10px;
+  padding: 8px 8px;
   border-bottom: 1px solid rgba(115, 160, 198, 0.08);
   text-align: left;
   vertical-align: top;
@@ -1354,7 +1540,7 @@ body.route-wizard .profile-gate::after {
 .batch-table td input[type="text"],
 .batch-table td input[type="number"] {
   width: 100%;
-  min-width: 84px;
+  min-width: 0;
 }
 
 .batch-open-button {
@@ -1370,11 +1556,16 @@ body.route-wizard .profile-gate::after {
 .batch-row-subtitle {
   margin-top: 6px;
   color: var(--text-soft);
-  font-size: 0.9rem;
+  font-size: 0.84rem;
 }
 
 .batch-save-button {
   white-space: nowrap;
+}
+
+.batch-meta-stack {
+  display: grid;
+  gap: 6px;
 }
 
 .error-text {
@@ -1403,6 +1594,10 @@ body.route-wizard .profile-gate::after {
   gap: 10px;
   justify-content: flex-start;
   overflow: hidden;
+}
+
+.result-card-roster {
+  min-height: 228px;
 }
 
 .result-card:hover,
@@ -1443,6 +1638,52 @@ body.route-wizard .profile-gate::after {
   line-height: 1.25;
   color: var(--ink-deep);
   overflow-wrap: anywhere;
+}
+
+.result-card-progress {
+  display: grid;
+  gap: 10px;
+  margin-top: 2px;
+}
+
+.result-card-progress-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.result-card-overall-track {
+  height: 7px;
+}
+
+.result-card-overall-value {
+  color: var(--ink-deep);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.result-card-progress-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.result-card-progress-grid .progress-metric {
+  padding: 8px 9px;
+  gap: 6px;
+}
+
+.result-card-progress-grid .progress-metric-head {
+  font-size: 0.78rem;
+}
+
+.result-card-progress-grid .progress-metric-head strong {
+  font-size: 0.84rem;
+}
+
+.result-card-progress-grid .progress-metric-track {
+  height: 6px;
 }
 
 .result-card-content {
@@ -2043,6 +2284,11 @@ code {
   .roster-editor-meta-grid {
     grid-template-columns: 1fr;
   }
+
+  .roster-progress-hero-grid,
+  .result-card-progress-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 1320px) {
@@ -2087,6 +2333,10 @@ code {
     grid-template-columns: 1fr;
   }
 
+  .roster-progress-hero-top {
+    flex-direction: column;
+  }
+
   body.route-profiles .profile-gate,
   body.route-wizard .profile-gate {
     padding: 22px;
@@ -2128,6 +2378,10 @@ code {
 
   .result-list {
     grid-template-columns: 1fr;
+  }
+
+  .result-card-roster {
+    min-height: 0;
   }
 
   .character-grid-body {

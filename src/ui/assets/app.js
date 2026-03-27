@@ -87,6 +87,27 @@
     { key: "_roster_status", label: "Status" },
     { key: "_roster_progress", label: "Progress" },
   ];
+  const TRAINING_EVENT_EFFECT_LABELS = {
+    37: "Extra Tank hint +1",
+    38: "Friendship +5",
+    39: "Guts +15",
+    40: "Energy +10",
+    41: "Mood +1",
+    42: "Energy -10",
+    43: "Stamina +15",
+    44: "Skill Pt +15",
+    45: "Speed +10",
+    46: "Stamina +5",
+    47: "Left-Handed hint +1",
+    48: "Speed +5",
+    49: "Wisdom +5",
+    50: "Speed +15",
+    51: "Friendship +5",
+    52: "Guts +10",
+    53: "Pace Chaser Straightaways hint +1",
+    54: "Early Lead hint +1",
+    55: "Energy +5",
+  };
 
   const state = {
     profileIndexLoaded: false,
@@ -924,13 +945,131 @@
     return `<div class="badge-row">${entries.map((entry) => renderBadge(entry)).join("")}</div>`;
   }
 
-  function renderCostRows(costs) {
-    return tableFromRows(
-      asArray(costs).map((cost) => [
-        `Slot ${cost.slot_index}`,
-        escapeHtml(`Category ${cost.item_category ?? "-"} | Item ${cost.item_id ?? "-"} | Qty ${cost.item_num ?? "-"}`),
-      ]),
-    );
+  function clampRatio(current, max, options = {}) {
+    const min = options.min || 0;
+    const currentNumber = Number(current);
+    const maxNumber = Number(max);
+    if (!Number.isFinite(currentNumber) || !Number.isFinite(maxNumber) || maxNumber <= 0) {
+      return 0;
+    }
+    return Math.max(0, Math.min(1, (currentNumber - min) / Math.max(1, maxNumber - min)));
+  }
+
+  function renderProgressMetric(label, displayValue, ratio, tone = "cyan") {
+    const percent = Math.round(Math.max(0, Math.min(1, Number(ratio) || 0)) * 100);
+    return `
+      <div class="progress-metric progress-metric-${escapeHtml(tone)}">
+        <div class="progress-metric-head">
+          <span>${escapeHtml(label)}</span>
+          <strong>${escapeHtml(displayValue)}</strong>
+        </div>
+        <div class="progress-metric-track">
+          <span style="width:${percent}%"></span>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderStatePill(label, value, tone = "neutral") {
+    return `
+      <div class="state-pill state-pill-${escapeHtml(tone)}">
+        <span>${escapeHtml(label)}</span>
+        <strong>${escapeHtml(value)}</strong>
+      </div>
+    `;
+  }
+
+  function getCharacterProgressSummary(projection) {
+    const starsRatio = clampRatio(projection.stars, 5);
+    const awakeningRatio = clampRatio(projection.awakening, 5);
+    const uniqueRatio = clampRatio(projection.unique_level, 6, { min: 1 });
+    const overallRatio = (starsRatio + awakeningRatio + uniqueRatio) / 3;
+    return {
+      overallRatio,
+      metrics: [
+        { label: "Stars", display: `${projection.stars}/5`, ratio: starsRatio, tone: "amber" },
+        { label: "Awk", display: `${projection.awakening}/5`, ratio: awakeningRatio, tone: "violet" },
+        { label: "Unique", display: `U${projection.unique_level}`, ratio: uniqueRatio, tone: "green" },
+      ],
+    };
+  }
+
+  function getSupportProgressSummary(projection) {
+    const levelCap = Math.max(1, Number(projection.level_cap) || Number(projection.level) || 1);
+    const levelRatio = clampRatio(projection.level, levelCap);
+    const lbRatio = clampRatio(projection.limit_break, 4);
+    const overallRatio = (levelRatio * 0.75) + (lbRatio * 0.25);
+    return {
+      overallRatio,
+      metrics: [
+        { label: "Level", display: `${projection.level}/${projection.level_cap || "-"}`, ratio: levelRatio, tone: "cyan" },
+        { label: "LB", display: `${projection.limit_break}/4`, ratio: lbRatio, tone: "amber" },
+      ],
+    };
+  }
+
+  function renderRosterCardProgress(entityKey, projection) {
+    if (!projection) {
+      return "";
+    }
+
+    const summary = entityKey === "characters"
+      ? getCharacterProgressSummary(projection)
+      : getSupportProgressSummary(projection);
+
+    return `
+      <div class="result-card-progress">
+        <div class="result-card-progress-top">
+          <div class="result-card-overall-track">
+            <span style="width:${Math.round(summary.overallRatio * 100)}%"></span>
+          </div>
+          <span class="result-card-overall-value">${Math.round(summary.overallRatio * 100)}%</span>
+        </div>
+        <div class="result-card-progress-grid">
+          ${summary.metrics.map((metric) => renderProgressMetric(metric.label, metric.display, metric.ratio, metric.tone)).join("")}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderRosterProgressHero(entityKey, projection) {
+    if (!projection) {
+      return "";
+    }
+
+    const summary = entityKey === "characters"
+      ? getCharacterProgressSummary(projection)
+      : getSupportProgressSummary(projection);
+
+    const statePills = entityKey === "characters"
+      ? `
+        ${renderStatePill("Progress", projection.progress_bucket || "-", "neutral")}
+        ${renderStatePill("Unlock State", projection.unlock_state || "-", projection.unlock_state === "full" ? "green" : projection.unlock_state === "partial" ? "amber" : "neutral")}
+      `
+      : `
+        ${renderStatePill("Progress", projection.progress_bucket || "-", "neutral")}
+        ${renderStatePill("Usable", projection.usable ? "Yes" : "No", projection.usable ? "green" : "neutral")}
+      `;
+
+    return `
+      <div class="roster-progress-hero">
+        <div class="roster-progress-hero-top">
+          <div>
+            <p class="meta-eyebrow">Progress Overview</p>
+            <strong>${Math.round(summary.overallRatio * 100)}% ready</strong>
+          </div>
+          <div class="state-pill-row">
+            ${statePills}
+          </div>
+        </div>
+        <div class="roster-progress-hero-track">
+          <span style="width:${Math.round(summary.overallRatio * 100)}%"></span>
+        </div>
+        <div class="roster-progress-hero-grid">
+          ${summary.metrics.map((metric) => renderProgressMetric(metric.label, metric.display, metric.ratio, metric.tone)).join("")}
+        </div>
+      </div>
+    `;
   }
 
   function renderCharacterRosterProjection(projection) {
@@ -940,51 +1079,10 @@
 
     return `
       <div class="detail-section roster-derived-section">
-        <h3>Current Progression</h3>
-        ${tableFromRows([
-          ["Stars", escapeHtml(projection.stars)],
-          ["Awakening", escapeHtml(projection.awakening)],
-          ["Unique Level", escapeHtml(projection.unique_level)],
-          ["Progress", escapeHtml(projection.progress_bucket)],
-          ["Unlock State", escapeHtml(projection.unlock_state)],
-        ])}
-        <h4>Local Tags</h4>
-        ${renderFlagBadgeList(projection.custom_tags)}
-        <h4>Status Flags</h4>
-        ${renderFlagBadgeList(projection.status_flags)}
-      </div>
-      <div class="detail-section roster-derived-section">
         <h3>Unlocked Awakening Skills</h3>
         ${renderLinkedSkillList(projection.unlocked_awakening_skills)}
         <h4>Locked Awakening Skills</h4>
         ${renderLinkedSkillList(projection.locked_awakening_skills)}
-      </div>
-      <div class="detail-section roster-derived-section">
-        <h3>Awakening Costs</h3>
-        <h4>Unlocked Levels</h4>
-        ${asArray(projection.unlocked_awakening_levels).length
-          ? asArray(projection.unlocked_awakening_levels)
-            .map((level) => `
-              <div class="roster-progress-card">
-                <strong>Awakening ${escapeHtml(level.awakening_level)}</strong>
-                ${level.skill ? `<p class="source-note">${escapeHtml(level.skill.name || `Skill #${level.skill.id}`)}</p>` : ""}
-                ${renderCostRows(level.costs)}
-              </div>
-            `)
-            .join("")
-          : "<p class='source-note'>None</p>"}
-        <h4>Locked Levels</h4>
-        ${asArray(projection.locked_awakening_levels).length
-          ? asArray(projection.locked_awakening_levels)
-            .map((level) => `
-              <div class="roster-progress-card">
-                <strong>Awakening ${escapeHtml(level.awakening_level)}</strong>
-                ${level.skill ? `<p class="source-note">${escapeHtml(level.skill.name || `Skill #${level.skill.id}`)}</p>` : ""}
-                ${renderCostRows(level.costs)}
-              </div>
-            `)
-            .join("")
-          : "<p class='source-note'>None</p>"}
       </div>
     `;
   }
@@ -995,32 +1093,6 @@
     }
 
     return `
-      <div class="detail-section roster-derived-section">
-        <h3>Current Progression</h3>
-        ${tableFromRows([
-          ["Level", escapeHtml(projection.level)],
-          ["Limit Break", escapeHtml(projection.limit_break)],
-          ["Level Cap", escapeHtml(projection.level_cap)],
-          ["Rarity Max Level", escapeHtml(projection.rarity_max_level)],
-          ["Progress", escapeHtml(projection.progress_bucket)],
-          ["Usable", escapeHtml(projection.usable ? "Yes" : "No")],
-          ["Current EXP", escapeHtml(projection.total_exp ?? "-")],
-          ["Cap EXP", escapeHtml(projection.cap_total_exp ?? "-")],
-        ])}
-        <h4>Local Tags</h4>
-        ${renderFlagBadgeList(projection.custom_tags)}
-        <h4>Status Flags</h4>
-        ${renderFlagBadgeList(projection.status_flags)}
-      </div>
-      <div class="detail-section roster-derived-section">
-        <h3>Effective Support Values</h3>
-        ${tableFromRows(
-          asArray(projection.effective_effects).map((effect) => [
-            effect.name || `Effect #${effect.effect_id}`,
-            escapeHtml(`${effect.current_value ?? "-"} / ${effect.max_value ?? "-"} | stage ${effect.current_stage_index || 0}/${effect.max_stage_index || 0}`),
-          ]),
-        )}
-      </div>
       <div class="detail-section roster-derived-section">
         <h3>Unique Effects At Current State</h3>
         ${tableFromRows(
@@ -1034,7 +1106,6 @@
   }
 
   function renderCharacters(detail, rosterProjection) {
-    const release = detail.release || {};
     const aptitudes = detail.aptitudes || {};
     const stats = detail.stats || {};
     const aptitudeSections = [
@@ -1076,13 +1147,6 @@
     ];
 
     return `
-      ${tableFromRows([
-        ["Card ID", escapeHtml(detail.card_id)],
-        ["Base Character ID", escapeHtml(detail.base_character_id)],
-        ["Variant", escapeHtml(detail.variant)],
-        ["Rarity", escapeHtml(`${detail.rarity}-star`)],
-        ["Release", escapeHtml(`JP ${release.jp || "-"} | EN ${release.en || "-"}`)],
-      ])}
       <div class="detail-section">
         <h3>Aptitudes</h3>
         <div class="character-grid-stack">
@@ -1117,45 +1181,12 @@
         <h4>Skills from events</h4>
         ${renderLinkedSkillList(detail.skill_links?.event)}
       </div>
-      <div class="detail-section">
-        <h3>Profile</h3>
-        ${tableFromRows([
-          ["Birthday", escapeHtml(detail.profile?.birthday || "-")],
-          ["Height", escapeHtml(detail.profile?.height_cm || "-")],
-          [
-            "Measurements",
-            escapeHtml(
-              detail.profile?.measurements
-                ? `B${detail.profile.measurements.b} / W${detail.profile.measurements.w} / H${detail.profile.measurements.h}`
-                : "-",
-            ),
-          ],
-          ["Sex", escapeHtml(detail.profile?.sex || "-")],
-          ["Voice Actor", escapeHtml(detail.profile?.voice_actor?.en || detail.profile?.voice_actor?.ja || "-")],
-        ])}
-      </div>
       ${renderCharacterRosterProjection(rosterProjection)}
     `;
   }
 
   function renderSupports(detail, rosterProjection) {
     return `
-      ${tableFromRows([
-        ["Support ID", escapeHtml(detail.support_id)],
-        ["Character ID", escapeHtml(detail.character_id)],
-        ["Type", escapeHtml(detail.type)],
-        ["Rarity", escapeHtml(detail.rarity)],
-        ["Obtained", escapeHtml(detail.obtained)],
-      ])}
-      <div class="detail-section">
-        <h3>Effects</h3>
-        ${tableFromRows(
-          asArray(detail.effects).map((effect) => [
-            effect.name || `Effect #${effect.effect_id}`,
-            escapeHtml(`max ${effect.max_value ?? "-"} | ${effect.description || ""}`),
-          ]),
-        )}
-      </div>
       <div class="detail-section">
         <h3>Unique Effects</h3>
         ${renderSimpleList(detail.unique_effects, (effect) => `${effect.name || `Effect #${effect.effect_id}`} (${effect.value})`)}
@@ -1173,6 +1204,28 @@
         ${renderSupportStatGainTable(detail.hint_other_effects)}
       </div>
       ${renderSupportRosterProjection(rosterProjection)}
+    `;
+  }
+
+  function renderRosterLocalNotes(entry) {
+    return `
+      <details class="roster-collapsible">
+        <summary>Local notes and organization</summary>
+        <div class="roster-collapsible-body">
+          <label class="field-stack field-stack-full">
+            <span>Local Tags</span>
+            <input name="custom_tags" type="text" placeholder="comma, separated, tags" value="${escapeHtml(asArray(entry.custom_tags).join(", "))}">
+          </label>
+          <label class="field-stack field-stack-full">
+            <span>Status Flags</span>
+            <input name="status_flags" type="text" placeholder="ready, farming, candidate" value="${escapeHtml(asArray(entry.status_flags).join(", "))}">
+          </label>
+          <label class="field-stack field-stack-full">
+            <span>Note</span>
+            <textarea name="note" rows="4" placeholder="Optional local note">${escapeHtml(entry.note || "")}</textarea>
+          </label>
+        </div>
+      </details>
     `;
   }
 
@@ -1362,17 +1415,17 @@
         <h3>Linked Entities</h3>
         ${renderReferenceList(detail.linked_entities)}
       </div>
-      <div class="detail-section">
-        <h3>Choices</h3>
-        ${tableFromRows(
-          asArray(detail.choices).map((choice) => [
-            choice.choice_label || `Choice ${choice.index}`,
-            escapeHtml(`${choice.effect_count || 0} effect token(s)${choice.choice_token != null ? ` | token ${choice.choice_token}` : ""}`),
-          ]),
-        )}
-      </div>
-      <div class="detail-section">
-        <h3>Raw Event Context</h3>
+        <div class="detail-section">
+          <h3>Choices</h3>
+          ${tableFromRows(
+            asArray(detail.choices).map((choice) => [
+              formatTrainingEventChoiceLabel(choice),
+              renderTrainingEventChoiceEffects(choice),
+            ]),
+          )}
+        </div>
+        <div class="detail-section">
+          <h3>Raw Event Context</h3>
         <pre class="code-block">${escapeHtml(
           JSON.stringify(
             {
@@ -1385,7 +1438,44 @@
           ),
         )}</pre>
       </div>
-    `;
+      `;
+  }
+
+  function formatTrainingEventChoiceLabel(choice) {
+    const rawLabel = String(choice?.choice_label || "").trim();
+    if (!rawLabel || /^\d+$/.test(rawLabel)) {
+      return `Choice ${choice?.index || "?"}`;
+    }
+    return rawLabel;
+  }
+
+  function renderTrainingEventChoiceEffects(choice) {
+    const labels = [];
+    const labelCounts = new Map();
+    let unclassifiedCount = 0;
+
+    asArray(choice?.effect_tokens).forEach((token) => {
+      const label = TRAINING_EVENT_EFFECT_LABELS[String(token)] || TRAINING_EVENT_EFFECT_LABELS[Number(token)];
+      if (!label) {
+        unclassifiedCount += 1;
+        return;
+      }
+      labelCounts.set(label, (labelCounts.get(label) || 0) + 1);
+    });
+
+    labelCounts.forEach((count, label) => {
+      labels.push(count > 1 ? `${label} x${count}` : label);
+    });
+
+    if (unclassifiedCount > 0) {
+      labels.push(unclassifiedCount === 1 ? "1 unclassified bonus" : `${unclassifiedCount} unclassified bonuses`);
+    }
+
+    if (!labels.length) {
+      return "<span class='source-note'>No readable bonus mapping available.</span>";
+    }
+
+    return `<div class="badge-row">${labels.map((label) => renderBadge(label)).join("")}</div>`;
   }
 
   function renderCompatibility(detail, model) {
@@ -1525,15 +1615,6 @@
     }
 
     if (mode === "roster") {
-      if (entityKey === "characters") {
-        badges.push(`${entry.stars}-star`);
-        badges.push(`Awk ${entry.awakening}`);
-        badges.push(`U${entry.unique_level || 1}`);
-      }
-      if (entityKey === "supports") {
-        badges.push(`Lv ${entry.level}`);
-        badges.push(`LB ${entry.limit_break}`);
-      }
     }
 
     asArray(entry.custom_tags).slice(0, 2).forEach((tag) => badges.push(tag));
@@ -2536,41 +2617,36 @@
           <thead>
             <tr>
               <th>Entry</th>
-              <th>Favorite</th>
-              ${entityKey === "characters" ? "<th>Stars</th><th>Awk</th><th>Unique</th><th>Unlock</th>" : "<th>Level</th><th>LB</th><th>Cap</th><th>Usable</th>"}
-              <th>Tags</th>
-              <th>Status</th>
-              <th>Progress</th>
+              ${entityKey === "characters" ? "<th>Stars</th><th>Awk</th><th>Unique</th>" : "<th>Level</th><th>LB</th>"}
+              <th>Local Meta</th>
               <th>Action</th>
             </tr>
           </thead>
           <tbody>
             ${filteredItems.map((item) => {
               const entry = getRosterEntry(entityKey, item);
-              const derived = getRosterViewEntry(entityKey, item)?.derived || {};
               return `
                 <tr data-batch-row="${escapeHtml(item.id)}">
                   <td>
                     <button type="button" class="batch-open-button" data-open-item="${escapeHtml(item.id)}">${escapeHtml(item.title)}</button>
                     <div class="batch-row-subtitle">${escapeHtml(item.subtitle || "")}</div>
                   </td>
-                  <td><input data-batch-field="favorite" type="checkbox" ${entry.favorite ? "checked" : ""}></td>
                   ${entityKey === "characters"
                     ? `
                       <td><input data-batch-field="stars" type="number" min="0" max="5" value="${escapeHtml(entry.stars)}"></td>
                       <td><input data-batch-field="awakening" type="number" min="0" max="5" value="${escapeHtml(entry.awakening)}"></td>
                       <td><input data-batch-field="unique_level" type="number" min="1" max="6" value="${escapeHtml(entry.unique_level || 1)}"></td>
-                      <td>${escapeHtml(derived.unlock_state || "-")}</td>
                     `
                     : `
                       <td><input data-batch-field="level" type="number" min="1" max="50" value="${escapeHtml(entry.level)}"></td>
                       <td><input data-batch-field="limit_break" type="number" min="0" max="4" value="${escapeHtml(entry.limit_break)}"></td>
-                      <td>${escapeHtml(derived.level_cap || "-")}</td>
-                      <td>${escapeHtml(derived.usable ? "Yes" : "No")}</td>
                     `}
-                  <td><input data-batch-field="custom_tags" type="text" value="${escapeHtml(asArray(entry.custom_tags).join(", "))}" placeholder="tag, tag"></td>
-                  <td><input data-batch-field="status_flags" type="text" value="${escapeHtml(asArray(entry.status_flags).join(", "))}" placeholder="flag, flag"></td>
-                  <td>${escapeHtml(derived.progress_bucket || "-")}</td>
+                  <td>
+                    <div class="batch-meta-stack">
+                      <input data-batch-field="custom_tags" type="text" value="${escapeHtml(asArray(entry.custom_tags).join(", "))}" placeholder="tags">
+                      <input data-batch-field="status_flags" type="text" value="${escapeHtml(asArray(entry.status_flags).join(", "))}" placeholder="status flags">
+                    </div>
+                  </td>
                   <td><button type="button" class="button-strong batch-save-button" data-save-batch-row="${escapeHtml(item.id)}">Save</button></td>
                 </tr>
               `;
@@ -2600,10 +2676,11 @@
 
   function collectBatchRowData(entityKey, item, row) {
     const defaults = getDefaultRosterEntry(entityKey, item);
+    const currentEntry = getRosterEntry(entityKey, item);
     const baseEntry = {
       owned: true,
-      favorite: row.querySelector('[data-batch-field="favorite"]')?.checked || false,
-      note: getRosterEntry(entityKey, item).note || "",
+      favorite: currentEntry.favorite || false,
+      note: currentEntry.note || "",
       custom_tags: parseRosterTokenList(row.querySelector('[data-batch-field="custom_tags"]')?.value),
       status_flags: parseRosterTokenList(row.querySelector('[data-batch-field="status_flags"]')?.value),
     };
@@ -2646,10 +2723,12 @@
       .map((item) => {
         const rosterBadges = getRosterBadges(entityKey, item, mode);
         const displayBadges = [...rosterBadges, ...asArray(item.badges).filter(Boolean)].slice(0, 7);
+        const rosterProjection = mode === "roster" ? getRosterViewEntry(entityKey, item)?.derived || null : null;
 
         return `
-          <article class="result-card ${item.id === localState.selectedId ? "active" : ""}" data-item-id="${escapeHtml(item.id)}">
+          <article class="result-card ${mode === "roster" ? "result-card-roster" : ""} ${item.id === localState.selectedId ? "active" : ""}" data-item-id="${escapeHtml(item.id)}">
             ${renderResultTop(item, entityKey)}
+            ${mode === "roster" ? renderRosterCardProgress(entityKey, rosterProjection) : ""}
             <div class="badge-row">
               ${displayBadges.map((badge) => renderBadge(badge)).join("")}
             </div>
@@ -2732,6 +2811,25 @@
       <div class="detail-section roster-section">
         <h3>Roster</h3>
         <p class="source-note">Editing the owned roster entry for <strong>${escapeHtml(getActiveProfile()?.name || "selected profile")}</strong>.</p>
+        ${derived ? `
+          <div class="roster-editor-highlight">
+            <h4>Current Progression</h4>
+            ${renderRosterProgressHero(entityKey, derived)}
+            <div class="roster-editor-meta-grid">
+              ${entityKey === "characters"
+                ? `
+                  <div class="admin-meta-card"><span class="meta-label">Stars</span><strong>${escapeHtml(derived.stars || 0)}</strong></div>
+                  <div class="admin-meta-card"><span class="meta-label">Awakening</span><strong>${escapeHtml(derived.awakening || 0)}</strong></div>
+                  <div class="admin-meta-card"><span class="meta-label">Unique</span><strong>${escapeHtml(`U${derived.unique_level || 1}`)}</strong></div>
+                `
+                : `
+                  <div class="admin-meta-card"><span class="meta-label">Level</span><strong>${escapeHtml(`${derived.level || 1}/${derived.level_cap || "-"}`)}</strong></div>
+                  <div class="admin-meta-card"><span class="meta-label">Limit Break</span><strong>${escapeHtml(`${derived.limit_break || 0}/4`)}</strong></div>
+                  <div class="admin-meta-card"><span class="meta-label">EXP</span><strong>${escapeHtml(`${derived.total_exp ?? "-"} / ${derived.cap_total_exp ?? "-"}`)}</strong></div>
+                `}
+            </div>
+          </div>
+        ` : ""}
         <form id="rosterForm" class="roster-form" data-item-id="${escapeHtml(item.id)}" data-entity-key="${escapeHtml(entityKey)}">
           <div class="roster-toggle-row">
             <label class="toggle-field">
@@ -2741,19 +2839,8 @@
           </div>
           <div class="roster-field-grid">
             ${progressFields}
-            <label class="field-stack field-stack-full">
-              <span>Local Tags</span>
-              <input name="custom_tags" type="text" placeholder="comma, separated, tags" value="${escapeHtml(asArray(entry.custom_tags).join(", "))}">
-            </label>
-            <label class="field-stack field-stack-full">
-              <span>Status Flags</span>
-              <input name="status_flags" type="text" placeholder="ready, farming, candidate" value="${escapeHtml(asArray(entry.status_flags).join(", "))}">
-            </label>
-            <label class="field-stack field-stack-full">
-              <span>Note</span>
-              <textarea name="note" rows="4" placeholder="Optional local note">${escapeHtml(entry.note || "")}</textarea>
-            </label>
           </div>
+          ${renderRosterLocalNotes(entry)}
           <div class="roster-actions">
             <button type="submit" class="button-strong">Save locally</button>
             <button type="button" class="button-secondary" id="removeFromRosterButton">Remove from roster</button>
@@ -2761,15 +2848,6 @@
           </div>
           <p id="rosterStatus" class="source-note ${state.rosterStatus.kind === "error" ? "error-text" : ""}">${escapeHtml(statusText)}</p>
         </form>
-        ${derived ? `
-          <div class="roster-editor-meta-grid">
-            <div class="admin-meta-card"><span class="meta-label">Progress</span><strong>${escapeHtml(derived.progress_bucket || "-")}</strong></div>
-            ${entityKey === "characters"
-              ? `<div class="admin-meta-card"><span class="meta-label">Unlock State</span><strong>${escapeHtml(derived.unlock_state || "-")}</strong></div>`
-              : `<div class="admin-meta-card"><span class="meta-label">Usable</span><strong>${escapeHtml(derived.usable ? "Yes" : "No")}</strong></div>`}
-            <div class="admin-meta-card"><span class="meta-label">Tags</span><strong>${escapeHtml(asArray(derived.custom_tags).join(", ") || "-")}</strong></div>
-          </div>
-        ` : ""}
       </div>
     `;
   }
