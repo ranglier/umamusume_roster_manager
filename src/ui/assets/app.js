@@ -543,6 +543,20 @@
     return getRosterViewPayload(entityKey).entries?.[item.id] || null;
   }
 
+  function getSupportLevelCap(rarity, limitBreak) {
+    const baseCapByRarity = { 1: 20, 2: 25, 3: 30 };
+    const safeRarity = Number(rarity) || 0;
+    const safeLimitBreak = clampNumber(limitBreak, 0, 4, 0);
+    const baseCap = baseCapByRarity[safeRarity] || 30;
+    return Math.min(50, baseCap + (safeLimitBreak * 5));
+  }
+
+  function getSupportEntryLevelCap(item, limitBreakOverride) {
+    const currentEntry = getRosterEntry("supports", item);
+    const effectiveLimitBreak = limitBreakOverride == null ? currentEntry.limit_break : limitBreakOverride;
+    return getSupportLevelCap(item?.detail?.rarity, effectiveLimitBreak);
+  }
+
   function syncSelectedProfileId() {
     const profileIds = state.profilesIndex.profiles.map((profile) => profile.id);
     if (!profileIds.length) {
@@ -2693,7 +2707,7 @@
                       <td><input data-batch-field="unique_level" type="number" min="1" max="6" value="${escapeHtml(entry.unique_level || 1)}"></td>
                     `
                     : `
-                      <td><input data-batch-field="level" type="number" min="1" max="50" value="${escapeHtml(entry.level)}"></td>
+                      <td><input data-batch-field="level" type="number" min="1" max="${escapeHtml(getSupportEntryLevelCap(item, entry.limit_break))}" value="${escapeHtml(entry.level)}"></td>
                       <td><input data-batch-field="limit_break" type="number" min="0" max="4" value="${escapeHtml(entry.limit_break)}"></td>
                     `}
                   <td>
@@ -2713,6 +2727,7 @@
 
     listEl.querySelectorAll("[data-open-item]").forEach((button) => {
       button.addEventListener("click", () => {
+        getViewState("roster", entityKey).presentation = "detail";
         setBrowseHash("roster", entityKey, button.dataset.openItem);
       });
     });
@@ -2751,8 +2766,16 @@
 
     return {
       ...baseEntry,
-      level: clampNumber(row.querySelector('[data-batch-field="level"]')?.value, 1, 50, defaults.level),
       limit_break: clampNumber(row.querySelector('[data-batch-field="limit_break"]')?.value, 0, 4, defaults.limit_break),
+      level: clampNumber(
+        row.querySelector('[data-batch-field="level"]')?.value,
+        1,
+        getSupportEntryLevelCap(
+          item,
+          clampNumber(row.querySelector('[data-batch-field="limit_break"]')?.value, 0, 4, defaults.limit_break),
+        ),
+        defaults.level,
+      ),
     };
   }
 
@@ -2854,7 +2877,7 @@
       : `
         <label class="field-stack">
           <span>Level</span>
-          <input name="level" type="number" min="1" max="50" value="${escapeHtml(entry.level)}">
+          <input name="level" type="number" min="1" max="${escapeHtml(getSupportEntryLevelCap(item, entry.limit_break))}" value="${escapeHtml(entry.level)}">
         </label>
         <label class="field-stack">
           <span>Limit break</span>

@@ -142,12 +142,20 @@ def get_support_level_cap(rarity: int, limit_break: int) -> int:
 
 
 def build_character_progression_lookup() -> dict[str, dict]:
-    return load_reference_items_lookup("character_progression")
+    try:
+        return load_reference_items_lookup("character_progression")
+    except (FileNotFoundError, ValueError):
+        return {}
 
 
 def build_support_progression_lookup() -> dict[int, dict]:
     lookup: dict[int, dict] = {}
-    for item in load_reference_entity("support_progression").get("items", []):
+    try:
+        items = load_reference_entity("support_progression").get("items", [])
+    except (FileNotFoundError, ValueError):
+        return lookup
+
+    for item in items:
         if not isinstance(item, dict):
             continue
         rarity = int(item.get("rarity") or 0)
@@ -460,6 +468,16 @@ def normalize_roster(raw_roster: object) -> dict:
     if not isinstance(raw_roster, dict):
         return roster
 
+    support_rarity_lookup: dict[str, int] = {}
+    try:
+        for item_id, item in load_reference_items_lookup("supports").items():
+            detail = item.get("detail") if isinstance(item, dict) and item.get("detail") else item
+            rarity = int(detail.get("rarity") or 0)
+            if rarity > 0:
+                support_rarity_lookup[item_id] = rarity
+    except (FileNotFoundError, ValueError):
+        support_rarity_lookup = {}
+
     normalized = {
         "version": 1,
         "updated_at": str(raw_roster.get("updated_at") or roster["updated_at"]),
@@ -479,6 +497,11 @@ def normalize_roster(raw_roster: object) -> dict:
 
             entry = normalize_roster_entry(entity_key, raw_entry)
             if entry is not None:
+                if entity_key == "supports" and "level" in entry:
+                    rarity = support_rarity_lookup.get(entry_id, 0)
+                    if rarity > 0:
+                        support_cap = get_support_level_cap(rarity, int(entry.get("limit_break") or 0))
+                        entry["level"] = min(int(entry["level"]), support_cap)
                 normalized[entity_key][entry_id] = entry
 
     return normalized
