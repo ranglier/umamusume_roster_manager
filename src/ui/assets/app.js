@@ -78,7 +78,8 @@
   const compactLayoutQuery = window.matchMedia("(max-width: 1680px)");
 
   const referenceEntityKeys = Object.keys(data.entities);
-  const rosterEntityKeys = ["characters", "supports"];
+  const legacyEntityKey = "legacy";
+  const rosterEntityKeys = ["characters", "supports", legacyEntityKey];
   const inlineMediaEntityKeys = new Set(["characters", "skills", "supports"]);
   const rosterFilterDefinitionsBase = [
     { key: "_roster_favorite", label: "Favorites" },
@@ -108,6 +109,98 @@
     54: "Early Lead hint +1",
     55: "Energy +5",
   };
+  const LEGACY_KIND_LABELS = {
+    stat: "Stat",
+    surface: "Surface",
+    distance: "Distance",
+    style: "Style",
+    unique: "Unique",
+    scenario: "Scenario",
+    g1: "G1",
+    skill: "Skill",
+  };
+  const LEGACY_STAT_OPTIONS = [
+    { value: "speed", label: "Speed" },
+    { value: "stamina", label: "Stamina" },
+    { value: "power", label: "Power" },
+    { value: "guts", label: "Guts" },
+    { value: "wit", label: "Wit" },
+  ];
+  const LEGACY_SURFACE_OPTIONS = [
+    { value: "turf", label: "Turf" },
+    { value: "dirt", label: "Dirt" },
+  ];
+  const LEGACY_DISTANCE_OPTIONS = [
+    { value: "short", label: "Short" },
+    { value: "mile", label: "Mile" },
+    { value: "medium", label: "Medium" },
+    { value: "long", label: "Long" },
+  ];
+  const LEGACY_STYLE_OPTIONS = [
+    { value: "runner", label: "Front" },
+    { value: "leader", label: "Pace" },
+    { value: "betweener", label: "Late" },
+    { value: "chaser", label: "End" },
+  ];
+  const LEGACY_PINK_KIND_OPTIONS = [
+    { value: "surface", label: "Surface" },
+    { value: "distance", label: "Distance" },
+    { value: "style", label: "Style" },
+  ];
+  const LEGACY_WHITE_KIND_OPTIONS = [
+    { value: "scenario", label: "Scenario" },
+    { value: "g1", label: "G1" },
+    { value: "skill", label: "Skill" },
+  ];
+
+  function createEmptyLegacyEditorState() {
+    return {
+      targetKey: null,
+      characterCardId: "",
+      blueTargetKey: "speed",
+      blueStars: 3,
+      pinkKind: "surface",
+      pinkTargetKey: "turf",
+      pinkQuery: "",
+      pinkStars: 3,
+      greenEnabled: false,
+      greenStars: 3,
+      whiteSparks: [],
+      whiteKind: "scenario",
+      whiteTargetKey: "",
+      whiteQuery: "",
+      whiteStars: 3,
+    };
+  }
+
+  function createLegacyEntity() {
+    return {
+      key: legacyEntityKey,
+      label: "Legacy",
+      count: 0,
+      items: [],
+      filter_definitions: [],
+      filter_options: {},
+      source: {
+        imported_at: "",
+        page_urls: [],
+      },
+      model: {},
+    };
+  }
+
+  if (!data.entities[legacyEntityKey]) {
+    data.entities[legacyEntityKey] = createLegacyEntity();
+  }
+  if (!data.reference) {
+    data.reference = { generated_at: null, entities: {} };
+  }
+  if (!data.reference.entities) {
+    data.reference.entities = {};
+  }
+  if (!data.reference.entities[legacyEntityKey]) {
+    data.reference.entities[legacyEntityKey] = { count: 0 };
+  }
 
   const state = {
     profileIndexLoaded: false,
@@ -121,6 +214,17 @@
     rosterViews: {
       characters: { profile_id: null, entity: "characters", updated_at: "", entries: {} },
       supports: { profile_id: null, entity: "supports", updated_at: "", entries: {} },
+    },
+    legacyView: { profile_id: null, updated_at: "", items: [], filter_definitions: [], filter_options: {} },
+    legacyStatus: { kind: "idle", message: "" },
+    legacyEditor: createEmptyLegacyEditorState(),
+    legacyFormDraft: null,
+    legacySimulator: {
+      main_character_id: "",
+      parent_a_legacy_id: "",
+      parent_b_legacy_id: "",
+      preview: null,
+      status: { kind: "idle", message: "" },
     },
     rosterStatus: { kind: "idle", message: "" },
     profilesApiStatus: { kind: "idle", message: "" },
@@ -196,6 +300,45 @@
       entity: entityKey,
       updated_at: safePayload.updated_at || "",
       entries,
+    };
+  }
+
+  function normalizeLegacyViewPayload(payload) {
+    const safePayload = payload && typeof payload === "object" ? payload : {};
+    return {
+      profile_id: safePayload.profile_id || null,
+      updated_at: safePayload.updated_at || "",
+      items: asArray(safePayload.items).filter((item) => item && item.id),
+      filter_definitions: asArray(safePayload.filter_definitions),
+      filter_options: safePayload.filter_options && typeof safePayload.filter_options === "object" ? safePayload.filter_options : {},
+    };
+  }
+
+  function applyLegacyViewPayload(payload) {
+    state.legacyView = normalizeLegacyViewPayload(payload);
+    data.entities[legacyEntityKey] = {
+      ...createLegacyEntity(),
+      items: state.legacyView.items,
+      count: state.legacyView.items.length,
+      filter_definitions: state.legacyView.filter_definitions,
+      filter_options: state.legacyView.filter_options,
+      source: {
+        imported_at: state.legacyView.updated_at,
+        page_urls: [],
+      },
+    };
+    data.reference.entities[legacyEntityKey] = { count: state.legacyView.items.length };
+  }
+
+  function resetLegacyViewPayload() {
+    applyLegacyViewPayload(null);
+    state.legacyEditor = createEmptyLegacyEditorState();
+    state.legacySimulator = {
+      main_character_id: "",
+      parent_a_legacy_id: "",
+      parent_b_legacy_id: "",
+      preview: null,
+      status: { kind: "idle", message: "" },
     };
   }
 
@@ -515,7 +658,7 @@
       query: "",
       filters: getDefaultFilters(entityKey, mode),
       selectedId: null,
-      presentation: mode === "roster" ? "detail" : "cards",
+      presentation: mode === "roster" ? (entityKey === legacyEntityKey ? "parents" : "detail") : "cards",
     };
   }
 
@@ -536,10 +679,16 @@
   }
 
   function getRosterViewPayload(entityKey) {
+    if (entityKey === legacyEntityKey) {
+      return state.legacyView || { profile_id: null, entity: legacyEntityKey, updated_at: "", entries: {} };
+    }
     return state.rosterViews[entityKey] || { profile_id: null, entity: entityKey, updated_at: "", entries: {} };
   }
 
   function getRosterViewEntry(entityKey, item) {
+    if (entityKey === legacyEntityKey) {
+      return item?.detail?.entry ? { derived: item.detail } : null;
+    }
     return getRosterViewPayload(entityKey).entries?.[item.id] || null;
   }
 
@@ -619,6 +768,9 @@
   }
 
   function getResultMediaRoles(entityKey) {
+    if (entityKey === legacyEntityKey) {
+      return ["portrait", "icon"];
+    }
     if (entityKey === "supports") {
       return ["icon", "cover"];
     }
@@ -763,6 +915,105 @@
       return "<p class='source-note'>None</p>";
     }
     return `<ul class="list-inline">${values.map((value) => `<li>${escapeHtml(value)}</li>`).join("")}</ul>`;
+  }
+
+  function getOwnedCharacterOptions() {
+    return data.entities.characters.items
+      .filter((item) => getRosterEntry("characters", item).owned)
+      .map((item) => ({
+        value: item.id,
+        label: item.subtitle ? `${item.title} ${item.subtitle}` : item.title,
+      }))
+      .sort((left, right) => left.label.localeCompare(right.label));
+  }
+
+  function getCharacterReferenceItem(characterCardId) {
+    return data.entities.characters.items.find((item) => String(item.id) === String(characterCardId)) || null;
+  }
+
+  function getCharacterUniqueSkill(characterCardId) {
+    const item = getCharacterReferenceItem(characterCardId);
+    const uniqueSkill = asArray(item?.detail?.skill_links?.unique)[0];
+    return uniqueSkill && uniqueSkill.id ? uniqueSkill : null;
+  }
+
+  function characterSupportsGreenSpark(characterCardId) {
+    const item = getCharacterReferenceItem(characterCardId);
+    const rarity = Number(item?.detail?.rarity || 0);
+    return rarity >= 3 && Boolean(getCharacterUniqueSkill(characterCardId));
+  }
+
+  function getLegacyFactorTargetOptions(kind) {
+    if (kind === "stat") return LEGACY_STAT_OPTIONS;
+    if (kind === "surface") return LEGACY_SURFACE_OPTIONS;
+    if (kind === "distance") return LEGACY_DISTANCE_OPTIONS;
+    if (kind === "style") return LEGACY_STYLE_OPTIONS;
+    if (kind === "scenario") {
+      return data.entities.scenarios.items.map((item) => ({
+        value: String(item.detail?.scenario_id || item.id),
+        label: item.title,
+      }));
+    }
+    if (kind === "g1") {
+      return data.entities.g1_factors.items.map((item) => ({
+        value: String(item.detail?.factor_id || item.id),
+        label: item.title,
+      }));
+    }
+    if (kind === "skill") {
+      return data.entities.skills.items.map((item) => ({
+        value: String(item.detail?.skill_id || item.id),
+        label: item.title,
+      }));
+    }
+    return [];
+  }
+
+  function getFilteredLegacyTargetOptions(kind, query, selectedValue) {
+    const allOptions = getLegacyFactorTargetOptions(kind);
+    const normalizedQuery = String(query || "").trim().toLowerCase();
+    let visibleOptions = normalizedQuery
+      ? allOptions.filter((option) => `${option.label} ${option.value}`.toLowerCase().includes(normalizedQuery))
+      : allOptions;
+
+    const defaultLimit = kind === "skill" ? 120 : kind === "g1" ? 150 : null;
+    const isLimited = !normalizedQuery && defaultLimit && visibleOptions.length > defaultLimit;
+    if (isLimited) {
+      visibleOptions = visibleOptions.slice(0, defaultLimit);
+    }
+
+    if (selectedValue && !visibleOptions.some((option) => option.value === selectedValue)) {
+      const selectedOption = allOptions.find((option) => option.value === selectedValue);
+      if (selectedOption) {
+        visibleOptions = [selectedOption, ...visibleOptions];
+      }
+    }
+
+    return {
+      allOptions,
+      options: visibleOptions,
+      totalCount: allOptions.length,
+      visibleCount: visibleOptions.length,
+      isLimited: Boolean(isLimited),
+      hasQuery: Boolean(normalizedQuery),
+    };
+  }
+
+  function renderLegacyTargetOptions(options, selectedValue) {
+    return options
+      .map(
+        (option) =>
+          `<option value="${escapeHtml(option.value)}" ${option.value === selectedValue ? "selected" : ""}>${escapeHtml(option.label)}</option>`,
+      )
+      .join("");
+  }
+
+  function formatLegacyFactorLabel(factor) {
+    if (!factor) {
+      return "-";
+    }
+    const stars = Number(factor.stars) || 0;
+    return `${factor.target_label || factor.target_key} ${"\u2605".repeat(Math.max(0, Math.min(3, stars)))}`;
   }
 
   function renderReferenceList(items) {
@@ -1298,6 +1549,454 @@
     `;
   }
 
+  function deriveLegacyWhiteSparks(entry) {
+    const structuredWhiteSparks = asArray(entry?.white_sparks).filter((spark) => spark && spark.kind);
+    if (structuredWhiteSparks.length) {
+      return structuredWhiteSparks.map((spark) => ({ ...spark }));
+    }
+    return asArray(entry?.factors)
+      .filter((factor) => factor && ["scenario", "g1", "skill"].includes(factor.kind))
+      .map((factor) => ({ ...factor }));
+  }
+
+  function createLegacyEditorStateFromEntry(entry, targetKey) {
+    const nextState = createEmptyLegacyEditorState();
+    const fallbackCharacterId = getOwnedCharacterOptions()[0]?.value || "";
+    const characterCardId = String(entry?.character_card_id || fallbackCharacterId || "");
+    const blueSpark = entry?.blue_spark || asArray(entry?.factors).find((factor) => factor?.kind === "stat") || null;
+    const pinkSpark = entry?.pink_spark || asArray(entry?.factors).find((factor) => ["surface", "distance", "style"].includes(factor?.kind)) || null;
+    const greenSpark = entry?.green_spark || null;
+    const whiteSparks = deriveLegacyWhiteSparks(entry);
+
+    nextState.targetKey = targetKey;
+    nextState.characterCardId = characterCardId;
+    nextState.blueTargetKey = blueSpark?.target_key || "speed";
+    nextState.blueStars = clampNumber(blueSpark?.stars, 1, 3, 3);
+    nextState.pinkKind = pinkSpark?.kind || "surface";
+    nextState.pinkTargetKey = pinkSpark?.target_key || (nextState.pinkKind === "distance" ? "mile" : nextState.pinkKind === "style" ? "leader" : "turf");
+    nextState.pinkQuery = "";
+    nextState.pinkStars = clampNumber(pinkSpark?.stars, 1, 3, 3);
+    nextState.greenEnabled = Boolean(greenSpark);
+    nextState.greenStars = clampNumber(greenSpark?.stars, 1, 3, 3);
+    nextState.whiteSparks = whiteSparks;
+    nextState.whiteKind = whiteSparks[0]?.kind || "scenario";
+    nextState.whiteStars = clampNumber(whiteSparks[0]?.stars, 1, 3, 3);
+    const whiteOptions = getLegacyFactorTargetOptions(nextState.whiteKind);
+    nextState.whiteTargetKey = whiteSparks[0]?.target_key && whiteOptions.some((option) => option.value === whiteSparks[0].target_key)
+      ? whiteSparks[0].target_key
+      : (whiteOptions[0]?.value || "");
+    nextState.whiteQuery = "";
+    return nextState;
+  }
+
+  function ensureLegacyEditorState(entry, targetKey) {
+    if (state.legacyEditor.targetKey === targetKey) {
+      return;
+    }
+    state.legacyEditor = createLegacyEditorStateFromEntry(entry, targetKey);
+    state.legacyFormDraft = null;
+  }
+
+  function captureLegacyFormDraft() {
+    const legacyForm = document.getElementById("legacyForm");
+    if (!legacyForm) {
+      return;
+    }
+    const formData = new FormData(legacyForm);
+    state.legacyFormDraft = {
+      scenario_id: String(formData.get("scenario_id") || "").trim(),
+      stars: String(formData.get("stars") || "").trim(),
+      awakening: String(formData.get("awakening") || "").trim(),
+      source_date: String(formData.get("source_date") || "").trim(),
+      source_note: String(formData.get("source_note") || "").trim(),
+      note: String(formData.get("note") || "").trim(),
+      custom_tags: String(formData.get("custom_tags") || "").trim(),
+      status_flags: String(formData.get("status_flags") || "").trim(),
+    };
+  }
+
+  function renderLegacySparkList(sparks, emptyText, removable) {
+    const items = asArray(sparks).filter((spark) => spark && spark.kind);
+    if (!items.length) {
+      return `<p class="source-note">${escapeHtml(emptyText)}</p>`;
+    }
+    return `
+      <div class="legacy-factor-editor-list">
+        ${items.map((spark, index) => `
+          <div class="legacy-factor-chip-row">
+            <span>${escapeHtml(LEGACY_KIND_LABELS[spark.kind] || spark.kind)}</span>
+            ${renderBadge(formatLegacyFactorLabel(spark))}
+            ${removable ? `<button type="button" class="button-secondary button-compact" data-legacy-white-remove="${escapeHtml(index)}">Remove</button>` : ""}
+          </div>
+        `).join("")}
+      </div>
+    `;
+  }
+
+  function renderLegacySparkEditor() {
+    const pinkTargetOptions = getFilteredLegacyTargetOptions(
+      state.legacyEditor.pinkKind,
+      state.legacyEditor.pinkQuery,
+      state.legacyEditor.pinkTargetKey,
+    );
+    const whiteTargetOptions = getFilteredLegacyTargetOptions(
+      state.legacyEditor.whiteKind,
+      state.legacyEditor.whiteQuery,
+      state.legacyEditor.whiteTargetKey,
+    );
+    const greenAvailable = characterSupportsGreenSpark(state.legacyEditor.characterCardId);
+    const uniqueSkill = getCharacterUniqueSkill(state.legacyEditor.characterCardId);
+
+    return `
+      <div class="legacy-factor-editor">
+        <div class="legacy-spark-card">
+          <h4>Blue Spark</h4>
+          <p class="source-note">Exactly one blue spark. This should be a stat spark.</p>
+          <div class="legacy-factor-adder">
+            <label class="field-stack">
+              <span>Stat</span>
+              <select id="legacyBlueTarget">
+                ${LEGACY_STAT_OPTIONS.map((option) => `<option value="${escapeHtml(option.value)}" ${option.value === state.legacyEditor.blueTargetKey ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
+              </select>
+            </label>
+            <label class="field-stack">
+              <span>Stars</span>
+              <select id="legacyBlueStars">
+                ${[1, 2, 3].map((value) => `<option value="${value}" ${value === state.legacyEditor.blueStars ? "selected" : ""}>${value}\u2605</option>`).join("")}
+              </select>
+            </label>
+          </div>
+        </div>
+        <div class="legacy-spark-card">
+          <h4>Pink Spark</h4>
+          <p class="source-note">Exactly one pink spark. It can be a surface, distance or strategy spark.</p>
+          <div class="legacy-factor-adder">
+            <label class="field-stack">
+              <span>Category</span>
+              <select id="legacyPinkKind">
+                ${LEGACY_PINK_KIND_OPTIONS.map((option) => `<option value="${escapeHtml(option.value)}" ${option.value === state.legacyEditor.pinkKind ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
+              </select>
+            </label>
+            <label class="field-stack field-stack-search">
+              <span>Search Spark</span>
+              <input id="legacyPinkQuery" class="legacy-search-input" type="search" placeholder="Search spark..." value="${escapeHtml(state.legacyEditor.pinkQuery || "")}">
+              <small class="legacy-select-meta">${escapeHtml(
+                pinkTargetOptions.hasQuery
+                  ? `${pinkTargetOptions.visibleCount} result(s)`
+                  : pinkTargetOptions.isLimited
+                    ? `${pinkTargetOptions.visibleCount}/${pinkTargetOptions.totalCount} shown. Type to narrow.`
+                    : `${pinkTargetOptions.totalCount} option(s)`,
+              )}</small>
+            </label>
+            <label class="field-stack field-stack-search">
+              <span>Spark</span>
+              <select id="legacyPinkTarget" class="legacy-themed-select">
+                ${renderLegacyTargetOptions(pinkTargetOptions.options, state.legacyEditor.pinkTargetKey)}
+              </select>
+            </label>
+            <label class="field-stack">
+              <span>Stars</span>
+              <select id="legacyPinkStars">
+                ${[1, 2, 3].map((value) => `<option value="${value}" ${value === state.legacyEditor.pinkStars ? "selected" : ""}>${value}\u2605</option>`).join("")}
+              </select>
+            </label>
+          </div>
+        </div>
+        <div class="legacy-spark-card">
+          <h4>Green Spark</h4>
+          <p class="source-note">Optional. Green sparks are only available on parents whose card starts at 3-star or higher.</p>
+          ${greenAvailable && uniqueSkill
+            ? `
+              <label class="legacy-toggle">
+                <input id="legacyGreenEnabled" type="checkbox" ${state.legacyEditor.greenEnabled ? "checked" : ""}>
+                <span>Include the parent unique skill as a green spark</span>
+              </label>
+              <div class="legacy-factor-editor-list">
+                <div class="legacy-factor-chip-row">
+                  <span>Unique</span>
+                  ${renderBadge(uniqueSkill.name)}
+                  ${state.legacyEditor.greenEnabled ? `
+                    <label class="field-stack">
+                      <span>Stars</span>
+                      <select id="legacyGreenStars">
+                        ${[1, 2, 3].map((value) => `<option value="${value}" ${value === state.legacyEditor.greenStars ? "selected" : ""}>${value}\u2605</option>`).join("")}
+                      </select>
+                    </label>
+                  ` : ""}
+                </div>
+              </div>
+            `
+            : "<p class='source-note'>Green spark unavailable for the currently selected parent.</p>"}
+        </div>
+        <div class="legacy-spark-card">
+          <h4>White Sparks</h4>
+          <p class="source-note">Optional. Use these for scenario, G1/race and general skill sparks.</p>
+          ${renderLegacySparkList(state.legacyEditor.whiteSparks, "No local white sparks recorded yet.", true)}
+          <div class="legacy-factor-adder">
+            <label class="field-stack">
+              <span>Category</span>
+              <select id="legacyWhiteKind">
+                ${LEGACY_WHITE_KIND_OPTIONS.map((option) => `<option value="${escapeHtml(option.value)}" ${option.value === state.legacyEditor.whiteKind ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
+              </select>
+            </label>
+            <label class="field-stack field-stack-search">
+              <span>Search Spark</span>
+              <input id="legacyWhiteQuery" class="legacy-search-input" type="search" placeholder="Search spark..." value="${escapeHtml(state.legacyEditor.whiteQuery || "")}">
+              <small class="legacy-select-meta">${escapeHtml(
+                whiteTargetOptions.hasQuery
+                  ? `${whiteTargetOptions.visibleCount} result(s)`
+                  : whiteTargetOptions.isLimited
+                    ? `${whiteTargetOptions.visibleCount}/${whiteTargetOptions.totalCount} shown. Type to narrow.`
+                    : `${whiteTargetOptions.totalCount} option(s)`,
+              )}</small>
+            </label>
+            <label class="field-stack field-stack-search">
+              <span>Spark</span>
+              <select id="legacyWhiteTarget" class="legacy-themed-select">
+                ${renderLegacyTargetOptions(whiteTargetOptions.options, state.legacyEditor.whiteTargetKey)}
+              </select>
+            </label>
+            <label class="field-stack">
+              <span>Stars</span>
+              <select id="legacyWhiteStars">
+                ${[1, 2, 3].map((value) => `<option value="${value}" ${value === state.legacyEditor.whiteStars ? "selected" : ""}>${value}\u2605</option>`).join("")}
+              </select>
+            </label>
+            <div class="legacy-factor-add-action">
+              <button type="button" class="button-secondary" id="addLegacyWhiteSparkButton">Add white spark</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderLegacyEditor(entry, isCreateMode) {
+    ensureLegacyEditorState(entry, isCreateMode ? "__new__" : entry.id);
+    const draft = state.legacyFormDraft || {};
+    const ownedCharacters = getOwnedCharacterOptions();
+    const scenarioOptions = data.entities.scenarios.items.map((item) => ({
+      value: String(item.detail?.scenario_id || item.id),
+      label: item.title,
+    }));
+    const statusText = state.legacyStatus.message || "Changes are stored locally for the active profile.";
+    const canSelectCharacter = ownedCharacters.length > 0;
+    const selectedCharacterCardId = state.legacyEditor.characterCardId || String(entry.character_card_id || "") || ownedCharacters[0]?.value || "";
+
+    return `
+      <div class="detail-section roster-section">
+        <h3>${isCreateMode ? "Create Parent" : "Legacy Parent"}</h3>
+        <p class="source-note">Store the run source and the reusable inheritance data in a single local sheet.${canSelectCharacter ? "" : " Add at least one owned character to My Roster before creating a parent."}</p>
+        <form id="legacyForm" class="roster-form" data-legacy-mode="${isCreateMode ? "create" : "edit"}" data-legacy-id="${escapeHtml(entry.id || "")}">
+          <div class="roster-field-grid">
+            <label class="field-stack">
+              <span>Parent Character</span>
+              <select name="character_card_id">
+                ${canSelectCharacter
+                  ? ownedCharacters.map((option) => `<option value="${escapeHtml(option.value)}" ${option.value === String(selectedCharacterCardId || "") ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")
+                  : `<option value="">No owned character available</option>`}
+              </select>
+            </label>
+            <label class="field-stack">
+              <span>Run Scenario</span>
+              <select name="scenario_id">
+                <option value="">Unknown</option>
+                ${scenarioOptions.map((option) => `<option value="${escapeHtml(option.value)}" ${option.value === String(draft.scenario_id ?? entry.scenario_id ?? "") ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
+              </select>
+            </label>
+            <label class="field-stack">
+              <span>Stars</span>
+              <input name="stars" type="number" min="0" max="5" value="${escapeHtml(draft.stars ?? entry.stars ?? 0)}">
+            </label>
+            <label class="field-stack">
+              <span>Awakening</span>
+              <input name="awakening" type="number" min="0" max="5" value="${escapeHtml(draft.awakening ?? entry.awakening ?? 0)}">
+            </label>
+            <label class="field-stack field-stack-full">
+              <span>Run Date</span>
+              <input name="source_date" type="text" placeholder="Optional free date" value="${escapeHtml(draft.source_date ?? entry.source_date ?? "")}">
+            </label>
+            <label class="field-stack field-stack-full">
+              <span>Run Source Note</span>
+              <textarea name="source_note" rows="3" placeholder="Scenario choices, source build notes, run comments">${escapeHtml(draft.source_note ?? entry.source_note ?? "")}</textarea>
+            </label>
+          </div>
+          <div class="detail-section">
+            <h4>Sparks</h4>
+            ${renderLegacySparkEditor()}
+          </div>
+          ${renderRosterLocalNotes({
+            ...entry,
+            custom_tags: draft.custom_tags != null ? parseRosterTokenList(draft.custom_tags) : entry.custom_tags,
+            status_flags: draft.status_flags != null ? parseRosterTokenList(draft.status_flags) : entry.status_flags,
+            note: draft.note != null ? draft.note : entry.note,
+          })}
+          <div class="roster-actions">
+            <button type="submit" class="button-strong" ${canSelectCharacter ? "" : "disabled"}>${isCreateMode ? "Create parent" : "Save parent"}</button>
+            ${isCreateMode ? "" : `<button type="button" class="button-secondary" id="deleteLegacyButton">Delete parent</button>`}
+          </div>
+          <p id="legacyStatus" class="source-note ${state.legacyStatus.kind === "error" ? "error-text" : ""}">${escapeHtml(statusText)}</p>
+        </form>
+      </div>
+    `;
+  }
+
+  function renderLegacyDetailBody(detail) {
+    const entry = detail?.entry || {};
+    const sparks = detail?.spark_summary || {};
+    return `
+      <div class="detail-section">
+        <h3>Run Source</h3>
+        ${tableFromRows([
+          ["Scenario", escapeHtml(entry.scenario_name || "Unknown")],
+          ["Run Date", escapeHtml(entry.source_date || "-")],
+          ["Stars / Awakening", escapeHtml(`${entry.stars ?? 0} / ${entry.awakening ?? 0}`)],
+        ])}
+      </div>
+      ${entry.source_note ? `
+        <div class="detail-section">
+          <h3>Run Source Note</h3>
+          <p>${escapeHtml(entry.source_note)}</p>
+        </div>
+      ` : ""}
+      <div class="detail-section">
+        <h3>Spark Structure</h3>
+        ${tableFromRows([
+          ["Blue Spark", escapeHtml(sparks.blue ? formatLegacyFactorLabel(sparks.blue) : "Missing")],
+          ["Pink Spark", escapeHtml(sparks.pink ? formatLegacyFactorLabel(sparks.pink) : "Missing")],
+          ["Green Spark", escapeHtml(sparks.green ? formatLegacyFactorLabel(sparks.green) : (sparks.green_available ? "Not saved" : "Unavailable"))],
+          ["White Sparks", escapeHtml(String(sparks.white_count || 0))],
+        ])}
+      </div>
+      ${sparks.blue ? `
+        <div class="detail-section">
+          <h3>Blue Spark</h3>
+          <div class="badge-row">${renderBadge(formatLegacyFactorLabel(sparks.blue))}</div>
+        </div>
+      ` : ""}
+      ${sparks.pink ? `
+        <div class="detail-section">
+          <h3>Pink Spark</h3>
+          <div class="badge-row">${renderBadge(formatLegacyFactorLabel(sparks.pink))}</div>
+        </div>
+      ` : ""}
+      <div class="detail-section">
+        <h3>Green Spark</h3>
+        ${sparks.green
+          ? `<div class="badge-row">${renderBadge(formatLegacyFactorLabel(sparks.green))}</div>`
+          : `<p class="source-note">${escapeHtml(sparks.green_available ? "Not saved on this parent sheet." : "Unavailable for this parent.")}</p>`}
+      </div>
+      <div class="detail-section">
+        <h3>White Sparks</h3>
+        ${renderLegacySparkList(sparks.white, "No local white sparks saved.", false)}
+      </div>
+      <div class="detail-section">
+        <h3>Reference Links</h3>
+        ${renderReferenceList(detail.linked_references)}
+      </div>
+      <div class="detail-section">
+        <h3>Compatibility Snapshot</h3>
+        ${renderReferenceList(detail.compatibility_top_matches)}
+      </div>
+    `;
+  }
+
+  function renderLegacyPreview(preview) {
+    if (!preview) {
+      return "<div class='detail-empty'>Select a main candidate and two saved parents, then run the simulator preview.</div>";
+    }
+    const factorGroups = preview.factor_summary?.groups || {};
+    const renderSharedGroupList = (pair) => {
+      const groups = asArray(pair?.shared_groups).map((group) => {
+        const relationType = String(group?.relation_type || "").trim() || "group";
+        const points = Number(group?.relation_point) || 0;
+        const members = Number(group?.member_count) || 0;
+        return `${relationType} | ${points} pts | ${members} members`;
+      });
+      return renderSimpleList(groups, (entry) => entry);
+    };
+
+    return `
+      <div class="detail-section">
+        <h3>Pair Summary</h3>
+        ${tableFromRows([
+          ["Main Candidate", escapeHtml(preview.main?.title || "-")],
+          ["Parent A", escapeHtml(preview.parent_a?.name || "-")],
+          ["Parent B", escapeHtml(preview.parent_b?.name || "-")],
+          ["Main -> Parent A", escapeHtml(`${preview.compatibility?.main_to_parent_a?.score || 0} pts | ${preview.compatibility?.main_to_parent_a?.shared_group_count || 0} groups`)],
+          ["Main -> Parent B", escapeHtml(`${preview.compatibility?.main_to_parent_b?.score || 0} pts | ${preview.compatibility?.main_to_parent_b?.shared_group_count || 0} groups`)],
+          ["Parent Pair", escapeHtml(`${preview.compatibility?.parent_pair?.score || 0} pts | ${preview.compatibility?.parent_pair?.shared_group_count || 0} groups`)],
+          ["Main Total", escapeHtml(preview.compatibility?.main_total || 0)],
+        ])}
+      </div>
+      <div class="detail-section">
+        <h3>Parent Sparks</h3>
+        ${tableFromRows([
+          [
+            "Parent A",
+            escapeHtml(
+              [
+                preview.parent_a_sparks?.blue ? `Blue ${preview.parent_a_sparks.blue.target_label}` : "Blue missing",
+                preview.parent_a_sparks?.pink ? `Pink ${preview.parent_a_sparks.pink.target_label}` : "Pink missing",
+                preview.parent_a_sparks?.green ? `Green ${preview.parent_a_sparks.green.target_label}` : "No green",
+                `${preview.parent_a_sparks?.white_count || 0} white`,
+              ].join(" | "),
+            ),
+          ],
+          [
+            "Parent B",
+            escapeHtml(
+              [
+                preview.parent_b_sparks?.blue ? `Blue ${preview.parent_b_sparks.blue.target_label}` : "Blue missing",
+                preview.parent_b_sparks?.pink ? `Pink ${preview.parent_b_sparks.pink.target_label}` : "Pink missing",
+                preview.parent_b_sparks?.green ? `Green ${preview.parent_b_sparks.green.target_label}` : "No green",
+                `${preview.parent_b_sparks?.white_count || 0} white`,
+              ].join(" | "),
+            ),
+          ],
+        ])}
+      </div>
+      <div class="detail-section">
+        <h3>Main -> Parent A Groups</h3>
+        ${renderSharedGroupList(preview.compatibility?.main_to_parent_a)}
+      </div>
+      <div class="detail-section">
+        <h3>Main -> Parent B Groups</h3>
+        ${renderSharedGroupList(preview.compatibility?.main_to_parent_b)}
+      </div>
+      <div class="detail-section">
+        <h3>Parent Pair Groups</h3>
+        ${renderSharedGroupList(preview.compatibility?.parent_pair)}
+      </div>
+      <div class="detail-section">
+        <h3>Aptitude Coverage</h3>
+        ${tableFromRows(asArray(preview.aptitude_coverage).map((entry) => [
+          LEGACY_KIND_LABELS[entry.category] || entry.category,
+          escapeHtml(`Supported: ${asArray(entry.supported).join(", ") || "-"} | Missing: ${asArray(entry.missing).join(", ") || "-"}`),
+        ]))}
+      </div>
+      ${Object.entries(factorGroups)
+        .filter(([, entries]) => asArray(entries).length)
+        .map(([kind, entries]) => `
+          <div class="detail-section">
+            <h3>${escapeHtml(LEGACY_KIND_LABELS[kind] || kind)}</h3>
+            <div class="badge-row">
+              ${asArray(entries).map((factor) => renderBadge(`${factor.target_label || factor.target_key} (${factor.stars_total || factor.stars}\u2605)`)).join("")}
+            </div>
+          </div>
+        `)
+        .join("")}
+      <div class="detail-section">
+        <h3>Highlights</h3>
+        ${renderSimpleList(preview.highlights, (entry) => entry)}
+      </div>
+      <div class="detail-section">
+        <h3>Warnings</h3>
+        ${renderSimpleList(preview.warnings, (entry) => entry)}
+      </div>
+    `;
+  }
+
   function renderSkills(detail) {
     const references = getSkillReferences(detail.skill_id);
     return `
@@ -1670,6 +2369,17 @@
       return [];
     }
 
+    if (entityKey === legacyEntityKey) {
+      const entry = item?.detail?.entry || {};
+      const badges = [];
+      if (entry.scenario_name) {
+        badges.push(entry.scenario_name);
+      }
+      asArray(entry.custom_tags).slice(0, 2).forEach((tag) => badges.push(tag));
+      asArray(entry.status_flags).slice(0, 2).forEach((flag) => badges.push(flag));
+      return badges;
+    }
+
     const entry = getRosterEntry(entityKey, item);
     const badges = [];
 
@@ -1760,6 +2470,9 @@
   }
 
   function getRosterFilterDefinitions(entityKey) {
+    if (entityKey === legacyEntityKey) {
+      return [];
+    }
     const definitions = [...rosterFilterDefinitionsBase];
     if (entityKey === "characters") {
       definitions.push({ key: "_roster_unlock", label: "Unlock state" });
@@ -1820,9 +2533,9 @@
 
     return entity.items.filter((rawItem) => {
       const item = { ...rawItem, __entityKey: entityKey };
-      const rosterEntry = getRosterEntry(entityKey, item);
+      const rosterEntry = entityKey === legacyEntityKey ? { owned: true } : getRosterEntry(entityKey, item);
 
-      if (mode === "roster" && !rosterEntry.owned) {
+      if (mode === "roster" && entityKey !== legacyEntityKey && !rosterEntry.owned) {
         return false;
       }
 
@@ -2518,8 +3231,10 @@
     navEl.innerHTML = keys
       .map((key) => {
         const totalCount = data.reference.entities[key].count;
-        const ownedCount = mode === "roster" ? rosterCountForEntity(key, (entry) => entry.owned) : 0;
-        const metaText = mode === "roster" ? `${totalCount} cards | ${ownedCount} owned` : `${totalCount} items`;
+        const ownedCount = mode === "roster" && key !== legacyEntityKey ? rosterCountForEntity(key, (entry) => entry.owned) : 0;
+        const metaText = mode === "roster"
+          ? (key === legacyEntityKey ? `${totalCount} saved parents` : `${totalCount} cards | ${ownedCount} owned`)
+          : `${totalCount} items`;
         return `
           <button class="entity-button ${key === activeKey ? "active" : ""}" data-entity="${escapeHtml(key)}" data-mode="${escapeHtml(mode)}" type="button">
             <strong>${escapeHtml(data.entities[key].label)}</strong><br>
@@ -2598,6 +3313,43 @@
     }
 
     const localState = getViewState(route.mode, route.entityKey);
+    if (route.entityKey === legacyEntityKey) {
+      const isSimulator = localState.presentation === "simulator";
+      browseActionsEl.hidden = false;
+      browseActionsEl.innerHTML = `
+        <div class="presentation-switch">
+          <button type="button" class="${!isSimulator ? "active" : ""}" data-legacy-presentation="parents">Parents</button>
+          <button type="button" class="${isSimulator ? "active" : ""}" data-legacy-presentation="simulator">Simulator</button>
+        </div>
+        ${!isSimulator ? `
+          <div class="batch-toolbar">
+            <button type="button" class="button-secondary" id="newLegacyEntryButton">New parent</button>
+          </div>
+        ` : ""}
+      `;
+
+      browseActionsEl.querySelectorAll("[data-legacy-presentation]").forEach((button) => {
+        button.addEventListener("click", () => {
+          localState.presentation = button.dataset.legacyPresentation;
+          if (localState.presentation === "simulator") {
+            localState.selectedId = null;
+          }
+          requestRender();
+        });
+      });
+
+      const newLegacyButton = document.getElementById("newLegacyEntryButton");
+      if (newLegacyButton) {
+        newLegacyButton.addEventListener("click", () => {
+          localState.presentation = "parents";
+          localState.selectedId = "__new__";
+          state.legacyStatus = { kind: "idle", message: "" };
+          requestRender();
+        });
+      }
+      return;
+    }
+
     const isBatch = localState.presentation === "batch";
     browseActionsEl.hidden = false;
     browseActionsEl.innerHTML = `
@@ -2784,15 +3536,73 @@
     await persistRosterDocument(`Saved ${item.title}.`);
   }
 
+  function renderLegacySimulatorList() {
+    const mainOptions = getOwnedCharacterOptions();
+    const parentOptions = state.legacyView.items.map((item) => ({
+      value: item.id,
+      label: item.subtitle ? `${item.title} ${item.subtitle}` : item.title,
+    }));
+    const canRunPreview = mainOptions.length > 0 && parentOptions.length >= 2;
+    listEl.innerHTML = `
+      <div class="legacy-simulator-card">
+        <h3>Inheritance Simulator</h3>
+        <p class="source-note">Select one owned main candidate and two saved parents from the local legacy inventory.${canRunPreview ? "" : " You need at least one owned character and two saved parents to run the preview."}</p>
+        <form id="legacySimulatorForm" class="roster-form">
+          <div class="roster-field-grid">
+            <label class="field-stack field-stack-full">
+              <span>Main Candidate</span>
+              <select name="main_character_id">
+                <option value="">Select an owned character</option>
+                ${mainOptions.map((option) => `<option value="${escapeHtml(option.value)}" ${option.value === state.legacySimulator.main_character_id ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
+              </select>
+            </label>
+            <label class="field-stack">
+              <span>Parent A</span>
+              <select name="parent_a_legacy_id">
+                <option value="">Select parent A</option>
+                ${parentOptions.map((option) => `<option value="${escapeHtml(option.value)}" ${option.value === state.legacySimulator.parent_a_legacy_id ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
+              </select>
+            </label>
+            <label class="field-stack">
+              <span>Parent B</span>
+              <select name="parent_b_legacy_id">
+                <option value="">Select parent B</option>
+                ${parentOptions.map((option) => `<option value="${escapeHtml(option.value)}" ${option.value === state.legacySimulator.parent_b_legacy_id ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
+              </select>
+            </label>
+          </div>
+          <div class="roster-actions">
+            <button type="submit" class="button-strong" ${canRunPreview ? "" : "disabled"}>Run preview</button>
+          </div>
+          <p class="source-note ${state.legacySimulator.status.kind === "error" ? "error-text" : ""}">${escapeHtml(state.legacySimulator.status.message || "The preview is deterministic and based on local compatibility plus saved sparks.")}</p>
+        </form>
+      </div>
+    `;
+
+    const simulatorForm = document.getElementById("legacySimulatorForm");
+    if (simulatorForm) {
+      simulatorForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        await runLegacySimulatorPreview(new FormData(simulatorForm));
+      });
+    }
+  }
+
   function renderList(mode, entityKey, filteredItems) {
     const localState = getViewState(mode, entityKey);
+    if (mode === "roster" && entityKey === legacyEntityKey && localState.presentation === "simulator") {
+      renderLegacySimulatorList();
+      return;
+    }
     if (mode === "roster" && localState.presentation === "batch") {
       renderBatchList(entityKey, filteredItems);
       return;
     }
     if (!filteredItems.length) {
       listEl.innerHTML = mode === "roster"
-        ? "<div class='empty-state'>No owned entry matches the current roster search and filters. Go to <strong>Catalog</strong> to add the characters and supports you own first.</div>"
+        ? (entityKey === legacyEntityKey
+          ? "<div class='empty-state'>No saved parent matches the current legacy search and filters. Create a first parent from <strong>New parent</strong>.</div>"
+          : "<div class='empty-state'>No owned entry matches the current roster search and filters. Go to <strong>Catalog</strong> to add the characters and supports you own first.</div>")
         : "<div class='empty-state'>No result for the current search and filter set.</div>";
       return;
     }
@@ -2806,7 +3616,7 @@
         return `
           <article class="result-card ${mode === "roster" ? "result-card-roster" : ""} ${item.id === localState.selectedId ? "active" : ""}" data-item-id="${escapeHtml(item.id)}">
             ${renderResultTop(item, entityKey)}
-            ${mode === "roster" ? renderRosterCardProgress(entityKey, rosterProjection) : ""}
+            ${mode === "roster" && entityKey !== legacyEntityKey ? renderRosterCardProgress(entityKey, rosterProjection) : ""}
             <div class="badge-row">
               ${displayBadges.map((badge) => renderBadge(badge)).join("")}
             </div>
@@ -2970,6 +3780,191 @@
     }
   }
 
+  function buildLegacyFactorPayload(kind, targetKey, stars, options = {}) {
+    if (kind === "unique") {
+      const uniqueSkill = getCharacterUniqueSkill(options.characterCardId);
+      if (!uniqueSkill) {
+        return null;
+      }
+      return {
+        kind: "unique",
+        target_key: String(uniqueSkill.id),
+        target_label: uniqueSkill.name,
+        skill_id: String(uniqueSkill.id),
+        stars: clampNumber(stars, 1, 3, 3),
+      };
+    }
+    const targetOptions = getLegacyFactorTargetOptions(kind);
+    const target = targetOptions.find((option) => option.value === targetKey);
+    if (!target) {
+      return null;
+    }
+    const payload = {
+      kind,
+      target_key: target.value,
+      target_label: target.label,
+      stars: clampNumber(stars, 1, 3, 3),
+    };
+    if (kind === "scenario") {
+      payload.scenario_id = target.value;
+    }
+    if (kind === "g1") {
+      const g1Item = data.entities.g1_factors.items.find((item) => String(item.detail?.factor_id || item.id) === target.value);
+      if (g1Item?.detail?.race_id) {
+        payload.race_id = String(g1Item.detail.race_id);
+      }
+    }
+    return payload;
+  }
+
+  function attachLegacyFormListeners(isCreateMode, legacyId) {
+    const characterSelect = document.querySelector('#legacyForm select[name="character_card_id"]');
+    const blueTargetSelect = document.getElementById("legacyBlueTarget");
+    const blueStarsSelect = document.getElementById("legacyBlueStars");
+    const pinkKindSelect = document.getElementById("legacyPinkKind");
+    const pinkQueryInput = document.getElementById("legacyPinkQuery");
+    const pinkTargetSelect = document.getElementById("legacyPinkTarget");
+    const pinkStarsSelect = document.getElementById("legacyPinkStars");
+    const greenEnabledInput = document.getElementById("legacyGreenEnabled");
+    const greenStarsSelect = document.getElementById("legacyGreenStars");
+    const whiteKindSelect = document.getElementById("legacyWhiteKind");
+    const whiteQueryInput = document.getElementById("legacyWhiteQuery");
+    const whiteTargetSelect = document.getElementById("legacyWhiteTarget");
+    const whiteStarsSelect = document.getElementById("legacyWhiteStars");
+
+    if (characterSelect) {
+      characterSelect.addEventListener("change", () => {
+        captureLegacyFormDraft();
+        state.legacyEditor.characterCardId = String(characterSelect.value || "");
+        if (!characterSupportsGreenSpark(state.legacyEditor.characterCardId)) {
+          state.legacyEditor.greenEnabled = false;
+        }
+        requestRender();
+      });
+    }
+    if (blueTargetSelect) {
+      blueTargetSelect.addEventListener("change", () => {
+        state.legacyEditor.blueTargetKey = blueTargetSelect.value;
+      });
+    }
+    if (blueStarsSelect) {
+      blueStarsSelect.addEventListener("change", () => {
+        state.legacyEditor.blueStars = clampNumber(blueStarsSelect.value, 1, 3, 3);
+      });
+    }
+    if (pinkKindSelect) {
+      pinkKindSelect.addEventListener("change", () => {
+        captureLegacyFormDraft();
+        state.legacyEditor.pinkKind = pinkKindSelect.value;
+        const options = getLegacyFactorTargetOptions(state.legacyEditor.pinkKind);
+        state.legacyEditor.pinkTargetKey = options[0]?.value || "";
+        state.legacyEditor.pinkQuery = "";
+        requestRender();
+      });
+    }
+    if (pinkQueryInput) {
+      pinkQueryInput.addEventListener("input", () => {
+        captureLegacyFormDraft();
+        state.legacyEditor.pinkQuery = pinkQueryInput.value;
+        requestRender();
+      });
+    }
+    if (pinkTargetSelect) {
+      pinkTargetSelect.addEventListener("change", () => {
+        state.legacyEditor.pinkTargetKey = pinkTargetSelect.value;
+      });
+    }
+    if (pinkStarsSelect) {
+      pinkStarsSelect.addEventListener("change", () => {
+        state.legacyEditor.pinkStars = clampNumber(pinkStarsSelect.value, 1, 3, 3);
+      });
+    }
+    if (greenEnabledInput) {
+      greenEnabledInput.addEventListener("change", () => {
+        captureLegacyFormDraft();
+        state.legacyEditor.greenEnabled = greenEnabledInput.checked;
+        requestRender();
+      });
+    }
+    if (greenStarsSelect) {
+      greenStarsSelect.addEventListener("change", () => {
+        state.legacyEditor.greenStars = clampNumber(greenStarsSelect.value, 1, 3, 3);
+      });
+    }
+    if (whiteKindSelect) {
+      whiteKindSelect.addEventListener("change", () => {
+        captureLegacyFormDraft();
+        state.legacyEditor.whiteKind = whiteKindSelect.value;
+        const options = getLegacyFactorTargetOptions(state.legacyEditor.whiteKind);
+        state.legacyEditor.whiteTargetKey = options[0]?.value || "";
+        state.legacyEditor.whiteQuery = "";
+        requestRender();
+      });
+    }
+    if (whiteQueryInput) {
+      whiteQueryInput.addEventListener("input", () => {
+        captureLegacyFormDraft();
+        state.legacyEditor.whiteQuery = whiteQueryInput.value;
+        requestRender();
+      });
+    }
+    if (whiteTargetSelect) {
+      whiteTargetSelect.addEventListener("change", () => {
+        state.legacyEditor.whiteTargetKey = whiteTargetSelect.value;
+      });
+    }
+    if (whiteStarsSelect) {
+      whiteStarsSelect.addEventListener("change", () => {
+        state.legacyEditor.whiteStars = clampNumber(whiteStarsSelect.value, 1, 3, 3);
+      });
+    }
+
+    const addWhiteSparkButton = document.getElementById("addLegacyWhiteSparkButton");
+    if (addWhiteSparkButton) {
+      addWhiteSparkButton.addEventListener("click", () => {
+        captureLegacyFormDraft();
+        const payload = buildLegacyFactorPayload(
+          state.legacyEditor.whiteKind,
+          state.legacyEditor.whiteTargetKey,
+          state.legacyEditor.whiteStars,
+          { characterCardId: state.legacyEditor.characterCardId },
+        );
+        if (!payload) {
+          return;
+        }
+        state.legacyEditor.whiteSparks = state.legacyEditor.whiteSparks
+          .filter((spark) => !(spark.kind === payload.kind && spark.target_key === payload.target_key))
+          .concat([payload]);
+        requestRender();
+      });
+    }
+    detailEl.querySelectorAll("[data-legacy-white-remove]").forEach((button) => {
+      button.addEventListener("click", () => {
+        captureLegacyFormDraft();
+        state.legacyEditor.whiteSparks = state.legacyEditor.whiteSparks.filter((_spark, index) => String(index) !== button.dataset.legacyWhiteRemove);
+        requestRender();
+      });
+    });
+
+    const legacyForm = document.getElementById("legacyForm");
+    if (legacyForm) {
+      legacyForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        await saveLegacyForm(new FormData(legacyForm), isCreateMode, legacyId);
+      });
+    }
+
+    const deleteButton = document.getElementById("deleteLegacyButton");
+    if (deleteButton && legacyId) {
+      deleteButton.addEventListener("click", async () => {
+        if (!window.confirm("Delete this saved parent?")) {
+          return;
+        }
+        await deleteLegacyParent(legacyId);
+      });
+    }
+  }
+
   function renderDetail(route, selectedItem) {
     const localState = route.page === "browse" ? getViewState(route.mode, route.entityKey) : null;
     const isBatchMode = Boolean(route.mode === "roster" && localState?.presentation === "batch");
@@ -2978,9 +3973,46 @@
       return;
     }
 
+    if (route.mode === "roster" && route.entityKey === legacyEntityKey) {
+      if (localState?.presentation === "simulator") {
+        detailEl.innerHTML = renderLegacyPreview(state.legacySimulator.preview);
+        if (detailPanelEl) {
+          detailPanelEl.scrollTop = 0;
+        }
+        return;
+      }
+
+      if (route.itemId === "__new__" || localState?.selectedId === "__new__") {
+        const createEntry = {
+          id: "",
+          character_card_id: getOwnedCharacterOptions()[0]?.value || "",
+          scenario_id: "",
+          stars: 3,
+          awakening: 0,
+          source_date: "",
+          source_note: "",
+          note: "",
+          custom_tags: [],
+          status_flags: [],
+          blue_spark: null,
+          pink_spark: null,
+          green_spark: null,
+          white_sparks: [],
+        };
+        detailEl.innerHTML = renderLegacyEditor(createEntry, true);
+        attachLegacyFormListeners(true);
+        if (detailPanelEl) {
+          detailPanelEl.scrollTop = 0;
+        }
+        return;
+      }
+    }
+
     if (!selectedItem) {
       detailEl.innerHTML = route.mode === "roster"
-        ? "<div class='detail-empty'>Select an owned entry to inspect its reference data and edit the local roster fields. If the roster is empty, add entries from <strong>Catalog</strong> first.</div>"
+        ? (route.entityKey === legacyEntityKey
+          ? "<div class='detail-empty'>Select a saved parent to inspect and edit its local inheritance sheet, or create a new one from <strong>New parent</strong>.</div>"
+          : "<div class='detail-empty'>Select an owned entry to inspect its reference data and edit the local roster fields. If the roster is empty, add entries from <strong>Catalog</strong> first.</div>")
         : "<div class='detail-empty'>Select an entry to inspect its local normalized data and source metadata.</div>";
       if (detailPanelEl) {
         detailPanelEl.scrollTop = 0;
@@ -2992,6 +4024,34 @@
     const detail = selectedItem.detail;
     const rosterBadges = getRosterBadges(route.entityKey, selectedItem, route.mode);
     const rosterProjection = route.mode === "roster" ? getRosterViewEntry(route.entityKey, selectedItem)?.derived || null : null;
+
+    if (route.mode === "roster" && route.entityKey === legacyEntityKey) {
+      detailEl.innerHTML = `
+        <button class="detail-close-button" type="button" id="detailCloseButton">Close details</button>
+        ${renderDetailHeader(selectedItem, route.entityKey, rosterBadges)}
+        ${renderLegacyEditor(detail.entry, false)}
+        ${renderLegacyDetailBody(detail)}
+      `;
+
+      detailEl.querySelectorAll("[data-ref-entity][data-ref-id]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const targetEntity = button.dataset.refEntity;
+          const targetMode = targetEntity === legacyEntityKey ? "roster" : "reference";
+          setBrowseHash(targetMode, targetEntity, button.dataset.refId);
+        });
+      });
+
+      const closeButton = document.getElementById("detailCloseButton");
+      if (closeButton) {
+        closeButton.addEventListener("click", () => setBrowseHash(route.mode, route.entityKey, null));
+      }
+
+      attachLegacyFormListeners(false, detail.entry.id);
+      if (detailPanelEl) {
+        detailPanelEl.scrollTop = 0;
+      }
+      return;
+    }
 
     detailEl.innerHTML = `
       <button class="detail-close-button" type="button" id="detailCloseButton">Close details</button>
@@ -3085,8 +4145,8 @@
 
     if (route.mode === "roster") {
       summaryText.textContent = activeProfile
-        ? `Owned characters and supports for ${activeProfile.name}.`
-        : "My Roster only shows owned characters and supports.";
+        ? `Owned characters, supports and legacy parents for ${activeProfile.name}.`
+        : "My Roster shows owned characters, supports and legacy parents.";
       datasetHeadingEl.textContent = "Roster Datasets";
       return;
     }
@@ -3114,6 +4174,9 @@
     document.body.classList.toggle("route-admin", route.page === "admin");
     document.body.classList.toggle("route-roster", route.page === "browse" && route.mode === "roster");
     document.body.classList.toggle("route-catalog", route.page === "browse" && route.mode === "reference");
+    if (route.page !== "browse") {
+      document.body.classList.remove("legacy-detail-expanded");
+    }
 
     if (profileBackgroundMediaEl) {
       profileBackgroundMediaEl.hidden = !(route.page === "profiles" || route.page === "wizard");
@@ -3146,28 +4209,42 @@
     entityTitleEl.textContent = route.mode === "roster" ? `${entity.label} Roster` : entity.label;
 
     if (route.mode === "roster") {
-      const ownedCount = rosterCountForEntity(route.entityKey, (entry) => entry.owned);
-      entityMetaEl.textContent =
-        `${ownedCount} owned entries | ${data.reference.entities[route.entityKey].count} available in catalog | roster updated ${formatDateTime(state.rosterDocument.updated_at || "-")}`;
+      if (route.entityKey === legacyEntityKey) {
+        entityMetaEl.textContent =
+          `${data.reference.entities[route.entityKey].count} saved parents | updated ${formatDateTime(state.legacyView.updated_at || "-")}`;
+      } else {
+        const ownedCount = rosterCountForEntity(route.entityKey, (entry) => entry.owned);
+        entityMetaEl.textContent =
+          `${ownedCount} owned entries | ${data.reference.entities[route.entityKey].count} available in catalog | roster updated ${formatDateTime(state.rosterDocument.updated_at || "-")}`;
+      }
     } else {
       entityMetaEl.textContent =
         `${data.reference.entities[route.entityKey].count} items | imported ${formatDateTime(entity.source.imported_at || "-")}`;
     }
 
+    const isLegacySimulator = route.mode === "roster" && route.entityKey === legacyEntityKey && localState.presentation === "simulator";
+    searchInput.disabled = isLegacySimulator;
+    clearButton.disabled = isLegacySimulator;
     searchInput.placeholder = route.mode === "roster" ? "Search in current roster dataset" : "Search in current dataset";
     clearButton.textContent = route.mode === "roster" ? "Reset filters" : "Reset";
-    searchInput.value = localState.query;
-    renderFilters(route.mode, route.entityKey);
+    searchInput.value = isLegacySimulator ? "" : localState.query;
+    if (isLegacySimulator) {
+      filtersEl.innerHTML = "";
+    } else {
+      renderFilters(route.mode, route.entityKey);
+    }
 
     const filteredItems = getFilteredItems(route.mode, route.entityKey);
     renderBrowseActions(route, filteredItems);
-    resultCountEl.textContent = `${filteredItems.length} visible`;
+    resultCountEl.textContent = isLegacySimulator
+      ? `${state.legacyView.items.length} saved parents`
+      : `${filteredItems.length} visible`;
 
-    if (localState.selectedId && !filteredItems.some((item) => item.id === localState.selectedId)) {
+    if (localState.selectedId && localState.selectedId !== "__new__" && !filteredItems.some((item) => item.id === localState.selectedId)) {
       localState.selectedId = null;
     }
 
-    if (!isCompactLayout() && !localState.selectedId && !isBatchMode) {
+    if (!isCompactLayout() && !localState.selectedId && !isBatchMode && !(route.entityKey === legacyEntityKey && localState.presentation === "simulator")) {
       localState.selectedId = filteredItems[0]?.id || null;
     }
 
@@ -3176,7 +4253,15 @@
       detailColumnEl.hidden = isBatchMode;
     }
     document.body.classList.toggle("roster-batch-mode", isBatchMode);
-    syncLayoutMode(Boolean(selectedItem) && !isBatchMode);
+    document.body.classList.toggle(
+      "legacy-detail-expanded",
+      route.mode === "roster" &&
+        route.entityKey === legacyEntityKey &&
+        localState.presentation === "parents" &&
+        !isBatchMode &&
+        Boolean(selectedItem || localState.selectedId === "__new__"),
+    );
+    syncLayoutMode(Boolean((selectedItem || localState.selectedId === "__new__")) && !isBatchMode);
     renderList(route.mode, route.entityKey, filteredItems);
     renderDetail(route, selectedItem);
   }
@@ -3244,6 +4329,7 @@
         state.rosterDocument = normalizeRosterDocument(null);
         state.rosterViews.characters = normalizeRosterViewPayload("characters", null);
         state.rosterViews.supports = normalizeRosterViewPayload("supports", null);
+        resetLegacyViewPayload();
       }
       syncSelectedProfileId();
     } catch (error) {
@@ -3255,6 +4341,7 @@
       state.rosterDocument = normalizeRosterDocument(null);
       state.rosterViews.characters = normalizeRosterViewPayload("characters", null);
       state.rosterViews.supports = normalizeRosterViewPayload("supports", null);
+      resetLegacyViewPayload();
       state.profilesApiStatus = {
         kind: "error",
         message: "Profile API unavailable. Restart the local Python server to enable profile creation and selection.",
@@ -3288,6 +4375,7 @@
       state.rosterDocument = normalizeRosterDocument(null);
       state.rosterViews.characters = normalizeRosterViewPayload("characters", null);
       state.rosterViews.supports = normalizeRosterViewPayload("supports", null);
+      resetLegacyViewPayload();
       return;
     }
 
@@ -3307,7 +4395,7 @@
       return;
     }
 
-    const entitiesToLoad = rosterEntityKeys.filter((entityKey) => {
+    const entitiesToLoad = ["characters", "supports"].filter((entityKey) => {
       const payload = getRosterViewPayload(entityKey);
       return force || payload.profile_id !== profileId;
     });
@@ -3349,6 +4437,7 @@
       state.rosterDocument = normalizeRosterDocument(null);
       state.rosterViews.characters = normalizeRosterViewPayload("characters", null);
       state.rosterViews.supports = normalizeRosterViewPayload("supports", null);
+      resetLegacyViewPayload();
     }
     if (state.wizardProfileId === profileId) {
       state.wizardProfileId = null;
@@ -3420,6 +4509,7 @@
     state.wizardRedirectScheduled = false;
     await loadRosterForProfile(profileId, true);
     await loadRosterViewsForProfile(profileId, true);
+    await loadLegacyForProfile(profileId, true);
     setBrowseHash("roster", "characters", null);
   }
 
@@ -3448,8 +4538,125 @@
     await loadBootstrapStatus(true);
   }
 
+  async function loadLegacyForProfile(profileId, force) {
+    if (!profileId) {
+      resetLegacyViewPayload();
+      return;
+    }
+    if (!force && state.legacyView.profile_id === profileId) {
+      return;
+    }
+    const payload = await apiJson(`/api/profiles/${encodeURIComponent(profileId)}/legacy-view`);
+    applyLegacyViewPayload(payload);
+    const ownedCharacters = getOwnedCharacterOptions();
+    if (!state.legacySimulator.main_character_id || !ownedCharacters.some((option) => option.value === state.legacySimulator.main_character_id)) {
+      state.legacySimulator.main_character_id = ownedCharacters[0]?.value || "";
+    }
+    if (!state.legacyView.items.some((item) => item.id === state.legacySimulator.parent_a_legacy_id)) {
+      state.legacySimulator.parent_a_legacy_id = state.legacyView.items[0]?.id || "";
+    }
+    if (!state.legacyView.items.some((item) => item.id === state.legacySimulator.parent_b_legacy_id)) {
+      state.legacySimulator.parent_b_legacy_id = state.legacyView.items[1]?.id || state.legacyView.items[0]?.id || "";
+    }
+  }
+
   async function restoreBackupAndRefresh(backupId) {
     await runAdminJob("Restore", `/api/admin/backups/${encodeURIComponent(backupId)}/restore`);
+  }
+
+  function collectLegacyPayload(formData) {
+    const selectedCharacterCardId = String(formData.get("character_card_id") || state.legacyEditor.characterCardId || "").trim();
+    return {
+      character_card_id: selectedCharacterCardId,
+      scenario_id: String(formData.get("scenario_id") || "").trim() || null,
+      stars: clampNumber(formData.get("stars"), 0, 5, 3),
+      awakening: clampNumber(formData.get("awakening"), 0, 5, 0),
+      source_date: String(formData.get("source_date") || "").trim(),
+      source_note: String(formData.get("source_note") || "").trim(),
+      note: String(formData.get("note") || "").trim(),
+      custom_tags: parseRosterTokenList(formData.get("custom_tags")),
+      status_flags: parseRosterTokenList(formData.get("status_flags")),
+      blue_spark: buildLegacyFactorPayload("stat", state.legacyEditor.blueTargetKey, state.legacyEditor.blueStars, { characterCardId: selectedCharacterCardId }),
+      pink_spark: buildLegacyFactorPayload(state.legacyEditor.pinkKind, state.legacyEditor.pinkTargetKey, state.legacyEditor.pinkStars, { characterCardId: selectedCharacterCardId }),
+      green_spark: state.legacyEditor.greenEnabled
+        ? buildLegacyFactorPayload("unique", "", state.legacyEditor.greenStars, { characterCardId: selectedCharacterCardId })
+        : null,
+      white_sparks: state.legacyEditor.whiteSparks.map((spark) => ({ ...spark })),
+    };
+  }
+
+  async function saveLegacyForm(formData, isCreateMode, legacyId) {
+    if (!state.activeProfileId) {
+      return;
+    }
+    state.legacyStatus = { kind: "saving", message: "Saving parent locally..." };
+    requestRender();
+    try {
+      const payload = collectLegacyPayload(formData);
+      const response = await apiJson(
+        isCreateMode
+          ? `/api/profiles/${encodeURIComponent(state.activeProfileId)}/legacies`
+          : `/api/profiles/${encodeURIComponent(state.activeProfileId)}/legacies/${encodeURIComponent(legacyId)}`,
+        {
+          method: isCreateMode ? "POST" : "PATCH",
+          body: JSON.stringify(payload),
+        },
+      );
+      await loadLegacyForProfile(state.activeProfileId, true);
+      state.legacyStatus = {
+        kind: "saved",
+        message: isCreateMode ? "Saved new parent locally." : "Saved parent locally.",
+      };
+      state.legacyFormDraft = null;
+      setBrowseHash("roster", legacyEntityKey, response.entry.id);
+    } catch (error) {
+      state.legacyStatus = { kind: "error", message: error.message || "Could not save the legacy parent." };
+      requestRender();
+    }
+  }
+
+  async function deleteLegacyParent(legacyId) {
+    if (!state.activeProfileId) {
+      return;
+    }
+    try {
+      await apiJson(`/api/profiles/${encodeURIComponent(state.activeProfileId)}/legacies/${encodeURIComponent(legacyId)}`, {
+        method: "DELETE",
+      });
+      await loadLegacyForProfile(state.activeProfileId, true);
+      state.legacyStatus = { kind: "saved", message: "Deleted local parent." };
+      state.legacyFormDraft = null;
+      setBrowseHash("roster", legacyEntityKey, null);
+    } catch (error) {
+      state.legacyStatus = { kind: "error", message: error.message || "Could not delete the legacy parent." };
+      requestRender();
+    }
+  }
+
+  async function runLegacySimulatorPreview(formData) {
+    if (!state.activeProfileId) {
+      return;
+    }
+    state.legacySimulator.main_character_id = String(formData.get("main_character_id") || "").trim();
+    state.legacySimulator.parent_a_legacy_id = String(formData.get("parent_a_legacy_id") || "").trim();
+    state.legacySimulator.parent_b_legacy_id = String(formData.get("parent_b_legacy_id") || "").trim();
+    state.legacySimulator.status = { kind: "working", message: "Running local inheritance preview..." };
+    requestRender();
+    try {
+      state.legacySimulator.preview = await apiJson(`/api/profiles/${encodeURIComponent(state.activeProfileId)}/legacy-simulator/preview`, {
+        method: "POST",
+        body: JSON.stringify({
+          main_character_id: state.legacySimulator.main_character_id,
+          parent_a_legacy_id: state.legacySimulator.parent_a_legacy_id,
+          parent_b_legacy_id: state.legacySimulator.parent_b_legacy_id,
+        }),
+      });
+      state.legacySimulator.status = { kind: "saved", message: "Preview updated from local compatibility and saved sparks." };
+    } catch (error) {
+      state.legacySimulator.preview = null;
+      state.legacySimulator.status = { kind: "error", message: error.message || "Could not run the inheritance preview." };
+    }
+    requestRender();
   }
 
   function collectRosterFormData(entityKey, item, formEl) {
@@ -3656,6 +4863,7 @@
     if (route.page === "browse" && state.activeProfileId) {
       await loadRosterForProfile(state.activeProfileId, false);
       await loadRosterViewsForProfile(state.activeProfileId, false);
+      await loadLegacyForProfile(state.activeProfileId, false);
       if (token !== state.renderToken) {
         return;
       }

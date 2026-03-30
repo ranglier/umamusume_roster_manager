@@ -17,7 +17,7 @@ Le scope actuellement implemente est:
 - `scenarios`
 - `training_events`
 
-Les builds, les parents personnels et l'optimisation Champions Meeting ne sont pas encore traites.
+Les builds et l'optimisation Champions Meeting ne sont pas encore traites. Une premiere couche `legacy / parent` est maintenant presente, mais elle ne constitue pas encore un moteur complet de build CM.
 
 ## Ce qui a ete realise
 
@@ -281,6 +281,32 @@ Pourquoi:
 - necessaire pour les futures phases inheritance / legacy
 - permet de conserver les groupes de relation
 - prepare l'exploitation des G1 factors sans figer trop tot une formule finale
+
+### Brique `Legacy / Parent` dans `My Roster`
+
+Etat:
+
+- nouvelle vue `Legacy` dans `My Roster`
+- inventaire local de parents par profil dans `data/user/profiles/<profile_id>/legacy.json`
+- CRUD local complet sur les fiches parents
+- saisie assistee des sparks et facteurs
+- modele parent realigne sur le fonctionnement reel:
+  - `1` blue spark
+  - `1` pink spark
+  - `0 ou 1` green spark unique
+  - `0..n` white sparks
+- simulateur d'heritage v1 base sur:
+  - le roster `characters` possede
+  - deux parents issus de l'inventaire local
+  - `compatibility`
+  - `g1_factors`
+  - `scenarios`
+
+Choix:
+
+- une seule fiche `legacy` porte a la fois les infos de run source et de parent reutilisable
+- pas de separation `run_result` / `parent`
+- simulateur v1 deterministe et explicable, pas encore stochastique
 
 ### Python pour le pipeline d'update
 

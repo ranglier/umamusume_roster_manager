@@ -17,11 +17,12 @@ Le projet couvre aujourd'hui:
 - profils locaux
 - wizard de premier demarrage
 - roster personnel local pour `characters` et `supports`
+- inventaire local `legacy / parents`
+- simulateur d'heritage local v1
 - administration locale
 
 Hors perimetre a ce stade:
 
-- parents personnels
 - builds
 - recommandations Champions Meeting
 - scoring / optimisation
@@ -201,7 +202,7 @@ python ./scripts/serve_reference.py --update-first --open
 - endpoint profils: `http://127.0.0.1:8000/api/profiles`
 - l'application ouvre sur un selecteur de profil
 - apres selection, la vue par defaut est `My Roster / Characters`
-- `My Roster` n'affiche que les `characters` et `supports` possedes
+- `My Roster` couvre `characters`, `supports` et `legacy`
 - `Catalog` permet d'explorer les datasets et d'ajouter / retirer les `characters` et `supports` possedes
 - le serveur Python local est le mode officiel en phase 2, car il expose aussi l'API profils / roster
 - l'ouverture directe de `dist/index.html` ou un simple serveur statique ne couvre pas les profils ni l'edition du roster
@@ -252,12 +253,14 @@ L'UI locale permet:
 
 - wizard de premier demarrage si aucun profil n'existe
 - selection de profil
-- `My Roster` pour les `characters` / `supports` possedes
+- `My Roster` pour les `characters` / `supports` possedes et les parents `legacy`
 - `Catalog` pour parcourir la reference et alimenter le roster
 - `Administration` pour les updates, backups et profils
 - navigation par dataset
 - navigation par `CM Targets`, `Scenarios` et `Training Events`
 - mode roster `detail` et mode roster `batch`
+- mode `Legacy / Parents`
+- mode `Legacy / Simulator`
 - recherche texte
 - filtres
 - consultation detaillee
@@ -292,11 +295,30 @@ Le roster personnel stocke maintenant aussi des champs locaux d'organisation et 
   - `limit_break`
   - `custom_tags`
   - `status_flags`
+- `legacy`
+- structure des parents alignee sur le fonctionnement reel:
+  - `1` blue spark
+  - `1` pink spark
+  - `0 ou 1` green spark unique
+  - `0..n` white sparks
+  - `character_card_id`
+  - `base_character_id`
+  - `scenario_id`
+  - `scenario_name`
+  - `source_date`
+  - `source_note`
+  - `stars`
+  - `awakening`
+  - `custom_tags`
+  - `status_flags`
+  - `factors[]`
 
 Le serveur expose en plus des projections enrichies, fusionnant roster + reference:
 
 - `GET /api/profiles/<id>/roster-view/characters`
 - `GET /api/profiles/<id>/roster-view/supports`
+- `GET /api/profiles/<id>/legacy-view`
+- `POST /api/profiles/<id>/legacy-simulator/preview`
 
 Ces projections servent a afficher localement:
 
@@ -304,6 +326,9 @@ Ces projections servent a afficher localement:
 - un resume de progression des characters
 - les valeurs effectives d'une support a son niveau / LB reels
 - les hint skills / event skills disponibles dans l'etat reel de la carte
+- les parents sauvegardes avec leurs facteurs normalises
+- les sparks parents structurees (`blue`, `pink`, `green`, `white`)
+- une preview deterministe d'heritage basee sur `compatibility`, `g1_factors` et les scenarios locaux
 - des filtres roster derives utilisables en UI
 
 L'UI source est dans:
@@ -346,6 +371,7 @@ Note:
 - le depot Git ne contient pas les donnees GameTora importees; elles doivent etre regenerees localement
 - la creation initiale de la base locale peut etre longue a froid, surtout lors du telechargement des assets
 - `training_events` reste volontairement conservateur: les choix et outcomes sont preserves et relies, mais leur semantique fine n'est pas encore completement decodee pour du scoring
+- le simulateur `legacy` v1 reste une projection deterministe explicable; il ne couvre pas encore les calculs probabilistes complets d'heritage
 
 ## Revue code
 
@@ -369,9 +395,9 @@ Nettoyages appliques:
 
 Phase suivante recommandee:
 
-1. enrichir le roster personnel au-dela de la possession simple
-2. conserver la separation stricte entre reference globale et donnees utilisateur
-3. exploiter `cm_targets`, `scenarios` et `training_events` pour la couche `legacies`, puis les builds / Champions Meeting
+1. approfondir la couche `legacy / parents`
+2. conserver la separation stricte entre reference globale, roster et donnees utilisateur
+3. exploiter `cm_targets`, `scenarios`, `training_events` et le simulateur `legacy` pour preparer les futurs builds / Champions Meeting
 
 Document de cadrage associe:
 

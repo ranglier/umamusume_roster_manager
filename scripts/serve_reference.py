@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import collections
 import errno
 import functools
 import http.server
@@ -35,12 +36,46 @@ BACKUP_ROOT = PROJECT_ROOT / "data" / "backups"
 PROFILES_INDEX_PATH = USER_DATA_ROOT / "profiles.json"
 PROFILE_DATA_ROOT = USER_DATA_ROOT / "profiles"
 PROFILE_ID_PATTERN = re.compile(r"^p_\d{3,}$")
+LEGACY_ID_PATTERN = re.compile(r"^legacy_\d{3,}$")
 BACKUP_ID_PATTERN = re.compile(r"^backup_\d{8}_\d{6}_[0-9a-f]{8}$")
 PROFILE_EXPORT_KIND = "umamusume-profile-export"
 FULL_BACKUP_KIND = "umamusume-full-backup"
 ADMIN_JOB_HISTORY_LIMIT = 12
 SUPPORT_STAGE_LEVELS = [1, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50]
 SUPPORT_BASE_CAP_BY_RARITY = {1: 20, 2: 25, 3: 30}
+LEGACY_STAT_LABELS = {
+    "speed": "Speed",
+    "stamina": "Stamina",
+    "power": "Power",
+    "guts": "Guts",
+    "wit": "Wit",
+}
+LEGACY_SURFACE_LABELS = {
+    "turf": "Turf",
+    "dirt": "Dirt",
+}
+LEGACY_DISTANCE_LABELS = {
+    "short": "Short",
+    "mile": "Mile",
+    "medium": "Medium",
+    "long": "Long",
+}
+LEGACY_STYLE_LABELS = {
+    "runner": "Front",
+    "leader": "Pace",
+    "betweener": "Late",
+    "chaser": "End",
+}
+LEGACY_FACTOR_KIND_LABELS = {
+    "stat": "Stat",
+    "surface": "Surface",
+    "distance": "Distance",
+    "style": "Style",
+    "unique": "Unique",
+    "scenario": "Scenario",
+    "g1": "G1",
+    "skill": "Skill",
+}
 
 JOB_LOCK = threading.Lock()
 ACTIVE_ADMIN_JOB: dict | None = None
@@ -65,6 +100,14 @@ def default_roster() -> dict:
         "updated_at": utc_timestamp(),
         "characters": {},
         "supports": {},
+    }
+
+
+def default_legacy_document() -> dict:
+    return {
+        "version": 2,
+        "updated_at": utc_timestamp(),
+        "entries": [],
     }
 
 
@@ -333,6 +376,901 @@ def build_roster_view(profile_id: str, entity_key: str) -> dict:
     }
 
 
+def profile_legacy_path(profile_id: str) -> Path:
+    return PROFILE_DATA_ROOT / profile_id / "legacy.json"
+
+
+def get_character_detail(character_ref: dict | None) -> dict:
+    if not isinstance(character_ref, dict):
+        return {}
+    detail = character_ref.get("detail")
+    if isinstance(detail, dict):
+        return detail
+    return character_ref
+
+
+def get_character_unique_skill(character_ref: dict | None) -> dict | None:
+    detail = get_character_detail(character_ref)
+    unique_skills = (detail.get("skill_links") or {}).get("unique") or []
+    unique_skill = unique_skills[0] if unique_skills else None
+    if not isinstance(unique_skill, dict):
+        return None
+
+    unique_id = str(unique_skill.get("id") or "").strip()
+    if not unique_id:
+        return None
+
+    return {
+        "id": unique_id,
+        "name": str(unique_skill.get("name") or unique_id),
+        "rarity": int(unique_skill.get("rarity") or 0),
+        "cost": unique_skill.get("cost"),
+    }
+
+
+def character_supports_green_spark(character_ref: dict | None) -> bool:
+    detail = get_character_detail(character_ref)
+    return int(detail.get("rarity") or 0) >= 3 and get_character_unique_skill(character_ref) is not None
+
+
+def legacy_factor_label(kind: str, target_key: str, target_label: str | None = None) -> str:
+    if target_label:
+        return str(target_label)
+    if kind == "stat":
+        return LEGACY_STAT_LABELS.get(target_key, target_key)
+    if kind == "surface":
+        return LEGACY_SURFACE_LABELS.get(target_key, target_key)
+    if kind == "distance":
+        return LEGACY_DISTANCE_LABELS.get(target_key, target_key)
+    if kind == "style":
+        return LEGACY_STYLE_LABELS.get(target_key, target_key)
+    return target_key
+
+
+def build_legacy_reference_catalogs() -> dict:
+    characters = load_reference_items_lookup("characters")
+    scenarios = load_reference_items_lookup("scenarios")
+    g1_factors = load_reference_items_lookup("g1_factors")
+    skills = load_reference_items_lookup("skills")
+    compatibility_items = load_reference_entity("compatibility").get("items", [])
+    compatibility = {
+        str(item.get("character_id")): item
+        for item in compatibility_items
+        if isinstance(item, dict) and str(item.get("character_id") or "").strip()
+    }
+
+    return {
+        "characters": characters,
+        "scenarios": scenarios,
+        "g1_factors": g1_factors,
+        "skills": skills,
+        "compatibility": compatibility,
+    }
+
+
+def normalize_legacy_factor(raw_factor: object, catalogs: dict, *, character_ref: dict | None = None) -> dict:
+    if not isinstance(raw_factor, dict):
+        raise ValueError("legacy.factors entries must be objects.")
+
+    kind = str(raw_factor.get("kind") or "").strip().lower()
+    if kind not in LEGACY_FACTOR_KIND_LABELS:
+        raise ValueError("legacy factor kind is invalid.")
+
+    stars = raw_factor.get("stars")
+    if not isinstance(stars, int) or stars < 1 or stars > 3:
+        raise ValueError("legacy factor stars must be an integer between 1 and 3.")
+
+    target_key = str(raw_factor.get("target_key") or "").strip()
+    target_label = str(raw_factor.get("target_label") or "").strip()
+    race_id = str(raw_factor.get("race_id") or "").strip() or None
+    scenario_id = str(raw_factor.get("scenario_id") or "").strip() or None
+    skill_id = str(raw_factor.get("skill_id") or "").strip() or None
+
+    if kind == "stat":
+        if target_key not in LEGACY_STAT_LABELS:
+            raise ValueError("legacy stat factor target is invalid.")
+        target_label = LEGACY_STAT_LABELS[target_key]
+    elif kind == "surface":
+        if target_key not in LEGACY_SURFACE_LABELS:
+            raise ValueError("legacy surface factor target is invalid.")
+        target_label = LEGACY_SURFACE_LABELS[target_key]
+    elif kind == "distance":
+        if target_key not in LEGACY_DISTANCE_LABELS:
+            raise ValueError("legacy distance factor target is invalid.")
+        target_label = LEGACY_DISTANCE_LABELS[target_key]
+    elif kind == "style":
+        if target_key not in LEGACY_STYLE_LABELS:
+            raise ValueError("legacy style factor target is invalid.")
+        target_label = LEGACY_STYLE_LABELS[target_key]
+    elif kind == "unique":
+        unique_skill = get_character_unique_skill(character_ref)
+        if unique_skill is None:
+            raise ValueError("legacy unique factor target is invalid.")
+        unique_skill_id = str(unique_skill.get("id") or "")
+        if (target_key and target_key != unique_skill_id) or (skill_id and skill_id != unique_skill_id):
+            raise ValueError("legacy unique factor target is invalid.")
+        target_key = unique_skill_id
+        skill_id = unique_skill_id
+        target_label = str(unique_skill.get("name") or unique_skill_id)
+    elif kind == "scenario":
+        scenario_ref = catalogs["scenarios"].get(scenario_id or target_key)
+        if scenario_ref is None:
+            raise ValueError("legacy scenario factor target is invalid.")
+        target_key = str(scenario_ref.get("scenario_id") or scenario_ref.get("id"))
+        scenario_id = target_key
+        target_label = str(scenario_ref.get("name") or target_label or target_key)
+    elif kind == "g1":
+        factor_ref = catalogs["g1_factors"].get(target_key)
+        if factor_ref is None and race_id:
+            factor_ref = next(
+                (item for item in catalogs["g1_factors"].values() if str(item.get("race_id") or "") == race_id),
+                None,
+            )
+        if factor_ref is None:
+            raise ValueError("legacy G1 factor target is invalid.")
+        target_key = str(factor_ref.get("factor_id") or factor_ref.get("id"))
+        target_label = str(factor_ref.get("name") or target_label or target_key)
+        race_id = str(factor_ref.get("race_id") or race_id or "") or None
+    elif kind == "skill":
+        skill_ref = catalogs["skills"].get(skill_id or target_key)
+        if skill_ref is None:
+            raise ValueError("legacy skill factor target is invalid.")
+        skill_id = str(skill_ref.get("skill_id") or skill_ref.get("id"))
+        target_key = skill_id
+        target_label = str(skill_ref.get("name") or target_label or target_key)
+
+    if not target_key:
+        raise ValueError("legacy factor target is required.")
+
+    return {
+        "kind": kind,
+        "target_key": target_key,
+        "target_label": legacy_factor_label(kind, target_key, target_label),
+        "stars": stars,
+        "race_id": race_id,
+        "scenario_id": scenario_id,
+        "skill_id": skill_id,
+    }
+
+
+def build_legacy_factor(
+    kind: str,
+    target_key: str,
+    stars: int,
+    catalogs: dict,
+    *,
+    character_ref: dict | None = None,
+    target_label: str | None = None,
+    race_id: str | None = None,
+    scenario_id: str | None = None,
+    skill_id: str | None = None,
+) -> dict:
+    return normalize_legacy_factor(
+        {
+            "kind": kind,
+            "target_key": target_key,
+            "target_label": target_label,
+            "stars": stars,
+            "race_id": race_id,
+            "scenario_id": scenario_id,
+            "skill_id": skill_id,
+        },
+        catalogs,
+        character_ref=character_ref,
+    )
+
+
+def dedupe_legacy_factors(factors: list[dict]) -> list[dict]:
+    deduped: dict[tuple[str, str], dict] = {}
+    for factor in factors:
+        factor_key = (str(factor.get("kind") or ""), str(factor.get("target_key") or ""))
+        current = deduped.get(factor_key)
+        if current is None or int(factor.get("stars") or 0) > int(current.get("stars") or 0):
+            deduped[factor_key] = factor
+    return sorted(
+        deduped.values(),
+        key=lambda factor: (
+            str(factor.get("kind") or ""),
+            str(factor.get("target_label") or factor.get("target_key") or ""),
+        ),
+    )
+
+
+def dedupe_legacy_white_sparks(sparks: list[dict]) -> list[dict]:
+    return dedupe_legacy_factors(
+        [
+            spark
+            for spark in sparks
+            if str(spark.get("kind") or "") in {"scenario", "g1", "skill"}
+        ]
+    )
+
+
+def normalize_blue_spark(raw_spark: object, catalogs: dict, *, character_ref: dict | None = None) -> dict | None:
+    if raw_spark in (None, ""):
+        return None
+    spark = normalize_legacy_factor(raw_spark, catalogs, character_ref=character_ref)
+    if spark.get("kind") != "stat":
+        raise ValueError("legacy blue spark must be a stat spark.")
+    return spark
+
+
+def normalize_pink_spark(raw_spark: object, catalogs: dict, *, character_ref: dict | None = None) -> dict | None:
+    if raw_spark in (None, ""):
+        return None
+    spark = normalize_legacy_factor(raw_spark, catalogs, character_ref=character_ref)
+    if spark.get("kind") not in {"surface", "distance", "style"}:
+        raise ValueError("legacy pink spark must be a surface, distance or style spark.")
+    return spark
+
+
+def normalize_green_spark(raw_spark: object, catalogs: dict, *, character_ref: dict | None = None) -> dict | None:
+    if raw_spark in (None, ""):
+        return None
+    if not character_supports_green_spark(character_ref):
+        raise ValueError("legacy green spark is unavailable for this parent.")
+    spark = normalize_legacy_factor(raw_spark, catalogs, character_ref=character_ref)
+    if spark.get("kind") != "unique":
+        raise ValueError("legacy green spark must be the parent unique skill.")
+    return spark
+
+
+def normalize_white_sparks(raw_sparks: object, catalogs: dict, *, character_ref: dict | None = None) -> list[dict]:
+    if raw_sparks in (None, ""):
+        return []
+    if not isinstance(raw_sparks, list):
+        raise ValueError("legacy.white_sparks must be a list.")
+
+    normalized = []
+    for raw_spark in raw_sparks:
+        spark = normalize_legacy_factor(raw_spark, catalogs, character_ref=character_ref)
+        if spark.get("kind") not in {"scenario", "g1", "skill"}:
+            raise ValueError("legacy white sparks only support scenario, G1 or skill sparks.")
+        normalized.append(spark)
+    return dedupe_legacy_white_sparks(normalized)
+
+
+def migrate_legacy_sparks_from_factors(raw_factors: object, catalogs: dict, *, character_ref: dict | None = None) -> tuple[dict | None, dict | None, dict | None, list[dict]]:
+    normalized_factors = dedupe_legacy_factors(
+        [
+            normalize_legacy_factor(raw_factor, catalogs, character_ref=character_ref)
+            for raw_factor in (raw_factors or [])
+        ]
+    )
+
+    blue_spark = next((factor for factor in normalized_factors if factor.get("kind") == "stat"), None)
+    pink_spark = next((factor for factor in normalized_factors if factor.get("kind") in {"surface", "distance", "style"}), None)
+
+    unique_skill = get_character_unique_skill(character_ref)
+    green_spark = None
+    white_sparks: list[dict] = []
+    for factor in normalized_factors:
+        kind = str(factor.get("kind") or "")
+        if blue_spark is not None and factor is blue_spark:
+            continue
+        if pink_spark is not None and factor is pink_spark:
+            continue
+        if (
+            kind == "skill"
+            and unique_skill is not None
+            and character_supports_green_spark(character_ref)
+            and str(factor.get("target_key") or factor.get("skill_id") or "") == str(unique_skill.get("id") or "")
+            and green_spark is None
+        ):
+            green_spark = build_legacy_factor(
+                "unique",
+                str(unique_skill.get("id") or ""),
+                int(factor.get("stars") or 3),
+                catalogs,
+                character_ref=character_ref,
+            )
+            continue
+        if kind in {"scenario", "g1", "skill"}:
+            white_sparks.append(factor)
+
+    return blue_spark, pink_spark, green_spark, dedupe_legacy_white_sparks(white_sparks)
+
+
+def legacy_entry_to_factors(entry: dict) -> list[dict]:
+    factors = []
+    for key in ("blue_spark", "pink_spark", "green_spark"):
+        spark = entry.get(key)
+        if isinstance(spark, dict):
+            factors.append(spark)
+    factors.extend([spark for spark in (entry.get("white_sparks") or []) if isinstance(spark, dict)])
+    return dedupe_legacy_factors(factors)
+
+
+def build_legacy_spark_summary(entry: dict) -> dict:
+    blue_spark = entry.get("blue_spark") if isinstance(entry.get("blue_spark"), dict) else None
+    pink_spark = entry.get("pink_spark") if isinstance(entry.get("pink_spark"), dict) else None
+    green_spark = entry.get("green_spark") if isinstance(entry.get("green_spark"), dict) else None
+    white_sparks = [spark for spark in (entry.get("white_sparks") or []) if isinstance(spark, dict)]
+    return {
+        "blue": blue_spark,
+        "pink": pink_spark,
+        "green": green_spark,
+        "white": white_sparks,
+        "white_count": len(white_sparks),
+        "green_available": bool(entry.get("green_available")),
+    }
+
+
+def normalize_legacy_entry(raw_entry: object, catalogs: dict, *, existing_id: str | None = None, strict_sparks: bool = False) -> dict:
+    if not isinstance(raw_entry, dict):
+        raise ValueError("legacy entry must be an object.")
+
+    entry_id = str(raw_entry.get("id") or existing_id or "").strip()
+    if entry_id and not LEGACY_ID_PATTERN.match(entry_id):
+        raise ValueError("legacy id is invalid.")
+
+    character_card_id = str(raw_entry.get("character_card_id") or "").strip()
+    character_ref = catalogs["characters"].get(character_card_id)
+    if character_ref is None:
+        raise ValueError("legacy character_card_id is invalid.")
+
+    scenario_id = str(raw_entry.get("scenario_id") or "").strip()
+    scenario_ref = catalogs["scenarios"].get(scenario_id) if scenario_id else None
+    scenario_name = str(raw_entry.get("scenario_name") or "").strip()
+    if scenario_ref is not None:
+        scenario_id = str(scenario_ref.get("scenario_id") or scenario_ref.get("id"))
+        scenario_name = str(scenario_ref.get("name") or scenario_name or scenario_id)
+    else:
+        scenario_id = ""
+        scenario_name = ""
+
+    detail = get_character_detail(character_ref)
+    name = str(detail.get("name") or raw_entry.get("name") or "").strip()
+    variant = str(detail.get("variant") or raw_entry.get("variant") or "").strip()
+    base_character_id = int(detail.get("base_character_id") or raw_entry.get("base_character_id") or 0)
+
+    source_date = str(raw_entry.get("source_date") or "").strip()
+    note = str(raw_entry.get("note") or "")
+    source_note = str(raw_entry.get("source_note") or "")
+    if len(note) > 2000 or len(source_note) > 2000:
+        raise ValueError("legacy notes are too long.")
+    if len(source_date) > 80:
+        raise ValueError("legacy source_date is too long.")
+
+    stars = clamp_int(raw_entry.get("stars"), 0, 5, int(detail.get("rarity") or 0))
+    awakening = clamp_int(raw_entry.get("awakening"), 0, 5, 0)
+    green_available = character_supports_green_spark(character_ref)
+
+    has_structured_sparks = any(
+        key in raw_entry
+        for key in ("blue_spark", "pink_spark", "green_spark", "white_sparks")
+    )
+    if has_structured_sparks:
+        blue_spark = normalize_blue_spark(raw_entry.get("blue_spark"), catalogs, character_ref=character_ref)
+        pink_spark = normalize_pink_spark(raw_entry.get("pink_spark"), catalogs, character_ref=character_ref)
+        green_spark = normalize_green_spark(raw_entry.get("green_spark"), catalogs, character_ref=character_ref) if green_available else None
+        white_sparks = normalize_white_sparks(raw_entry.get("white_sparks"), catalogs, character_ref=character_ref)
+    else:
+        blue_spark, pink_spark, green_spark, white_sparks = migrate_legacy_sparks_from_factors(
+            raw_entry.get("factors"),
+            catalogs,
+            character_ref=character_ref,
+        )
+
+    if strict_sparks:
+        if blue_spark is None:
+            raise ValueError("legacy blue spark is required.")
+        if pink_spark is None:
+            raise ValueError("legacy pink spark is required.")
+
+    factors = legacy_entry_to_factors(
+        {
+            "blue_spark": blue_spark,
+            "pink_spark": pink_spark,
+            "green_spark": green_spark if green_available else None,
+            "white_sparks": white_sparks,
+        }
+    )
+
+    return {
+        "id": entry_id or None,
+        "character_card_id": character_card_id,
+        "base_character_id": base_character_id,
+        "name": name,
+        "variant": variant,
+        "scenario_id": scenario_id or None,
+        "scenario_name": scenario_name or None,
+        "source_date": source_date or None,
+        "created_at": str(raw_entry.get("created_at") or utc_timestamp()),
+        "updated_at": utc_timestamp(),
+        "stars": stars,
+        "awakening": awakening,
+        "custom_tags": normalize_string_list(raw_entry.get("custom_tags"), field_name="legacy.custom_tags"),
+        "status_flags": normalize_string_list(raw_entry.get("status_flags"), field_name="legacy.status_flags"),
+        "note": note,
+        "source_note": source_note,
+        "green_available": green_available,
+        "blue_spark": blue_spark,
+        "pink_spark": pink_spark,
+        "green_spark": green_spark if green_available else None,
+        "white_sparks": white_sparks,
+        "factors": factors,
+    }
+
+
+def next_legacy_id(entries: list[dict]) -> str:
+    next_number = 1
+    for entry in entries:
+        match = re.match(r"^legacy_(\d+)$", str(entry.get("id") or ""))
+        if match:
+            next_number = max(next_number, int(match.group(1)) + 1)
+    return f"legacy_{next_number:03d}"
+
+
+def normalize_legacy_document(raw_document: object) -> dict:
+    document = default_legacy_document()
+    if not isinstance(raw_document, dict):
+        return document
+
+    try:
+        catalogs = build_legacy_reference_catalogs()
+    except (FileNotFoundError, ValueError):
+        return document
+
+    entries: list[dict] = []
+    for raw_entry in raw_document.get("entries") or []:
+        try:
+            entry = normalize_legacy_entry(
+                raw_entry,
+                catalogs,
+                existing_id=str(raw_entry.get("id") or "").strip() or None,
+                strict_sparks=False,
+            )
+        except ValueError:
+            continue
+        if not entry.get("id"):
+            entry["id"] = next_legacy_id(entries)
+        entries.append(entry)
+
+    return {
+        "version": 2,
+        "updated_at": str(raw_document.get("updated_at") or document["updated_at"]),
+        "entries": sorted(entries, key=lambda entry: str(entry.get("updated_at") or entry.get("created_at") or ""), reverse=True),
+    }
+
+
+def load_legacies(profile_id: str) -> dict:
+    return normalize_legacy_document(read_json(profile_legacy_path(profile_id), default_legacy_document))
+
+
+def save_legacies(profile_id: str, document: dict) -> dict:
+    normalized = normalize_legacy_document(document)
+    normalized["updated_at"] = utc_timestamp()
+    atomic_write_json(profile_legacy_path(profile_id), normalized)
+    return normalized
+
+
+def persist_unresolved_legacies(profile_id: str, document: object) -> dict:
+    raw_document = document if isinstance(document, dict) else {}
+    preserved = {
+        "version": 2,
+        "updated_at": str(raw_document.get("updated_at") or utc_timestamp()),
+        "entries": list(raw_document.get("entries") or []),
+    }
+    atomic_write_json(profile_legacy_path(profile_id), preserved)
+    return preserved
+
+
+def create_legacy_entry(profile_id: str, payload: dict) -> dict:
+    document = load_legacies(profile_id)
+    catalogs = build_legacy_reference_catalogs()
+    entry = normalize_legacy_entry(payload, catalogs, strict_sparks=True)
+    entry["id"] = next_legacy_id(document["entries"])
+    document["entries"].insert(0, entry)
+    saved_document = save_legacies(profile_id, document)
+    saved_entry = next(item for item in saved_document["entries"] if item["id"] == entry["id"])
+    return {"document": saved_document, "entry": saved_entry}
+
+
+def update_legacy_entry(profile_id: str, legacy_id: str, payload: dict) -> dict:
+    if not LEGACY_ID_PATTERN.match(legacy_id):
+        raise FileNotFoundError("Legacy entry not found.")
+
+    document = load_legacies(profile_id)
+    existing_entry = next((entry for entry in document["entries"] if entry["id"] == legacy_id), None)
+    if existing_entry is None:
+        raise FileNotFoundError("Legacy entry not found.")
+
+    catalogs = build_legacy_reference_catalogs()
+    merged_payload = {**existing_entry, **(payload or {}), "id": legacy_id, "created_at": existing_entry.get("created_at")}
+    entry = normalize_legacy_entry(merged_payload, catalogs, existing_id=legacy_id, strict_sparks=True)
+    for index, current in enumerate(document["entries"]):
+        if current["id"] == legacy_id:
+            document["entries"][index] = entry
+            break
+    saved_document = save_legacies(profile_id, document)
+    saved_entry = next(item for item in saved_document["entries"] if item["id"] == legacy_id)
+    return {"document": saved_document, "entry": saved_entry}
+
+
+def delete_legacy_entry(profile_id: str, legacy_id: str) -> dict:
+    if not LEGACY_ID_PATTERN.match(legacy_id):
+        raise FileNotFoundError("Legacy entry not found.")
+    document = load_legacies(profile_id)
+    remaining_entries = [entry for entry in document["entries"] if entry["id"] != legacy_id]
+    if len(remaining_entries) == len(document["entries"]):
+        raise FileNotFoundError("Legacy entry not found.")
+    document["entries"] = remaining_entries
+    return save_legacies(profile_id, document)
+
+
+def build_pair_compatibility(left_base_character_id: int, right_base_character_id: int, catalogs: dict) -> dict:
+    compatibility_item = catalogs["compatibility"].get(str(left_base_character_id)) or {}
+    shared_groups = []
+    score = 0
+    for group in compatibility_item.get("relation_groups") or []:
+        if right_base_character_id in (group.get("other_character_ids") or []):
+            relation_point = int(group.get("relation_point") or 0)
+            score += relation_point
+            shared_groups.append(
+                {
+                    "relation_type": str(group.get("relation_type") or ""),
+                    "relation_point": relation_point,
+                    "member_count": int(group.get("member_count") or 0),
+                }
+            )
+
+    top_match = next(
+        (
+            match
+            for match in (compatibility_item.get("top_matches") or [])
+            if int(match.get("character_id") or 0) == right_base_character_id
+        ),
+        None,
+    )
+    return {
+        "score": score,
+        "shared_group_count": len(shared_groups),
+        "shared_groups": shared_groups,
+        "shared_relation_types": [group["relation_type"] for group in shared_groups],
+        "shared_relation_count": int(top_match.get("shared_relation_count") or len(shared_groups)) if top_match else len(shared_groups),
+    }
+
+
+def summarize_legacy_factors(factors: list[dict]) -> dict:
+    grouped: dict[str, list[dict]] = collections.OrderedDict()
+    counts: dict[str, int] = {}
+    stars_total: dict[str, int] = {}
+    for kind in ("stat", "surface", "distance", "style", "unique", "scenario", "g1", "skill"):
+        grouped[kind] = []
+
+    deduped: dict[tuple[str, str], dict] = {}
+    for factor in factors:
+        factor_key = (str(factor.get("kind") or ""), str(factor.get("target_key") or ""))
+        current = deduped.get(factor_key)
+        if current is None:
+            deduped[factor_key] = {**factor, "stars_total": int(factor.get("stars") or 0), "parent_ids": []}
+        else:
+            current["stars_total"] = int(current.get("stars_total") or 0) + int(factor.get("stars") or 0)
+    for item in deduped.values():
+        grouped.setdefault(item["kind"], []).append(item)
+
+    for kind, values in grouped.items():
+        values.sort(key=lambda entry: (-int(entry.get("stars_total") or 0), str(entry.get("target_label") or "")))
+        counts[kind] = len(values)
+        stars_total[kind] = sum(int(entry.get("stars_total") or 0) for entry in values)
+
+    return {
+        "groups": grouped,
+        "counts": counts,
+        "stars_total": stars_total,
+    }
+
+
+def build_legacy_reference_button(entity_key: str, ref_id: str | int, title: str, subtitle: str = "") -> dict:
+    return {
+        "entityKey": entity_key,
+        "id": str(ref_id),
+        "title": title,
+        "subtitle": subtitle,
+        "availabilityEn": "available",
+    }
+
+
+def build_legacy_view(profile_id: str) -> dict:
+    document = load_legacies(profile_id)
+    catalogs = build_legacy_reference_catalogs()
+    scenario_counts: dict[str, int] = collections.Counter()
+    factor_kind_counts: dict[str, int] = collections.Counter()
+    tag_counts: dict[str, int] = collections.Counter()
+    status_counts: dict[str, int] = collections.Counter()
+    items: list[dict] = []
+
+    for entry in document["entries"]:
+        character_ref = catalogs["characters"].get(str(entry.get("character_card_id")))
+        detail = get_character_detail(character_ref)
+        scenario_ref = catalogs["scenarios"].get(str(entry.get("scenario_id"))) if entry.get("scenario_id") else None
+        spark_summary = build_legacy_spark_summary(entry)
+        factors = legacy_entry_to_factors(entry)
+        factor_summary = summarize_legacy_factors(factors)
+        scenario_label = (
+            str(entry.get("scenario_name") or (scenario_ref.get("name") if scenario_ref else "") or "Unknown scenario")
+            if entry.get("scenario_id")
+            else "No scenario"
+        )
+        badges = []
+        if entry.get("scenario_name"):
+            badges.append(entry["scenario_name"])
+        if spark_summary["blue"]:
+            badges.append(f"Blue {spark_summary['blue']['target_label']} {int(spark_summary['blue'].get('stars') or 0)}\u2605")
+        if spark_summary["pink"]:
+            badges.append(f"Pink {spark_summary['pink']['target_label']} {int(spark_summary['pink'].get('stars') or 0)}\u2605")
+        if spark_summary["green"]:
+            badges.append(f"Green {spark_summary['green']['target_label']} {int(spark_summary['green'].get('stars') or 0)}\u2605")
+        if spark_summary["white_count"]:
+            badges.append(f"{spark_summary['white_count']} white")
+
+        compatible_matches = []
+        compatibility_item = catalogs["compatibility"].get(str(entry.get("base_character_id") or ""))
+        if compatibility_item is not None:
+            for match in (compatibility_item.get("top_matches") or [])[:6]:
+                compatible_matches.append(
+                    build_legacy_reference_button(
+                        "compatibility",
+                        match.get("character_id"),
+                        match.get("name") or f"#{match.get('character_id')}",
+                        f"{match.get('base_points') or 0} pts",
+                    )
+                )
+
+        linked_refs = []
+        if character_ref is not None:
+            linked_refs.append(
+                build_legacy_reference_button(
+                    "characters",
+                    entry["character_card_id"],
+                    str(detail.get("name") or entry["name"]),
+                    str(detail.get("variant") or entry.get("variant") or ""),
+                )
+            )
+        if scenario_ref is not None:
+            linked_refs.append(
+                build_legacy_reference_button(
+                    "scenarios",
+                    scenario_ref.get("id") or scenario_ref.get("scenario_id"),
+                    str(scenario_ref.get("name") or entry.get("scenario_name") or "Scenario"),
+                )
+            )
+
+        if spark_summary["green"] and spark_summary["green"].get("skill_id"):
+            linked_refs.append(
+                build_legacy_reference_button(
+                    "skills",
+                    spark_summary["green"]["skill_id"],
+                    str(spark_summary["green"].get("target_label") or "Unique skill"),
+                )
+            )
+
+        for factor in factors:
+            factor_kind = str(factor.get("kind") or "")
+            factor_kind_counts[factor_kind] += 1
+            if factor_kind == "g1":
+                factor_ref = catalogs["g1_factors"].get(str(factor.get("target_key") or ""))
+                if factor_ref is not None:
+                    linked_refs.append(
+                        build_legacy_reference_button(
+                            "g1_factors",
+                            factor_ref.get("id") or factor_ref.get("factor_id"),
+                            str(factor_ref.get("name") or factor.get("target_label") or "G1 factor"),
+                        )
+                    )
+            elif factor_kind == "scenario" and factor.get("scenario_id"):
+                scenario_item = catalogs["scenarios"].get(str(factor.get("scenario_id")))
+                if scenario_item is not None:
+                    linked_refs.append(
+                        build_legacy_reference_button(
+                            "scenarios",
+                            scenario_item.get("id") or scenario_item.get("scenario_id"),
+                            str(scenario_item.get("name") or factor.get("target_label") or "Scenario"),
+                        )
+                    )
+            elif factor_kind in {"skill", "unique"} and factor.get("skill_id"):
+                linked_refs.append(
+                    build_legacy_reference_button(
+                        "skills",
+                        factor.get("skill_id"),
+                        str(factor.get("target_label") or "Skill"),
+                    )
+                )
+        if entry.get("scenario_id"):
+            scenario_counts[str(entry["scenario_id"])] += 1
+        for tag in entry.get("custom_tags") or []:
+            tag_counts[str(tag)] += 1
+        for flag in entry.get("status_flags") or []:
+            status_counts[str(flag)] += 1
+
+        items.append(
+            {
+                "id": entry["id"],
+                "title": entry.get("name") or "Unknown parent",
+                "subtitle": entry.get("variant") or scenario_label,
+                "media": character_ref.get("media") if isinstance(character_ref, dict) else {},
+                "badges": badges[:6],
+                "search_text": " ".join(
+                    [
+                        str(entry.get("name") or ""),
+                        str(entry.get("variant") or ""),
+                        scenario_label,
+                        " ".join(str(factor.get("target_label") or "") for factor in factors),
+                        " ".join(entry.get("custom_tags") or []),
+                        " ".join(entry.get("status_flags") or []),
+                        str(entry.get("note") or ""),
+                        str(entry.get("source_note") or ""),
+                    ]
+                ).strip(),
+                "filters": {
+                    "scenario_id": [str(entry.get("scenario_id"))] if entry.get("scenario_id") else ["none"],
+                    "factor_kind": sorted({str(factor.get("kind") or "") for factor in (entry.get("factors") or []) if str(factor.get("kind") or "")}),
+                    "local_tag": list(entry.get("custom_tags") or []),
+                    "status_flag": list(entry.get("status_flags") or []),
+                },
+                "detail": {
+                    "entry": entry,
+                    "character_ref": linked_refs[:1],
+                    "scenario_ref": linked_refs[1:2] if scenario_ref is not None else [],
+                    "spark_summary": spark_summary,
+                    "factor_groups": factor_summary["groups"],
+                    "factor_counts": factor_summary["counts"],
+                    "factor_stars_total": factor_summary["stars_total"],
+                    "linked_references": linked_refs,
+                    "compatibility_top_matches": compatible_matches,
+                    "available_en": bool(detail.get("release", {}).get("en")) if isinstance(detail, dict) else False,
+                },
+            }
+        )
+
+    scenario_options = []
+    if any(item.get("scenario_id") is None for item in document["entries"]):
+        scenario_options.append({"value": "none", "label": "No scenario", "count": sum(1 for item in document["entries"] if not item.get("scenario_id"))})
+    for scenario_id, count in sorted(scenario_counts.items(), key=lambda item: str(item[0])):
+        scenario_ref = catalogs["scenarios"].get(str(scenario_id))
+        scenario_options.append(
+            {
+                "value": str(scenario_id),
+                "label": str(scenario_ref.get("name") if scenario_ref else scenario_id),
+                "count": count,
+            }
+        )
+
+    return {
+        "profile_id": profile_id,
+        "updated_at": document.get("updated_at"),
+        "items": items,
+        "filter_definitions": [
+            {"key": "scenario_id", "label": "Scenario"},
+            {"key": "factor_kind", "label": "Factor Type"},
+            {"key": "local_tag", "label": "Tags"},
+            {"key": "status_flag", "label": "Status"},
+        ],
+        "filter_options": {
+            "scenario_id": scenario_options,
+            "factor_kind": [
+                {"value": kind, "label": label, "count": factor_kind_counts.get(kind, 0)}
+                for kind, label in LEGACY_FACTOR_KIND_LABELS.items()
+                if factor_kind_counts.get(kind, 0)
+            ],
+            "local_tag": [
+                {"value": value, "label": value, "count": count}
+                for value, count in sorted(tag_counts.items())
+            ],
+            "status_flag": [
+                {"value": value, "label": value, "count": count}
+                for value, count in sorted(status_counts.items())
+            ],
+        },
+    }
+
+
+def build_aptitude_coverage(main_detail: dict, factors: list[dict]) -> list[dict]:
+    grouped_targets = {
+        "surface": {str(factor.get("target_key")) for factor in factors if factor.get("kind") == "surface"},
+        "distance": {str(factor.get("target_key")) for factor in factors if factor.get("kind") == "distance"},
+        "style": {str(factor.get("target_key")) for factor in factors if factor.get("kind") == "style"},
+    }
+    labels = {
+        "surface": LEGACY_SURFACE_LABELS,
+        "distance": LEGACY_DISTANCE_LABELS,
+        "style": LEGACY_STYLE_LABELS,
+    }
+    result = []
+    viable = main_detail.get("viable_aptitudes") or {}
+    for category in ("surface", "distance", "style"):
+        viable_values = [str(value) for value in (viable.get(category) or [])]
+        supported = [labels[category].get(value, value) for value in viable_values if value in grouped_targets[category]]
+        missing = [labels[category].get(value, value) for value in viable_values if value not in grouped_targets[category]]
+        result.append(
+            {
+                "category": category,
+                "supported": supported,
+                "missing": missing,
+            }
+        )
+    return result
+
+
+def build_legacy_simulator_preview(profile_id: str, payload: dict) -> dict:
+    main_character_id = str(payload.get("main_character_id") or "").strip()
+    parent_a_legacy_id = str(payload.get("parent_a_legacy_id") or "").strip()
+    parent_b_legacy_id = str(payload.get("parent_b_legacy_id") or "").strip()
+    if not main_character_id or not parent_a_legacy_id or not parent_b_legacy_id:
+        raise ValueError("main_character_id, parent_a_legacy_id and parent_b_legacy_id are required.")
+    if parent_a_legacy_id == parent_b_legacy_id:
+        raise ValueError("Parent A and Parent B must be different saved parents.")
+
+    roster = load_roster(profile_id)
+    main_roster_entry = (roster.get("characters") or {}).get(main_character_id)
+    if not isinstance(main_roster_entry, dict) or not main_roster_entry.get("owned"):
+        raise ValueError("The selected main character must be owned in the active roster.")
+
+    catalogs = build_legacy_reference_catalogs()
+    main_ref = catalogs["characters"].get(main_character_id)
+    if main_ref is None:
+        raise ValueError("Main character reference not found.")
+    main_detail = main_ref.get("detail") if isinstance(main_ref, dict) and main_ref.get("detail") else main_ref
+
+    legacy_document = load_legacies(profile_id)
+    parent_a = next((entry for entry in legacy_document["entries"] if entry["id"] == parent_a_legacy_id), None)
+    parent_b = next((entry for entry in legacy_document["entries"] if entry["id"] == parent_b_legacy_id), None)
+    if parent_a is None or parent_b is None:
+        raise ValueError("One or more selected parents could not be found.")
+
+    main_to_parent_a = build_pair_compatibility(int(main_detail.get("base_character_id") or 0), int(parent_a.get("base_character_id") or 0), catalogs)
+    main_to_parent_b = build_pair_compatibility(int(main_detail.get("base_character_id") or 0), int(parent_b.get("base_character_id") or 0), catalogs)
+    parent_pair = build_pair_compatibility(int(parent_a.get("base_character_id") or 0), int(parent_b.get("base_character_id") or 0), catalogs)
+
+    combined_factors = legacy_entry_to_factors(parent_a) + legacy_entry_to_factors(parent_b)
+    factor_summary = summarize_legacy_factors(combined_factors)
+    aptitude_coverage = build_aptitude_coverage(main_detail, combined_factors)
+
+    highlights = []
+    warnings = []
+    if main_to_parent_a["score"] >= 20 and main_to_parent_b["score"] >= 20:
+        highlights.append("Both parents have strong base compatibility with the main candidate.")
+    if parent_pair["score"] >= 20:
+        highlights.append("The two parents also share a strong compatibility basis.")
+    if factor_summary["counts"].get("g1"):
+        highlights.append("The pair contributes visible G1 inheritance value.")
+    if factor_summary["counts"].get("scenario"):
+        highlights.append("Scenario factors are present in the pair.")
+    if factor_summary["counts"].get("unique"):
+        highlights.append("At least one parent contributes a resolved green unique spark.")
+    for coverage in aptitude_coverage:
+        if coverage["missing"]:
+            warnings.append(f"Missing {coverage['category']} support for: {', '.join(coverage['missing'])}.")
+    if main_to_parent_a["score"] == 0 or main_to_parent_b["score"] == 0:
+        warnings.append("At least one parent has no resolved compatibility points with the main candidate.")
+
+    return {
+        "main": {
+            "id": str(main_ref.get("id") or main_character_id),
+            "title": str(main_detail.get("name") or main_character_id),
+            "subtitle": str(main_detail.get("variant") or ""),
+            "media": main_ref.get("media") if isinstance(main_ref, dict) else {},
+        },
+        "parent_a": parent_a,
+        "parent_b": parent_b,
+        "parent_a_sparks": build_legacy_spark_summary(parent_a),
+        "parent_b_sparks": build_legacy_spark_summary(parent_b),
+        "compatibility": {
+            "main_to_parent_a": main_to_parent_a,
+            "main_to_parent_b": main_to_parent_b,
+            "parent_pair": parent_pair,
+            "main_total": int(main_to_parent_a["score"]) + int(main_to_parent_b["score"]),
+        },
+        "factor_summary": factor_summary,
+        "aptitude_coverage": aptitude_coverage,
+        "scenario_summary": factor_summary["groups"].get("scenario") or [],
+        "g1_summary": factor_summary["groups"].get("g1") or [],
+        "highlights": highlights,
+        "warnings": warnings,
+    }
+
+
 def atomic_write_json(path: Path, payload: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temp_path = path.with_suffix(f"{path.suffix}.tmp")
@@ -547,6 +1485,7 @@ def create_profile(name: str) -> tuple[dict, dict]:
     index["last_profile_id"] = profile["id"]
     saved_index = save_profiles_index(index)
     save_roster(profile["id"], default_roster())
+    save_legacies(profile["id"], default_legacy_document())
     return saved_index, profile
 
 
@@ -624,6 +1563,7 @@ def export_profile_archive_bytes(profile_id: str) -> tuple[bytes, str]:
         raise FileNotFoundError("Profile not found.")
 
     roster = load_roster(profile_id)
+    legacies = load_legacies(profile_id)
     manifest = {
         "kind": PROFILE_EXPORT_KIND,
         "version": 1,
@@ -636,6 +1576,7 @@ def export_profile_archive_bytes(profile_id: str) -> tuple[bytes, str]:
         archive.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
         archive.writestr("profile.json", json.dumps(profile, ensure_ascii=False, indent=2) + "\n")
         archive.writestr("roster.json", json.dumps(roster, ensure_ascii=False, indent=2) + "\n")
+        archive.writestr("legacy.json", json.dumps(legacies, ensure_ascii=False, indent=2) + "\n")
 
     safe_name = re.sub(r"[^A-Za-z0-9._-]+", "-", profile["name"]).strip("-") or profile_id
     return buffer.getvalue(), f"{safe_name}.zip"
@@ -656,6 +1597,12 @@ def import_profile_archive_bytes(payload: bytes, target_profile_id: str | None =
             raise ValueError("Profile archive is incomplete.") from exc
         except json.JSONDecodeError as exc:
             raise ValueError("Profile archive contains invalid JSON.") from exc
+        try:
+            legacy_document = json.loads(archive.read("legacy.json").decode("utf-8"))
+        except KeyError:
+            legacy_document = default_legacy_document()
+        except json.JSONDecodeError as exc:
+            raise ValueError("Profile archive contains invalid legacy JSON.") from exc
 
     if manifest.get("kind") != PROFILE_EXPORT_KIND:
         raise ValueError("Unsupported profile archive format.")
@@ -675,6 +1622,10 @@ def import_profile_archive_bytes(payload: bytes, target_profile_id: str | None =
         index["last_profile_id"] = target_profile_id
         saved_index = save_profiles_index(index)
         save_roster(target_profile_id, roster)
+        try:
+            save_legacies(target_profile_id, legacy_document)
+        except (FileNotFoundError, ValueError):
+            persist_unresolved_legacies(target_profile_id, legacy_document)
         saved_profile = next(entry for entry in saved_index["profiles"] if entry["id"] == target_profile_id)
         return saved_index, saved_profile
 
@@ -693,6 +1644,10 @@ def import_profile_archive_bytes(payload: bytes, target_profile_id: str | None =
     index["last_profile_id"] = profile_id
     saved_index = save_profiles_index(index)
     save_roster(profile_id, roster)
+    try:
+        save_legacies(profile_id, legacy_document)
+    except (FileNotFoundError, ValueError):
+        persist_unresolved_legacies(profile_id, legacy_document)
     return saved_index, new_profile
 
 
@@ -1064,6 +2019,29 @@ class ReferenceRequestHandler(http.server.SimpleHTTPRequestHandler):
             self._send_bytes(payload, content_type="application/zip", filename=filename)
             return
 
+        match = re.fullmatch(r"/api/profiles/(p_\d{3,})/legacies", request_path)
+        if match:
+            profile_id = match.group(1)
+            if not profile_exists(profile_id):
+                self._send_api_error(404, "Profile not found.")
+                return
+            self._send_json(load_legacies(profile_id))
+            return
+
+        match = re.fullmatch(r"/api/profiles/(p_\d{3,})/legacy-view", request_path)
+        if match:
+            profile_id = match.group(1)
+            if not profile_exists(profile_id):
+                self._send_api_error(404, "Profile not found.")
+                return
+            try:
+                self._send_json(build_legacy_view(profile_id))
+            except FileNotFoundError:
+                self._send_api_error(404, "Reference data not found. Run the update command first.")
+            except ValueError as exc:
+                self._send_api_error(400, str(exc))
+            return
+
         match = re.fullmatch(r"/api/admin/backups/(backup_\d{8}_\d{6}_[0-9a-f]{8})", request_path)
         if match:
             try:
@@ -1171,6 +2149,36 @@ class ReferenceRequestHandler(http.server.SimpleHTTPRequestHandler):
             )
             return
 
+        match = re.fullmatch(r"/api/profiles/(p_\d{3,})/legacies", request_path)
+        if match:
+            profile_id = match.group(1)
+            if not profile_exists(profile_id):
+                self._send_api_error(404, "Profile not found.")
+                return
+            try:
+                payload = self._read_json_body()
+                result = create_legacy_entry(profile_id, payload)
+            except ValueError as exc:
+                self._send_api_error(400, str(exc))
+                return
+            self._send_json(result, status=201)
+            return
+
+        match = re.fullmatch(r"/api/profiles/(p_\d{3,})/legacy-simulator/preview", request_path)
+        if match:
+            profile_id = match.group(1)
+            if not profile_exists(profile_id):
+                self._send_api_error(404, "Profile not found.")
+                return
+            try:
+                payload = self._read_json_body()
+                preview = build_legacy_simulator_preview(profile_id, payload)
+            except ValueError as exc:
+                self._send_api_error(400, str(exc))
+                return
+            self._send_json(preview)
+            return
+
         match = re.fullmatch(r"/api/profiles/(p_\d{3,})/import", request_path)
         if match:
             try:
@@ -1234,6 +2242,25 @@ class ReferenceRequestHandler(http.server.SimpleHTTPRequestHandler):
 
     def do_PATCH(self) -> None:  # noqa: N802
         request_path = urlparse(self.path).path
+        match = re.fullmatch(r"/api/profiles/(p_\d{3,})/legacies/(legacy_\d{3,})", request_path)
+        if match:
+            profile_id = match.group(1)
+            legacy_id = match.group(2)
+            if not profile_exists(profile_id):
+                self._send_api_error(404, "Profile not found.")
+                return
+            try:
+                payload = self._read_json_body()
+                result = update_legacy_entry(profile_id, legacy_id, payload)
+            except FileNotFoundError:
+                self._send_api_error(404, "Legacy entry not found.")
+                return
+            except ValueError as exc:
+                self._send_api_error(400, str(exc))
+                return
+            self._send_json(result)
+            return
+
         match = re.fullmatch(r"/api/profiles/(p_\d{3,})", request_path)
         if not match:
             self._send_api_error(404, "API route not found.")
@@ -1265,6 +2292,21 @@ class ReferenceRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self._send_api_error(404, "Backup not found.")
                 return
             self._send_json({"items": items})
+            return
+
+        match = re.fullmatch(r"/api/profiles/(p_\d{3,})/legacies/(legacy_\d{3,})", request_path)
+        if match:
+            profile_id = match.group(1)
+            legacy_id = match.group(2)
+            if not profile_exists(profile_id):
+                self._send_api_error(404, "Profile not found.")
+                return
+            try:
+                document = delete_legacy_entry(profile_id, legacy_id)
+            except FileNotFoundError:
+                self._send_api_error(404, "Legacy entry not found.")
+                return
+            self._send_json(document)
             return
 
         match = re.fullmatch(r"/api/profiles/(p_\d{3,})", request_path)

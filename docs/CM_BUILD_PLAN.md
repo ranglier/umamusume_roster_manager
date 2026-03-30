@@ -183,6 +183,18 @@ Sans cette couche, toute recommandation de build reste trop abstraite.
 
 Le projet n'a pas encore de roster pour les parents.
 
+Mise a jour:
+
+- une premiere couche `Legacy / Parent` est maintenant en place dans `My Roster`
+- les parents sont stockes localement par profil dans `data/user/profiles/<profile_id>/legacy.json`
+- un simulateur d'heritage v1 existe deja en preview locale
+- cette couche reste volontairement deterministe et explicable; elle ne remplace pas encore un moteur probabiliste complet
+- le modele de parent a ete corrige pour suivre la structure reelle:
+  - `1` blue spark
+  - `1` pink spark
+  - `0 ou 1` green spark unique
+  - `0..n` white sparks
+
 Pourtant, des builds CM serieux ont besoin de:
 
 - quels parents l'utilisateur possede
