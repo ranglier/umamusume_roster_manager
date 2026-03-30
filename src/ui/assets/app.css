@@ -615,6 +615,38 @@ textarea {
   resize: vertical;
 }
 
+.roster-form select {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid rgba(87, 156, 210, 0.22);
+  border-radius: 14px;
+  appearance: none;
+  color-scheme: dark;
+  padding: 0 40px 0 12px;
+  background:
+    linear-gradient(180deg, rgba(15, 29, 42, 0.98), rgba(10, 20, 31, 0.96)),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 6l4 4 4-4' stroke='%23f4bb62' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E");
+  background-repeat: no-repeat, no-repeat;
+  background-position: center, right 12px center;
+  background-size: auto, 14px 14px;
+  color: var(--ink-deep);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.roster-form select:focus {
+  outline: none;
+  border-color: rgba(244, 187, 98, 0.46);
+  box-shadow:
+    0 0 0 3px rgba(244, 187, 98, 0.12),
+    0 0 0 1px rgba(244, 187, 98, 0.18) inset;
+}
+
+.roster-form select option,
+.roster-form select optgroup {
+  color: #f4efe8;
+  background: #122131;
+}
+
 button {
   border: 1px solid rgba(55, 199, 255, 0.22);
   border-radius: 14px;
@@ -1559,13 +1591,18 @@ body.route-wizard .profile-gate::after {
   display: grid;
   grid-template-columns: minmax(140px, 0.9fr) minmax(220px, 1.4fr) minmax(112px, 0.7fr) auto;
   gap: 10px;
-  align-items: end;
+  align-items: start;
+}
+
+.legacy-factor-adder-green {
+  grid-template-columns: minmax(220px, 1.4fr) minmax(112px, 0.7fr);
 }
 
 .legacy-factor-add-action {
   display: flex;
   align-items: end;
   justify-content: flex-end;
+  align-self: end;
 }
 
 .field-stack-search {
@@ -1588,8 +1625,25 @@ body.route-wizard .profile-gate::after {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
 }
 
+.legacy-static-value {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid rgba(87, 156, 210, 0.2);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(15, 29, 42, 0.98), rgba(10, 20, 31, 0.96));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+}
+
+.legacy-static-field {
+  min-width: 0;
+}
+
 .legacy-spark-card select {
   appearance: none;
+  color-scheme: dark;
   padding: 0 40px 0 12px;
   background-image:
     linear-gradient(180deg, rgba(15, 29, 42, 0.98), rgba(10, 20, 31, 0.96)),
@@ -1610,6 +1664,12 @@ body.route-wizard .profile-gate::after {
   box-shadow:
     0 0 0 3px rgba(244, 187, 98, 0.12),
     0 0 0 1px rgba(244, 187, 98, 0.18) inset;
+}
+
+.legacy-spark-card select option,
+.legacy-spark-card select optgroup {
+  color: #f4efe8;
+  background: #122131;
 }
 
 .legacy-select-meta {
@@ -1634,12 +1694,195 @@ body.route-wizard .profile-gate::after {
 .legacy-simulator-card {
   display: grid;
   gap: 14px;
+  grid-column: 1 / -1;
   padding: 16px 18px;
   border: 1px solid rgba(115, 160, 198, 0.14);
   border-radius: 18px;
   background:
     radial-gradient(circle at top right, rgba(55, 199, 255, 0.12), transparent 28%),
     linear-gradient(180deg, rgba(16, 27, 40, 0.96), rgba(12, 22, 34, 0.92));
+}
+
+.legacy-simulator-parent-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.legacy-simulator-parent-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(115, 160, 198, 0.14);
+  border-radius: 16px;
+  background: rgba(8, 17, 26, 0.6);
+}
+
+.legacy-simulator-parent-card-left {
+  border-color: rgba(85, 191, 255, 0.28);
+  box-shadow: inset 0 1px 0 rgba(85, 191, 255, 0.08);
+}
+
+.legacy-simulator-parent-card-right {
+  border-color: rgba(255, 146, 201, 0.28);
+  box-shadow: inset 0 1px 0 rgba(255, 146, 201, 0.08);
+}
+
+.legacy-simulator-parent-card.is-empty {
+  opacity: 0.8;
+}
+
+.legacy-simulator-parent-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.legacy-simulator-slot {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.legacy-simulator-parent-body {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.legacy-simulator-parent-media {
+  inline-size: 64px;
+  block-size: 64px;
+  overflow: hidden;
+  border-radius: 14px;
+  border: 1px solid rgba(115, 160, 198, 0.16);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.legacy-simulator-parent-image {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.legacy-simulator-parent-copy {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.legacy-simulator-parent-copy strong {
+  color: var(--ink-deep);
+}
+
+.legacy-simulator-parent-copy p {
+  margin: 0;
+  color: var(--text-soft);
+}
+
+.legacy-simulator-picker {
+  display: grid;
+  gap: 12px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(115, 160, 198, 0.12);
+}
+
+.legacy-simulator-picker-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: end;
+}
+
+.legacy-simulator-picker-head h4 {
+  margin: 0 0 4px;
+}
+
+.legacy-simulator-slot-tabs {
+  align-self: start;
+}
+
+.legacy-simulator-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.legacy-simulator-choice-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(115, 160, 198, 0.12);
+  border-radius: 16px;
+  background: rgba(8, 17, 26, 0.5);
+  cursor: pointer;
+  transition: border-color 140ms ease, transform 140ms ease, box-shadow 140ms ease;
+}
+
+.legacy-simulator-choice-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(244, 187, 98, 0.28);
+}
+
+.legacy-simulator-choice-card.is-parent-a {
+  border-color: rgba(85, 191, 255, 0.34);
+  box-shadow: inset 0 0 0 1px rgba(85, 191, 255, 0.12);
+}
+
+.legacy-simulator-choice-card.is-parent-b {
+  border-color: rgba(255, 146, 201, 0.34);
+  box-shadow: inset 0 0 0 1px rgba(255, 146, 201, 0.12);
+}
+
+.legacy-simulator-choice-top {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.legacy-simulator-choice-media {
+  inline-size: 56px;
+  block-size: 56px;
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid rgba(115, 160, 198, 0.16);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.legacy-simulator-choice-image {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.legacy-simulator-choice-copy {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.legacy-simulator-choice-copy strong {
+  color: var(--ink-deep);
+}
+
+.legacy-simulator-choice-copy p {
+  margin: 0;
+  color: var(--text-soft);
+}
+
+.legacy-simulator-choice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .support-effect-stack {
@@ -2434,7 +2677,7 @@ code {
   }
 
   body.layout-compact.layout-compact-detail-active.legacy-detail-expanded .app-layout {
-    grid-template-columns: minmax(0, 1.15fr) minmax(520px, 1.35fr);
+    grid-template-columns: minmax(0, 1.1fr) minmax(380px, 1.2fr);
   }
 
   body.layout-compact.layout-compact-detail-active .detail-column {
@@ -2559,6 +2802,36 @@ code {
   }
 }
 
+@media (max-width: 1100px) {
+  .legacy-simulator-parent-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .legacy-simulator-choice-grid {
+    grid-template-columns: 1fr;
+  }
+
+  body.layout-compact.layout-compact-detail-active .app-layout,
+  body.layout-compact.layout-compact-detail-active.legacy-detail-expanded .app-layout {
+    grid-template-columns: 1fr;
+  }
+
+  body.layout-compact.layout-compact-detail-active .detail-column {
+    display: block;
+    order: -1;
+  }
+
+  body.layout-compact.layout-compact-detail-active .detail-panel {
+    position: static;
+    height: auto;
+    max-height: none;
+  }
+
+  body.layout-compact.layout-compact-detail-active .result-list {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 820px) {
   body {
     padding: 4px;
@@ -2576,6 +2849,15 @@ code {
 
   .result-list {
     grid-template-columns: 1fr;
+  }
+
+  .legacy-factor-adder {
+    grid-template-columns: 1fr;
+  }
+
+  .legacy-factor-chip-row > span:first-child {
+    min-width: 0;
+    width: 100%;
   }
 
   .result-card-roster {

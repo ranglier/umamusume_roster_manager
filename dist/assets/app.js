@@ -1,4 +1,4 @@
-(function () {
+﻿(function () {
   function createEmptyReferenceBundle() {
     const entitySpecs = [
       ["characters", "Characters"],
@@ -152,6 +152,18 @@
     { value: "g1", label: "G1" },
     { value: "skill", label: "Skill" },
   ];
+  const LEGACY_SCENARIO_FALLBACK_OPTIONS = [
+    { value: "scenario_ura", label: "URA Finale" },
+    { value: "scenario_aoharu", label: "Aoharu Cup" },
+    { value: "scenario_make_a_new_track", label: "Make a New Track" },
+    { value: "scenario_gl", label: "Grand Live" },
+    { value: "scenario_gm", label: "Grand Masters" },
+    { value: "scenario_larc", label: "Project L'Arc" },
+    { value: "scenario_uaf", label: "U.A.F. Ready GO!" },
+    { value: "scenario_cooking", label: "Harvest Festival" },
+    { value: "scenario_mecha", label: "Run! Mecha Umamusume" },
+    { value: "scenario_legend", label: "Twinkle Legends" },
+  ];
 
   function createEmptyLegacyEditorState() {
     return {
@@ -209,6 +221,7 @@
     activeProfileId: null,
     bootstrapStatusLoaded: false,
     bootstrapStatus: null,
+    bootstrapStatusLoadedAt: 0,
     rosterDocument: normalizeRosterDocument(null),
     rosterProfileId: null,
     rosterViews: {
@@ -223,6 +236,7 @@
       main_character_id: "",
       parent_a_legacy_id: "",
       parent_b_legacy_id: "",
+      active_slot: "parent_a",
       preview: null,
       status: { kind: "idle", message: "" },
     },
@@ -314,6 +328,16 @@
     };
   }
 
+  function createEmptyLegacyViewPayload(profileId = null) {
+    return {
+      profile_id: profileId,
+      updated_at: "",
+      items: [],
+      filter_definitions: [],
+      filter_options: {},
+    };
+  }
+
   function applyLegacyViewPayload(payload) {
     state.legacyView = normalizeLegacyViewPayload(payload);
     data.entities[legacyEntityKey] = {
@@ -331,12 +355,13 @@
   }
 
   function resetLegacyViewPayload() {
-    applyLegacyViewPayload(null);
+    applyLegacyViewPayload(createEmptyLegacyViewPayload());
     state.legacyEditor = createEmptyLegacyEditorState();
     state.legacySimulator = {
       main_character_id: "",
       parent_a_legacy_id: "",
       parent_b_legacy_id: "",
+      active_slot: "parent_a",
       preview: null,
       status: { kind: "idle", message: "" },
     };
@@ -545,6 +570,10 @@
 
   function defaultEntityKeyForMode(mode) {
     return mode === "roster" ? "characters" : referenceEntityKeys[0];
+  }
+
+  function getLoadedReferenceGeneratedAt() {
+    return String(data.reference?.generated_at || data.generated_at || "");
   }
 
   function allowedEntityKeys(mode) {
@@ -917,8 +946,12 @@
     return `<ul class="list-inline">${values.map((value) => `<li>${escapeHtml(value)}</li>`).join("")}</ul>`;
   }
 
+  function getEntityItems(entityKey) {
+    return asArray(data.entities?.[entityKey]?.items);
+  }
+
   function getOwnedCharacterOptions() {
-    return data.entities.characters.items
+    return getEntityItems("characters")
       .filter((item) => getRosterEntry("characters", item).owned)
       .map((item) => ({
         value: item.id,
@@ -927,8 +960,35 @@
       .sort((left, right) => left.label.localeCompare(right.label));
   }
 
+  function getLegacyCharacterOptions(selectedCharacterCardId) {
+    const optionsById = new Map(
+      getOwnedCharacterOptions().map((option) => [String(option.value), option]),
+    );
+    const selectedId = String(selectedCharacterCardId || "").trim();
+    if (selectedId && !optionsById.has(selectedId)) {
+      const item = getCharacterReferenceItem(selectedId);
+      if (item) {
+        const label = item.subtitle ? `${item.title} ${item.subtitle}` : item.title;
+        optionsById.set(selectedId, {
+          value: selectedId,
+          label: `${label} (not owned)`,
+        });
+      }
+    }
+    return Array.from(optionsById.values()).sort((left, right) => left.label.localeCompare(right.label));
+  }
+
   function getCharacterReferenceItem(characterCardId) {
-    return data.entities.characters.items.find((item) => String(item.id) === String(characterCardId)) || null;
+    return getEntityItems("characters").find((item) => String(item.id) === String(characterCardId)) || null;
+  }
+
+  function getCharacterRosterDefaults(characterCardId) {
+    const item = getCharacterReferenceItem(characterCardId);
+    const entry = item ? getRosterEntry("characters", item) : null;
+    return {
+      stars: clampNumber(entry?.stars, 0, 5, Number(item?.detail?.rarity) || 0),
+      awakening: clampNumber(entry?.awakening, 0, 5, 0),
+    };
   }
 
   function getCharacterUniqueSkill(characterCardId) {
@@ -937,10 +997,27 @@
     return uniqueSkill && uniqueSkill.id ? uniqueSkill : null;
   }
 
-  function characterSupportsGreenSpark(characterCardId) {
-    const item = getCharacterReferenceItem(characterCardId);
-    const rarity = Number(item?.detail?.rarity || 0);
-    return rarity >= 3 && Boolean(getCharacterUniqueSkill(characterCardId));
+  function characterSupportsGreenSpark(characterCardId, starsOverride = null) {
+    const resolvedStars = starsOverride == null
+      ? getCharacterRosterDefaults(characterCardId).stars
+      : clampNumber(starsOverride, 0, 5, 0);
+    return resolvedStars >= 3 && Boolean(getCharacterUniqueSkill(characterCardId));
+  }
+
+  function getLegacyScenarioOptions() {
+    const dynamicOptions = getEntityItems("scenarios").map((item) => ({
+      value: String(item.detail?.scenario_id || item.id),
+      label: item.title,
+    }));
+    return dynamicOptions.length ? dynamicOptions : LEGACY_SCENARIO_FALLBACK_OPTIONS;
+  }
+
+  function getLegacyScenarioLabel(scenarioId) {
+    const selectedId = String(scenarioId || "").trim();
+    if (!selectedId) {
+      return "";
+    }
+    return getLegacyScenarioOptions().find((option) => option.value === selectedId)?.label || selectedId;
   }
 
   function getLegacyFactorTargetOptions(kind) {
@@ -949,19 +1026,16 @@
     if (kind === "distance") return LEGACY_DISTANCE_OPTIONS;
     if (kind === "style") return LEGACY_STYLE_OPTIONS;
     if (kind === "scenario") {
-      return data.entities.scenarios.items.map((item) => ({
-        value: String(item.detail?.scenario_id || item.id),
-        label: item.title,
-      }));
+      return getLegacyScenarioOptions();
     }
     if (kind === "g1") {
-      return data.entities.g1_factors.items.map((item) => ({
+      return getEntityItems("g1_factors").map((item) => ({
         value: String(item.detail?.factor_id || item.id),
         label: item.title,
       }));
     }
     if (kind === "skill") {
-      return data.entities.skills.items.map((item) => ({
+      return getEntityItems("skills").map((item) => ({
         value: String(item.detail?.skill_id || item.id),
         label: item.title,
       }));
@@ -1633,18 +1707,14 @@
     `;
   }
 
-  function renderLegacySparkEditor() {
-    const pinkTargetOptions = getFilteredLegacyTargetOptions(
-      state.legacyEditor.pinkKind,
-      state.legacyEditor.pinkQuery,
-      state.legacyEditor.pinkTargetKey,
-    );
+  function renderLegacySparkEditor(currentCharacterStars) {
+    const pinkTargetOptions = getLegacyFactorTargetOptions(state.legacyEditor.pinkKind);
     const whiteTargetOptions = getFilteredLegacyTargetOptions(
       state.legacyEditor.whiteKind,
       state.legacyEditor.whiteQuery,
       state.legacyEditor.whiteTargetKey,
     );
-    const greenAvailable = characterSupportsGreenSpark(state.legacyEditor.characterCardId);
+    const greenAvailable = characterSupportsGreenSpark(state.legacyEditor.characterCardId, currentCharacterStars);
     const uniqueSkill = getCharacterUniqueSkill(state.legacyEditor.characterCardId);
 
     return `
@@ -1677,21 +1747,10 @@
                 ${LEGACY_PINK_KIND_OPTIONS.map((option) => `<option value="${escapeHtml(option.value)}" ${option.value === state.legacyEditor.pinkKind ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
               </select>
             </label>
-            <label class="field-stack field-stack-search">
-              <span>Search Spark</span>
-              <input id="legacyPinkQuery" class="legacy-search-input" type="search" placeholder="Search spark..." value="${escapeHtml(state.legacyEditor.pinkQuery || "")}">
-              <small class="legacy-select-meta">${escapeHtml(
-                pinkTargetOptions.hasQuery
-                  ? `${pinkTargetOptions.visibleCount} result(s)`
-                  : pinkTargetOptions.isLimited
-                    ? `${pinkTargetOptions.visibleCount}/${pinkTargetOptions.totalCount} shown. Type to narrow.`
-                    : `${pinkTargetOptions.totalCount} option(s)`,
-              )}</small>
-            </label>
-            <label class="field-stack field-stack-search">
+            <label class="field-stack">
               <span>Spark</span>
               <select id="legacyPinkTarget" class="legacy-themed-select">
-                ${renderLegacyTargetOptions(pinkTargetOptions.options, state.legacyEditor.pinkTargetKey)}
+                ${renderLegacyTargetOptions(pinkTargetOptions, state.legacyEditor.pinkTargetKey)}
               </select>
             </label>
             <label class="field-stack">
@@ -1704,26 +1763,22 @@
         </div>
         <div class="legacy-spark-card">
           <h4>Green Spark</h4>
-          <p class="source-note">Optional. Green sparks are only available on parents whose card starts at 3-star or higher.</p>
+          <p class="source-note">Automatically available when the selected parent has more than 2 stars.</p>
           ${greenAvailable && uniqueSkill
             ? `
-              <label class="legacy-toggle">
-                <input id="legacyGreenEnabled" type="checkbox" ${state.legacyEditor.greenEnabled ? "checked" : ""}>
-                <span>Include the parent unique skill as a green spark</span>
-              </label>
-              <div class="legacy-factor-editor-list">
-                <div class="legacy-factor-chip-row">
-                  <span>Unique</span>
-                  ${renderBadge(uniqueSkill.name)}
-                  ${state.legacyEditor.greenEnabled ? `
-                    <label class="field-stack">
-                      <span>Stars</span>
-                      <select id="legacyGreenStars">
-                        ${[1, 2, 3].map((value) => `<option value="${value}" ${value === state.legacyEditor.greenStars ? "selected" : ""}>${value}\u2605</option>`).join("")}
-                      </select>
-                    </label>
-                  ` : ""}
+              <div class="legacy-factor-adder legacy-factor-adder-green">
+                <div class="field-stack legacy-static-field">
+                  <span>Spark</span>
+                  <div class="legacy-static-value">
+                    ${renderBadge(uniqueSkill.name)}
+                  </div>
                 </div>
+                <label class="field-stack">
+                  <span>Stars</span>
+                  <select id="legacyGreenStars">
+                    ${[1, 2, 3].map((value) => `<option value="${value}" ${value === state.legacyEditor.greenStars ? "selected" : ""}>${value}\u2605</option>`).join("")}
+                  </select>
+                </label>
               </div>
             `
             : "<p class='source-note'>Green spark unavailable for the currently selected parent.</p>"}
@@ -1774,14 +1829,17 @@
   function renderLegacyEditor(entry, isCreateMode) {
     ensureLegacyEditorState(entry, isCreateMode ? "__new__" : entry.id);
     const draft = state.legacyFormDraft || {};
-    const ownedCharacters = getOwnedCharacterOptions();
-    const scenarioOptions = data.entities.scenarios.items.map((item) => ({
-      value: String(item.detail?.scenario_id || item.id),
-      label: item.title,
-    }));
+    const currentCharacterStars = clampNumber(
+      draft.stars ?? entry.stars ?? getCharacterRosterDefaults(state.legacyEditor.characterCardId || entry.character_card_id).stars,
+      0,
+      5,
+      0,
+    );
+    const characterOptions = getLegacyCharacterOptions(state.legacyEditor.characterCardId || entry.character_card_id);
+    const scenarioOptions = getLegacyScenarioOptions();
     const statusText = state.legacyStatus.message || "Changes are stored locally for the active profile.";
-    const canSelectCharacter = ownedCharacters.length > 0;
-    const selectedCharacterCardId = state.legacyEditor.characterCardId || String(entry.character_card_id || "") || ownedCharacters[0]?.value || "";
+    const canSelectCharacter = characterOptions.length > 0;
+    const selectedCharacterCardId = state.legacyEditor.characterCardId || String(entry.character_card_id || "") || characterOptions[0]?.value || "";
 
     return `
       <div class="detail-section roster-section">
@@ -1791,15 +1849,15 @@
           <div class="roster-field-grid">
             <label class="field-stack">
               <span>Parent Character</span>
-              <select name="character_card_id">
+              <select name="character_card_id" class="roster-themed-select">
                 ${canSelectCharacter
-                  ? ownedCharacters.map((option) => `<option value="${escapeHtml(option.value)}" ${option.value === String(selectedCharacterCardId || "") ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")
+                  ? characterOptions.map((option) => `<option value="${escapeHtml(option.value)}" ${option.value === String(selectedCharacterCardId || "") ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")
                   : `<option value="">No owned character available</option>`}
               </select>
             </label>
             <label class="field-stack">
               <span>Run Scenario</span>
-              <select name="scenario_id">
+              <select name="scenario_id" class="roster-themed-select">
                 <option value="">Unknown</option>
                 ${scenarioOptions.map((option) => `<option value="${escapeHtml(option.value)}" ${option.value === String(draft.scenario_id ?? entry.scenario_id ?? "") ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
               </select>
@@ -1823,7 +1881,7 @@
           </div>
           <div class="detail-section">
             <h4>Sparks</h4>
-            ${renderLegacySparkEditor()}
+            ${renderLegacySparkEditor(currentCharacterStars)}
           </div>
           ${renderRosterLocalNotes({
             ...entry,
@@ -2652,7 +2710,7 @@
     profileGateEl.querySelectorAll("[data-profile-card]").forEach((card) => {
       card.addEventListener("click", () => {
         state.selectedProfileId = card.dataset.profileCard;
-        requestRender();
+        requestRenderPreservingScroll();
       });
     });
 
@@ -2895,7 +2953,7 @@
       wizardSkipImportButton.addEventListener("click", () => {
         state.adminStatus = { kind: "idle", message: "" };
         state.wizardStep = "build";
-        requestRender();
+        requestRenderPreservingScroll();
       });
     }
 
@@ -2905,7 +2963,7 @@
         state.wizardBuildAutoStarted = false;
         state.wizardBuildStartedAt = null;
         state.adminStatus = { kind: "idle", message: "" };
-        requestRender();
+        requestRenderPreservingScroll();
       });
     }
   }
@@ -3079,7 +3137,7 @@
     if (adminRefreshButton) {
       adminRefreshButton.addEventListener("click", async () => {
         await refreshAdminData(true);
-        requestRender();
+        requestRenderPreservingScroll();
       });
     }
 
@@ -3149,7 +3207,7 @@
         } catch (error) {
           state.adminStatus = { kind: "error", message: error.message || "Could not rename the profile." };
         }
-        requestRender();
+        requestRenderPreservingScroll();
       });
     });
 
@@ -3203,7 +3261,7 @@
         } catch (error) {
           state.adminStatus = { kind: "error", message: error.message || "Could not delete the backup." };
         }
-        requestRender();
+        requestRenderPreservingScroll();
       });
     });
   }
@@ -3290,7 +3348,7 @@
         const key = event.target.dataset.filterKey;
         const values = Array.from(filtersEl.querySelectorAll(`[data-filter-key="${key}"]:checked`)).map((node) => node.value);
         localState.filters[key] = values;
-        requestRender();
+        requestRenderPreservingScroll();
       });
     });
 
@@ -3342,9 +3400,8 @@
       if (newLegacyButton) {
         newLegacyButton.addEventListener("click", () => {
           localState.presentation = "parents";
-          localState.selectedId = "__new__";
           state.legacyStatus = { kind: "idle", message: "" };
-          requestRender();
+          setBrowseHash(route.mode, route.entityKey, "__new__");
         });
       }
       return;
@@ -3536,13 +3593,109 @@
     await persistRosterDocument(`Saved ${item.title}.`);
   }
 
+  function getLegacySimulatorParentById(legacyId) {
+    return state.legacyView.items.find((item) => item.id === legacyId) || null;
+  }
+
+  function renderLegacySimulatorSparkBadges(item) {
+    const sparkSummary = item?.detail?.spark_summary || {};
+    const badges = [];
+    if (sparkSummary.blue) {
+      badges.push(`Blue ${formatLegacyFactorLabel(sparkSummary.blue)}`);
+    }
+    if (sparkSummary.pink) {
+      badges.push(`Pink ${formatLegacyFactorLabel(sparkSummary.pink)}`);
+    }
+    if (sparkSummary.green) {
+      badges.push(`Green ${formatLegacyFactorLabel(sparkSummary.green)}`);
+    }
+    if (sparkSummary.white_count) {
+      badges.push(`${sparkSummary.white_count} white`);
+    }
+    return badges;
+  }
+
+  function renderLegacySimulatorParentCard(slotLabel, tone, item) {
+    if (!item) {
+      return `
+        <div class="legacy-simulator-parent-card legacy-simulator-parent-card-${tone} is-empty">
+          <div class="legacy-simulator-parent-head">
+            <span class="legacy-simulator-slot">${escapeHtml(slotLabel)}</span>
+          </div>
+          <p class="source-note">Select a saved parent to inspect its scenario and sparks here.</p>
+        </div>
+      `;
+    }
+
+    const media = getPrimaryMedia(item.media, ["portrait", "icon"]);
+    const sparkBadges = renderLegacySimulatorSparkBadges(item);
+    return `
+      <div class="legacy-simulator-parent-card legacy-simulator-parent-card-${tone}">
+        <div class="legacy-simulator-parent-head">
+          <span class="legacy-simulator-slot">${escapeHtml(slotLabel)}</span>
+          ${item.detail?.entry?.scenario_name ? renderBadge(item.detail.entry.scenario_name) : ""}
+        </div>
+        <div class="legacy-simulator-parent-body">
+          ${media ? `<div class="legacy-simulator-parent-media">${renderImageAsset(media, "legacy-simulator-parent-image", "lazy")}</div>` : ""}
+          <div class="legacy-simulator-parent-copy">
+            <strong>${escapeHtml(item.title)}</strong>
+            <p>${escapeHtml(item.subtitle || "Saved parent")}</p>
+            <div class="badge-row">
+              ${sparkBadges.map((badge) => renderBadge(badge)).join("") || renderBadge("No sparks summary")}
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderLegacySimulatorChoiceCard(item, activeSlot) {
+    const media = getPrimaryMedia(item.media, ["portrait", "icon"]);
+    const sparkBadges = renderLegacySimulatorSparkBadges(item);
+    const isParentA = item.id === state.legacySimulator.parent_a_legacy_id;
+    const isParentB = item.id === state.legacySimulator.parent_b_legacy_id;
+    return `
+      <article class="legacy-simulator-choice-card ${isParentA ? "is-parent-a" : ""} ${isParentB ? "is-parent-b" : ""}" data-legacy-id="${escapeHtml(item.id)}">
+        <div class="legacy-simulator-choice-top">
+          ${media ? `<div class="legacy-simulator-choice-media">${renderImageAsset(media, "legacy-simulator-choice-image", "lazy")}</div>` : ""}
+          <div class="legacy-simulator-choice-copy">
+            <strong>${escapeHtml(item.title)}</strong>
+            <p>${escapeHtml(item.subtitle || "Saved parent")}</p>
+            <div class="badge-row">
+              ${item.detail?.entry?.scenario_name ? renderBadge(item.detail.entry.scenario_name) : ""}
+              ${sparkBadges.map((badge) => renderBadge(badge)).join("")}
+            </div>
+          </div>
+        </div>
+        <div class="legacy-simulator-choice-actions">
+          <button
+            type="button"
+            class="${activeSlot === "parent_a" ? "button-strong" : "button-secondary"}"
+            data-simulator-assign="parent_a"
+            data-legacy-id="${escapeHtml(item.id)}"
+          >
+            ${isParentA ? "Assigned to A" : "Set as Parent A"}
+          </button>
+          <button
+            type="button"
+            class="${activeSlot === "parent_b" ? "button-strong" : "button-secondary"}"
+            data-simulator-assign="parent_b"
+            data-legacy-id="${escapeHtml(item.id)}"
+          >
+            ${isParentB ? "Assigned to B" : "Set as Parent B"}
+          </button>
+        </div>
+      </article>
+    `;
+  }
+
   function renderLegacySimulatorList() {
     const mainOptions = getOwnedCharacterOptions();
-    const parentOptions = state.legacyView.items.map((item) => ({
-      value: item.id,
-      label: item.subtitle ? `${item.title} ${item.subtitle}` : item.title,
-    }));
-    const canRunPreview = mainOptions.length > 0 && parentOptions.length >= 2;
+    const parentItems = state.legacyView.items;
+    const parentA = getLegacySimulatorParentById(state.legacySimulator.parent_a_legacy_id);
+    const parentB = getLegacySimulatorParentById(state.legacySimulator.parent_b_legacy_id);
+    const activeSlot = state.legacySimulator.active_slot === "parent_b" ? "parent_b" : "parent_a";
+    const canRunPreview = mainOptions.length > 0 && parentItems.length >= 2;
     listEl.innerHTML = `
       <div class="legacy-simulator-card">
         <h3>Inheritance Simulator</h3>
@@ -3556,20 +3709,27 @@
                 ${mainOptions.map((option) => `<option value="${escapeHtml(option.value)}" ${option.value === state.legacySimulator.main_character_id ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
               </select>
             </label>
-            <label class="field-stack">
-              <span>Parent A</span>
-              <select name="parent_a_legacy_id">
-                <option value="">Select parent A</option>
-                ${parentOptions.map((option) => `<option value="${escapeHtml(option.value)}" ${option.value === state.legacySimulator.parent_a_legacy_id ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
-              </select>
-            </label>
-            <label class="field-stack">
-              <span>Parent B</span>
-              <select name="parent_b_legacy_id">
-                <option value="">Select parent B</option>
-                ${parentOptions.map((option) => `<option value="${escapeHtml(option.value)}" ${option.value === state.legacySimulator.parent_b_legacy_id ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
-              </select>
-            </label>
+          </div>
+          <input type="hidden" name="parent_a_legacy_id" value="${escapeHtml(state.legacySimulator.parent_a_legacy_id || "")}">
+          <input type="hidden" name="parent_b_legacy_id" value="${escapeHtml(state.legacySimulator.parent_b_legacy_id || "")}">
+          <div class="legacy-simulator-parent-grid">
+            ${renderLegacySimulatorParentCard("Parent A", "left", parentA)}
+            ${renderLegacySimulatorParentCard("Parent B", "right", parentB)}
+          </div>
+          <div class="legacy-simulator-picker">
+            <div class="legacy-simulator-picker-head">
+              <div>
+                <h4>Choose Saved Parent</h4>
+                <p class="source-note">Click a card to assign it to the active slot, or use the explicit A/B buttons.</p>
+              </div>
+              <div class="mode-nav legacy-simulator-slot-tabs" aria-label="Simulator slot">
+                <button type="button" class="${activeSlot === "parent_a" ? "active" : ""}" data-simulator-slot="parent_a">Picking for Parent A</button>
+                <button type="button" class="${activeSlot === "parent_b" ? "active" : ""}" data-simulator-slot="parent_b">Picking for Parent B</button>
+              </div>
+            </div>
+            <div class="legacy-simulator-choice-grid">
+              ${parentItems.map((item) => renderLegacySimulatorChoiceCard(item, activeSlot)).join("")}
+            </div>
           </div>
           <div class="roster-actions">
             <button type="submit" class="button-strong" ${canRunPreview ? "" : "disabled"}>Run preview</button>
@@ -3581,6 +3741,45 @@
 
     const simulatorForm = document.getElementById("legacySimulatorForm");
     if (simulatorForm) {
+      simulatorForm.querySelectorAll("[data-simulator-slot]").forEach((button) => {
+        button.addEventListener("click", () => {
+          state.legacySimulator.active_slot = button.dataset.simulatorSlot === "parent_b" ? "parent_b" : "parent_a";
+          requestRenderPreservingScroll();
+        });
+      });
+      simulatorForm.querySelectorAll("[data-simulator-assign]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const targetSlot = button.dataset.simulatorAssign === "parent_b" ? "parent_b" : "parent_a";
+          const legacyId = String(button.dataset.legacyId || "");
+          if (!legacyId) {
+            return;
+          }
+          if (targetSlot === "parent_a") {
+            state.legacySimulator.parent_a_legacy_id = legacyId;
+          } else {
+            state.legacySimulator.parent_b_legacy_id = legacyId;
+          }
+          state.legacySimulator.active_slot = targetSlot;
+          requestRenderPreservingScroll();
+        });
+      });
+      simulatorForm.querySelectorAll(".legacy-simulator-choice-card").forEach((card) => {
+        card.addEventListener("click", (event) => {
+          if (event.target.closest("button")) {
+            return;
+          }
+          const legacyId = String(card.dataset.legacyId || "");
+          if (!legacyId) {
+            return;
+          }
+          if (state.legacySimulator.active_slot === "parent_b") {
+            state.legacySimulator.parent_b_legacy_id = legacyId;
+          } else {
+            state.legacySimulator.parent_a_legacy_id = legacyId;
+          }
+          requestRenderPreservingScroll();
+        });
+      });
       simulatorForm.addEventListener("submit", async (event) => {
         event.preventDefault();
         await runLegacySimulatorPreview(new FormData(simulatorForm));
@@ -3809,7 +4008,7 @@
       payload.scenario_id = target.value;
     }
     if (kind === "g1") {
-      const g1Item = data.entities.g1_factors.items.find((item) => String(item.detail?.factor_id || item.id) === target.value);
+      const g1Item = getEntityItems("g1_factors").find((item) => String(item.detail?.factor_id || item.id) === target.value);
       if (g1Item?.detail?.race_id) {
         payload.race_id = String(g1Item.detail.race_id);
       }
@@ -3822,10 +4021,9 @@
     const blueTargetSelect = document.getElementById("legacyBlueTarget");
     const blueStarsSelect = document.getElementById("legacyBlueStars");
     const pinkKindSelect = document.getElementById("legacyPinkKind");
-    const pinkQueryInput = document.getElementById("legacyPinkQuery");
     const pinkTargetSelect = document.getElementById("legacyPinkTarget");
     const pinkStarsSelect = document.getElementById("legacyPinkStars");
-    const greenEnabledInput = document.getElementById("legacyGreenEnabled");
+    const starsInput = document.querySelector('#legacyForm input[name="stars"]');
     const greenStarsSelect = document.getElementById("legacyGreenStars");
     const whiteKindSelect = document.getElementById("legacyWhiteKind");
     const whiteQueryInput = document.getElementById("legacyWhiteQuery");
@@ -3836,10 +4034,15 @@
       characterSelect.addEventListener("change", () => {
         captureLegacyFormDraft();
         state.legacyEditor.characterCardId = String(characterSelect.value || "");
-        if (!characterSupportsGreenSpark(state.legacyEditor.characterCardId)) {
-          state.legacyEditor.greenEnabled = false;
+        if (isCreateMode) {
+          const defaults = getCharacterRosterDefaults(state.legacyEditor.characterCardId);
+          state.legacyFormDraft = {
+            ...(state.legacyFormDraft || {}),
+            stars: String(defaults.stars),
+            awakening: String(defaults.awakening),
+          };
         }
-        requestRender();
+        requestRenderPreservingScroll();
       });
     }
     if (blueTargetSelect) {
@@ -3859,14 +4062,7 @@
         const options = getLegacyFactorTargetOptions(state.legacyEditor.pinkKind);
         state.legacyEditor.pinkTargetKey = options[0]?.value || "";
         state.legacyEditor.pinkQuery = "";
-        requestRender();
-      });
-    }
-    if (pinkQueryInput) {
-      pinkQueryInput.addEventListener("input", () => {
-        captureLegacyFormDraft();
-        state.legacyEditor.pinkQuery = pinkQueryInput.value;
-        requestRender();
+        requestRenderPreservingScroll();
       });
     }
     if (pinkTargetSelect) {
@@ -3879,11 +4075,10 @@
         state.legacyEditor.pinkStars = clampNumber(pinkStarsSelect.value, 1, 3, 3);
       });
     }
-    if (greenEnabledInput) {
-      greenEnabledInput.addEventListener("change", () => {
+    if (starsInput) {
+      starsInput.addEventListener("change", () => {
         captureLegacyFormDraft();
-        state.legacyEditor.greenEnabled = greenEnabledInput.checked;
-        requestRender();
+        requestRenderPreservingScroll();
       });
     }
     if (greenStarsSelect) {
@@ -3898,14 +4093,14 @@
         const options = getLegacyFactorTargetOptions(state.legacyEditor.whiteKind);
         state.legacyEditor.whiteTargetKey = options[0]?.value || "";
         state.legacyEditor.whiteQuery = "";
-        requestRender();
+        requestRenderPreservingScroll();
       });
     }
     if (whiteQueryInput) {
       whiteQueryInput.addEventListener("input", () => {
         captureLegacyFormDraft();
         state.legacyEditor.whiteQuery = whiteQueryInput.value;
-        requestRender();
+        requestRenderPreservingScrollAndFocus("legacyWhiteQuery");
       });
     }
     if (whiteTargetSelect) {
@@ -3935,14 +4130,14 @@
         state.legacyEditor.whiteSparks = state.legacyEditor.whiteSparks
           .filter((spark) => !(spark.kind === payload.kind && spark.target_key === payload.target_key))
           .concat([payload]);
-        requestRender();
+        requestRenderPreservingScroll();
       });
     }
     detailEl.querySelectorAll("[data-legacy-white-remove]").forEach((button) => {
       button.addEventListener("click", () => {
         captureLegacyFormDraft();
         state.legacyEditor.whiteSparks = state.legacyEditor.whiteSparks.filter((_spark, index) => String(index) !== button.dataset.legacyWhiteRemove);
-        requestRender();
+        requestRenderPreservingScroll();
       });
     });
 
@@ -3983,12 +4178,14 @@
       }
 
       if (route.itemId === "__new__" || localState?.selectedId === "__new__") {
+        const initialCharacterId = getOwnedCharacterOptions()[0]?.value || "";
+        const initialProgress = getCharacterRosterDefaults(initialCharacterId);
         const createEntry = {
           id: "",
-          character_card_id: getOwnedCharacterOptions()[0]?.value || "",
+          character_card_id: initialCharacterId,
           scenario_id: "",
-          stars: 3,
-          awakening: 0,
+          stars: initialProgress.stars,
+          awakening: initialProgress.awakening,
           source_date: "",
           source_note: "",
           note: "",
@@ -4240,6 +4437,10 @@
       ? `${state.legacyView.items.length} saved parents`
       : `${filteredItems.length} visible`;
 
+    const hasLegacyDetailTarget =
+      route.entityKey === legacyEntityKey &&
+      (localState.presentation === "simulator" || localState.selectedId === "__new__");
+
     if (localState.selectedId && localState.selectedId !== "__new__" && !filteredItems.some((item) => item.id === localState.selectedId)) {
       localState.selectedId = null;
     }
@@ -4261,7 +4462,7 @@
         !isBatchMode &&
         Boolean(selectedItem || localState.selectedId === "__new__"),
     );
-    syncLayoutMode(Boolean((selectedItem || localState.selectedId === "__new__")) && !isBatchMode);
+    syncLayoutMode(Boolean(selectedItem || hasLegacyDetailTarget) && !isBatchMode);
     renderList(route.mode, route.entityKey, filteredItems);
     renderDetail(route, selectedItem);
   }
@@ -4303,12 +4504,14 @@
   }
 
   async function loadBootstrapStatus(force) {
-    if (state.bootstrapStatusLoaded && !force) {
+    const bootstrapStatusIsFresh = state.bootstrapStatusLoaded && (Date.now() - state.bootstrapStatusLoadedAt) < 10000;
+    if (!force && bootstrapStatusIsFresh) {
       return;
     }
 
     state.bootstrapStatus = await apiJson("/api/app/bootstrap-status");
     state.bootstrapStatusLoaded = true;
+    state.bootstrapStatusLoadedAt = Date.now();
   }
 
   async function loadProfilesIndex(force) {
@@ -4541,13 +4744,34 @@
   async function loadLegacyForProfile(profileId, force) {
     if (!profileId) {
       resetLegacyViewPayload();
+      state.legacyStatus = { kind: "idle", message: "" };
       return;
     }
     if (!force && state.legacyView.profile_id === profileId) {
       return;
     }
-    const payload = await apiJson(`/api/profiles/${encodeURIComponent(profileId)}/legacy-view`);
-    applyLegacyViewPayload(payload);
+    try {
+      const payload = await apiJson(`/api/profiles/${encodeURIComponent(profileId)}/legacy-view`);
+      applyLegacyViewPayload(payload);
+      if (state.legacyStatus.kind === "error" && String(state.legacyStatus.message || "").includes("Legacy inventory")) {
+        state.legacyStatus = { kind: "idle", message: "" };
+      }
+    } catch (error) {
+      applyLegacyViewPayload(createEmptyLegacyViewPayload(profileId));
+      state.legacyEditor = createEmptyLegacyEditorState();
+      state.legacySimulator = {
+        main_character_id: "",
+        parent_a_legacy_id: "",
+        parent_b_legacy_id: "",
+        preview: null,
+        status: { kind: "idle", message: "" },
+      };
+      state.legacyStatus = {
+        kind: "error",
+        message: error.message || "Legacy inventory unavailable for the current local reference.",
+      };
+      return;
+    }
     const ownedCharacters = getOwnedCharacterOptions();
     if (!state.legacySimulator.main_character_id || !ownedCharacters.some((option) => option.value === state.legacySimulator.main_character_id)) {
       state.legacySimulator.main_character_id = ownedCharacters[0]?.value || "";
@@ -4566,10 +4790,13 @@
 
   function collectLegacyPayload(formData) {
     const selectedCharacterCardId = String(formData.get("character_card_id") || state.legacyEditor.characterCardId || "").trim();
+    const selectedScenarioId = String(formData.get("scenario_id") || "").trim();
+    const selectedStars = clampNumber(formData.get("stars"), 0, 5, 3);
     return {
       character_card_id: selectedCharacterCardId,
-      scenario_id: String(formData.get("scenario_id") || "").trim() || null,
-      stars: clampNumber(formData.get("stars"), 0, 5, 3),
+      scenario_id: selectedScenarioId || null,
+      scenario_name: selectedScenarioId ? getLegacyScenarioLabel(selectedScenarioId) : null,
+      stars: selectedStars,
       awakening: clampNumber(formData.get("awakening"), 0, 5, 0),
       source_date: String(formData.get("source_date") || "").trim(),
       source_note: String(formData.get("source_note") || "").trim(),
@@ -4578,7 +4805,7 @@
       status_flags: parseRosterTokenList(formData.get("status_flags")),
       blue_spark: buildLegacyFactorPayload("stat", state.legacyEditor.blueTargetKey, state.legacyEditor.blueStars, { characterCardId: selectedCharacterCardId }),
       pink_spark: buildLegacyFactorPayload(state.legacyEditor.pinkKind, state.legacyEditor.pinkTargetKey, state.legacyEditor.pinkStars, { characterCardId: selectedCharacterCardId }),
-      green_spark: state.legacyEditor.greenEnabled
+      green_spark: characterSupportsGreenSpark(selectedCharacterCardId, selectedStars)
         ? buildLegacyFactorPayload("unique", "", state.legacyEditor.greenStars, { characterCardId: selectedCharacterCardId })
         : null,
       white_sparks: state.legacyEditor.whiteSparks.map((spark) => ({ ...spark })),
@@ -4820,6 +5047,18 @@
       return;
     }
 
+    const loadedReferenceGeneratedAt = getLoadedReferenceGeneratedAt();
+    const availableReferenceGeneratedAt = String(state.bootstrapStatus?.reference_generated_at || "");
+    if (
+      hasLoadedReferenceBundle &&
+      loadedReferenceGeneratedAt &&
+      availableReferenceGeneratedAt &&
+      loadedReferenceGeneratedAt < availableReferenceGeneratedAt
+    ) {
+      window.location.reload();
+      return;
+    }
+
     if (route.page === "wizard" && state.wizardProfileId && state.wizardStep === "build") {
       const updateJob = state.adminJobs.active_job?.type === "update" ? state.adminJobs.active_job : null;
       const needsReferenceBuild = wizardNeedsReferenceBuild();
@@ -4892,7 +5131,7 @@
   }
 
   function requestRender() {
-    render().catch((error) => {
+    return render().catch((error) => {
       console.error(error);
       const route = currentRouteState();
       if (route.page === "profiles" || route.page === "wizard" || route.page === "admin") {
@@ -4903,6 +5142,36 @@
         return;
       }
       detailEl.innerHTML = `<div class="detail-empty">Unexpected error: ${escapeHtml(error.message || String(error))}</div>`;
+    });
+  }
+
+  function requestRenderPreservingScroll() {
+    const windowScrollY = window.scrollY;
+    const detailScrollTop = detailPanelEl ? detailPanelEl.scrollTop : null;
+    requestRender().finally(() => {
+      window.requestAnimationFrame(() => {
+        window.scrollTo({ top: windowScrollY });
+        if (detailPanelEl && detailScrollTop != null) {
+          detailPanelEl.scrollTop = detailScrollTop;
+        }
+      });
+    });
+  }
+
+  function requestRenderPreservingScrollAndFocus(elementId) {
+    const focusTarget = document.getElementById(elementId);
+    const selectionStart = typeof focusTarget?.selectionStart === "number" ? focusTarget.selectionStart : null;
+    const selectionEnd = typeof focusTarget?.selectionEnd === "number" ? focusTarget.selectionEnd : null;
+    requestRenderPreservingScroll();
+    window.requestAnimationFrame(() => {
+      const nextTarget = document.getElementById(elementId);
+      if (!nextTarget) {
+        return;
+      }
+      nextTarget.focus({ preventScroll: true });
+      if (selectionStart != null && selectionEnd != null && typeof nextTarget.setSelectionRange === "function") {
+        nextTarget.setSelectionRange(selectionStart, selectionEnd);
+      }
     });
   }
 
