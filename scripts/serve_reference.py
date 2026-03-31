@@ -105,7 +105,7 @@ def default_roster() -> dict:
 
 def default_legacy_document() -> dict:
     return {
-        "version": 2,
+        "version": 3,
         "updated_at": utc_timestamp(),
         "entries": [],
     }
@@ -586,6 +586,13 @@ def build_legacy_factor(
     )
 
 
+def default_legacy_grandparents() -> dict:
+    return {
+        "left": None,
+        "right": None,
+    }
+
+
 def dedupe_legacy_factors(factors: list[dict]) -> list[dict]:
     deduped: dict[tuple[str, str], dict] = {}
     for factor in factors:
@@ -722,6 +729,125 @@ def build_legacy_spark_summary(entry: dict) -> dict:
     }
 
 
+def normalize_legacy_grandparent(
+    raw_entry: object,
+    catalogs: dict,
+    *,
+    slot_name: str,
+    strict_sparks: bool = True,
+) -> dict | None:
+    if raw_entry in (None, ""):
+        return None
+    if not isinstance(raw_entry, dict):
+        raise ValueError(f"legacy grandparent {slot_name} must be an object.")
+
+    character_card_id = str(raw_entry.get("character_card_id") or "").strip()
+    character_ref = catalogs["characters"].get(character_card_id)
+    if character_ref is None:
+        raise ValueError(f"legacy grandparent {slot_name} character_card_id is invalid.")
+
+    scenario_id = str(raw_entry.get("scenario_id") or "").strip()
+    scenario_ref = catalogs["scenarios"].get(scenario_id) if scenario_id else None
+    scenario_name = str(raw_entry.get("scenario_name") or "").strip()
+    if scenario_ref is not None:
+        scenario_id = str(scenario_ref.get("scenario_id") or scenario_ref.get("id"))
+        scenario_name = str(scenario_ref.get("name") or scenario_name or scenario_id)
+    else:
+        scenario_id = scenario_id or ""
+        scenario_name = scenario_name or scenario_id
+
+    detail = get_character_detail(character_ref)
+    stars = clamp_int(raw_entry.get("stars"), 0, 5, int(detail.get("rarity") or 0))
+    green_available = character_supports_green_spark(character_ref, stars=stars)
+
+    has_structured_sparks = any(
+        key in raw_entry
+        for key in ("blue_spark", "pink_spark", "green_spark", "white_sparks")
+    )
+    if has_structured_sparks:
+        blue_spark = normalize_blue_spark(raw_entry.get("blue_spark"), catalogs, character_ref=character_ref)
+        pink_spark = normalize_pink_spark(raw_entry.get("pink_spark"), catalogs, character_ref=character_ref)
+        green_spark = normalize_green_spark(raw_entry.get("green_spark"), catalogs, character_ref=character_ref, stars=stars) if green_available else None
+        white_sparks = normalize_white_sparks(raw_entry.get("white_sparks"), catalogs, character_ref=character_ref)
+    else:
+        blue_spark, pink_spark, green_spark, white_sparks = migrate_legacy_sparks_from_factors(
+            raw_entry.get("factors"),
+            catalogs,
+            character_ref=character_ref,
+            stars=stars,
+        )
+
+    if strict_sparks:
+        if blue_spark is None:
+            raise ValueError(f"legacy grandparent {slot_name} blue spark is required.")
+        if pink_spark is None:
+            raise ValueError(f"legacy grandparent {slot_name} pink spark is required.")
+
+    return {
+        "character_card_id": character_card_id,
+        "base_character_id": int(detail.get("base_character_id") or raw_entry.get("base_character_id") or 0),
+        "name": str(detail.get("name") or raw_entry.get("name") or "").strip(),
+        "variant": str(detail.get("variant") or raw_entry.get("variant") or "").strip(),
+        "scenario_id": scenario_id or None,
+        "scenario_name": scenario_name or None,
+        "source_date": str(raw_entry.get("source_date") or "").strip() or None,
+        "stars": stars,
+        "awakening": clamp_int(raw_entry.get("awakening"), 0, 5, 0),
+        "note": str(raw_entry.get("note") or ""),
+        "green_available": green_available,
+        "blue_spark": blue_spark,
+        "pink_spark": pink_spark,
+        "green_spark": green_spark if green_available else None,
+        "white_sparks": white_sparks,
+        "factors": legacy_entry_to_factors(
+            {
+                "blue_spark": blue_spark,
+                "pink_spark": pink_spark,
+                "green_spark": green_spark if green_available else None,
+                "white_sparks": white_sparks,
+            }
+        ),
+    }
+
+
+def normalize_legacy_grandparents(raw_grandparents: object, catalogs: dict) -> dict:
+    grandparents = raw_grandparents if isinstance(raw_grandparents, dict) else {}
+    return {
+        "left": normalize_legacy_grandparent(grandparents.get("left"), catalogs, slot_name="left", strict_sparks=True),
+        "right": normalize_legacy_grandparent(grandparents.get("right"), catalogs, slot_name="right", strict_sparks=True),
+    }
+
+
+def legacy_entry_grandparents(entry: dict) -> dict:
+    grandparents = entry.get("grandparents")
+    if isinstance(grandparents, dict):
+        return {
+            "left": grandparents.get("left") if isinstance(grandparents.get("left"), dict) else None,
+            "right": grandparents.get("right") if isinstance(grandparents.get("right"), dict) else None,
+        }
+    return default_legacy_grandparents()
+
+
+def get_legacy_lineage_entries(entry: dict) -> list[dict]:
+    lineage = []
+    for slot_name in ("left", "right"):
+        grandparent = legacy_entry_grandparents(entry).get(slot_name)
+        if isinstance(grandparent, dict):
+            lineage.append(grandparent)
+    return lineage
+
+
+def build_lineage_completion(entry: dict) -> dict:
+    grandparents = legacy_entry_grandparents(entry)
+    filled_slots = [slot_name for slot_name in ("left", "right") if isinstance(grandparents.get(slot_name), dict)]
+    return {
+        "filled_count": len(filled_slots),
+        "total": 2,
+        "complete": len(filled_slots) == 2,
+        "missing_slots": [slot_name for slot_name in ("left", "right") if slot_name not in filled_slots],
+    }
+
+
 def normalize_legacy_entry(raw_entry: object, catalogs: dict, *, existing_id: str | None = None, strict_sparks: bool = False) -> dict:
     if not isinstance(raw_entry, dict):
         raise ValueError("legacy entry must be an object.")
@@ -793,6 +919,7 @@ def normalize_legacy_entry(raw_entry: object, catalogs: dict, *, existing_id: st
             "white_sparks": white_sparks,
         }
     )
+    grandparents = normalize_legacy_grandparents(raw_entry.get("grandparents"), catalogs)
 
     return {
         "id": entry_id or None,
@@ -817,6 +944,7 @@ def normalize_legacy_entry(raw_entry: object, catalogs: dict, *, existing_id: st
         "green_spark": green_spark if green_available else None,
         "white_sparks": white_sparks,
         "factors": factors,
+        "grandparents": grandparents,
     }
 
 
@@ -844,7 +972,7 @@ def inspect_legacy_document(raw_document: object) -> dict:
     except (FileNotFoundError, ValueError):
         return {
             "document": {
-                "version": 2,
+                "version": 3,
                 "updated_at": str(raw_document.get("updated_at") or document["updated_at"]),
                 "entries": [],
             },
@@ -871,7 +999,7 @@ def inspect_legacy_document(raw_document: object) -> dict:
 
     return {
         "document": {
-            "version": 2,
+            "version": 3,
             "updated_at": str(raw_document.get("updated_at") or document["updated_at"]),
             "entries": sorted(entries, key=lambda entry: str(entry.get("updated_at") or entry.get("created_at") or ""), reverse=True),
         },
@@ -923,7 +1051,7 @@ def save_legacies(profile_id: str, document: dict, *, preserve_existing_unresolv
         atomic_write_json(
             profile_legacy_path(profile_id),
             {
-                "version": 2,
+                "version": 3,
                 "updated_at": normalized["updated_at"],
                 "entries": list(normalized["entries"]) + unresolved_entries,
             },
@@ -936,7 +1064,7 @@ def save_legacies(profile_id: str, document: dict, *, preserve_existing_unresolv
 def persist_unresolved_legacies(profile_id: str, document: object) -> dict:
     raw_document = document if isinstance(document, dict) else {}
     preserved = {
-        "version": 2,
+        "version": 3,
         "updated_at": str(raw_document.get("updated_at") or utc_timestamp()),
         "entries": list(raw_document.get("entries") or []),
     }
@@ -1060,6 +1188,44 @@ def build_legacy_reference_button(entity_key: str, ref_id: str | int, title: str
     }
 
 
+def build_legacy_grandparent_view_item(slot_name: str, grandparent: dict | None, catalogs: dict) -> dict:
+    if not isinstance(grandparent, dict):
+        return {
+            "slot": slot_name,
+            "slot_label": "Left Grandparent" if slot_name == "left" else "Right Grandparent",
+            "missing": True,
+        }
+
+    character_ref = catalogs["characters"].get(str(grandparent.get("character_card_id") or ""))
+    detail = get_character_detail(character_ref)
+    spark_summary = build_legacy_spark_summary(grandparent)
+    return {
+        "slot": slot_name,
+        "slot_label": "Left Grandparent" if slot_name == "left" else "Right Grandparent",
+        "missing": False,
+        "character_card_id": str(grandparent.get("character_card_id") or ""),
+        "base_character_id": int(grandparent.get("base_character_id") or 0),
+        "title": str(grandparent.get("name") or detail.get("name") or "Unknown grandparent"),
+        "subtitle": str(grandparent.get("variant") or detail.get("variant") or ""),
+        "scenario_name": str(grandparent.get("scenario_name") or ""),
+        "media": character_ref.get("media") if isinstance(character_ref, dict) else {},
+        "spark_summary": spark_summary,
+    }
+
+
+def build_lineage_factor_summary(entry: dict) -> dict:
+    direct_factors = legacy_entry_to_factors(entry)
+    grandparent_factors: list[dict] = []
+    for grandparent in get_legacy_lineage_entries(entry):
+        grandparent_factors.extend(legacy_entry_to_factors(grandparent))
+    combined_factors = direct_factors + grandparent_factors
+    return {
+        "direct": summarize_legacy_factors(direct_factors),
+        "grandparents": summarize_legacy_factors(grandparent_factors),
+        "combined": summarize_legacy_factors(combined_factors),
+    }
+
+
 def build_empty_legacy_view(profile_id: str, updated_at: str = "") -> dict:
     return {
         "profile_id": profile_id,
@@ -1099,6 +1265,12 @@ def build_legacy_view(profile_id: str) -> dict:
         spark_summary = build_legacy_spark_summary(entry)
         factors = legacy_entry_to_factors(entry)
         factor_summary = summarize_legacy_factors(factors)
+        lineage_factor_summary = build_lineage_factor_summary(entry)
+        lineage_completion = build_lineage_completion(entry)
+        grandparent_items = [
+            build_legacy_grandparent_view_item("left", legacy_entry_grandparents(entry).get("left"), catalogs),
+            build_legacy_grandparent_view_item("right", legacy_entry_grandparents(entry).get("right"), catalogs),
+        ]
         scenario_label = (
             str(entry.get("scenario_name") or (scenario_ref.get("name") if scenario_ref else "") or "Unknown scenario")
             if entry.get("scenario_id")
@@ -1115,6 +1287,7 @@ def build_legacy_view(profile_id: str) -> dict:
             badges.append(f"Green {spark_summary['green']['target_label']} {int(spark_summary['green'].get('stars') or 0)}\u2605")
         if spark_summary["white_count"]:
             badges.append(f"{spark_summary['white_count']} white")
+        badges.append(f"{lineage_completion['filled_count']}/2 lineage")
 
         compatible_matches = []
         compatibility_item = catalogs["compatibility"].get(str(entry.get("base_character_id") or ""))
@@ -1157,7 +1330,7 @@ def build_legacy_view(profile_id: str) -> dict:
                 )
             )
 
-        for factor in factors:
+        for factor in factors + [factor for grandparent in get_legacy_lineage_entries(entry) for factor in legacy_entry_to_factors(grandparent)]:
             factor_kind = str(factor.get("kind") or "")
             factor_kind_counts[factor_kind] += 1
             if factor_kind == "g1":
@@ -1208,6 +1381,8 @@ def build_legacy_view(profile_id: str) -> dict:
                         str(entry.get("variant") or ""),
                         scenario_label,
                         " ".join(str(factor.get("target_label") or "") for factor in factors),
+                        " ".join(str(factor.get("target_label") or "") for grandparent in get_legacy_lineage_entries(entry) for factor in legacy_entry_to_factors(grandparent)),
+                        " ".join(str(item.get("title") or "") for item in grandparent_items if not item.get("missing")),
                         " ".join(entry.get("custom_tags") or []),
                         " ".join(entry.get("status_flags") or []),
                         str(entry.get("note") or ""),
@@ -1216,7 +1391,13 @@ def build_legacy_view(profile_id: str) -> dict:
                 ).strip(),
                 "filters": {
                     "scenario_id": [str(entry.get("scenario_id"))] if entry.get("scenario_id") else ["none"],
-                    "factor_kind": sorted({str(factor.get("kind") or "") for factor in (entry.get("factors") or []) if str(factor.get("kind") or "")}),
+                    "factor_kind": sorted(
+                        {
+                            str(factor.get("kind") or "")
+                            for factor in (factors + [factor for grandparent in get_legacy_lineage_entries(entry) for factor in legacy_entry_to_factors(grandparent)])
+                            if str(factor.get("kind") or "")
+                        }
+                    ),
                     "local_tag": list(entry.get("custom_tags") or []),
                     "status_flag": list(entry.get("status_flags") or []),
                 },
@@ -1228,6 +1409,9 @@ def build_legacy_view(profile_id: str) -> dict:
                     "factor_groups": factor_summary["groups"],
                     "factor_counts": factor_summary["counts"],
                     "factor_stars_total": factor_summary["stars_total"],
+                    "lineage_factor_groups": lineage_factor_summary["combined"]["groups"],
+                    "lineage_completion": lineage_completion,
+                    "grandparents": grandparent_items,
                     "linked_references": linked_refs,
                     "compatibility_top_matches": compatible_matches,
                     "available_en": bool(detail.get("release", {}).get("en")) if isinstance(detail, dict) else False,
@@ -1296,6 +1480,61 @@ def build_aptitude_coverage(main_detail: dict, factors: list[dict]) -> list[dict
     return result
 
 
+def build_detailed_aptitude_coverage(main_detail: dict, direct_factors: list[dict], grandparent_factors: list[dict]) -> list[dict]:
+    grouped_targets = {
+        "surface": {
+            "direct": {str(factor.get("target_key")) for factor in direct_factors if factor.get("kind") == "surface"},
+            "grandparent": {str(factor.get("target_key")) for factor in grandparent_factors if factor.get("kind") == "surface"},
+        },
+        "distance": {
+            "direct": {str(factor.get("target_key")) for factor in direct_factors if factor.get("kind") == "distance"},
+            "grandparent": {str(factor.get("target_key")) for factor in grandparent_factors if factor.get("kind") == "distance"},
+        },
+        "style": {
+            "direct": {str(factor.get("target_key")) for factor in direct_factors if factor.get("kind") == "style"},
+            "grandparent": {str(factor.get("target_key")) for factor in grandparent_factors if factor.get("kind") == "style"},
+        },
+    }
+    labels = {
+        "surface": LEGACY_SURFACE_LABELS,
+        "distance": LEGACY_DISTANCE_LABELS,
+        "style": LEGACY_STYLE_LABELS,
+    }
+    result = []
+    viable = main_detail.get("viable_aptitudes") or {}
+    for category in ("surface", "distance", "style"):
+        viable_values = [str(value) for value in (viable.get(category) or [])]
+        direct_supported = [labels[category].get(value, value) for value in viable_values if value in grouped_targets[category]["direct"]]
+        grandparent_supported = [
+            labels[category].get(value, value)
+            for value in viable_values
+            if value not in grouped_targets[category]["direct"] and value in grouped_targets[category]["grandparent"]
+        ]
+        missing = [
+            labels[category].get(value, value)
+            for value in viable_values
+            if value not in grouped_targets[category]["direct"] and value not in grouped_targets[category]["grandparent"]
+        ]
+        result.append(
+            {
+                "category": category,
+                "direct_supported": direct_supported,
+                "grandparent_supported": grandparent_supported,
+                "missing": missing,
+            }
+        )
+    return result
+
+
+def build_compact_pair_summary(pair: dict, label: str) -> dict:
+    return {
+        "label": label,
+        "score": int(pair.get("score") or 0),
+        "shared_group_count": int(pair.get("shared_group_count") or 0),
+        "shared_groups": list(pair.get("shared_groups") or []),
+    }
+
+
 def build_legacy_simulator_preview(profile_id: str, payload: dict) -> dict:
     main_character_id = str(payload.get("main_character_id") or "").strip()
     parent_a_legacy_id = str(payload.get("parent_a_legacy_id") or "").strip()
@@ -1322,31 +1561,97 @@ def build_legacy_simulator_preview(profile_id: str, payload: dict) -> dict:
     if parent_a is None or parent_b is None:
         raise ValueError("One or more selected parents could not be found.")
 
-    main_to_parent_a = build_pair_compatibility(int(main_detail.get("base_character_id") or 0), int(parent_a.get("base_character_id") or 0), catalogs)
-    main_to_parent_b = build_pair_compatibility(int(main_detail.get("base_character_id") or 0), int(parent_b.get("base_character_id") or 0), catalogs)
+    main_base_character_id = int(main_detail.get("base_character_id") or 0)
+    main_to_parent_a = build_pair_compatibility(main_base_character_id, int(parent_a.get("base_character_id") or 0), catalogs)
+    main_to_parent_b = build_pair_compatibility(main_base_character_id, int(parent_b.get("base_character_id") or 0), catalogs)
     parent_pair = build_pair_compatibility(int(parent_a.get("base_character_id") or 0), int(parent_b.get("base_character_id") or 0), catalogs)
 
-    combined_factors = legacy_entry_to_factors(parent_a) + legacy_entry_to_factors(parent_b)
-    factor_summary = summarize_legacy_factors(combined_factors)
-    aptitude_coverage = build_aptitude_coverage(main_detail, combined_factors)
+    parent_a_grandparents = [
+        build_legacy_grandparent_view_item("left", legacy_entry_grandparents(parent_a).get("left"), catalogs),
+        build_legacy_grandparent_view_item("right", legacy_entry_grandparents(parent_a).get("right"), catalogs),
+    ]
+    parent_b_grandparents = [
+        build_legacy_grandparent_view_item("left", legacy_entry_grandparents(parent_b).get("left"), catalogs),
+        build_legacy_grandparent_view_item("right", legacy_entry_grandparents(parent_b).get("right"), catalogs),
+    ]
+
+    grandparent_pairs = []
+    for branch_label, grandparent in (
+        ("A-Left", legacy_entry_grandparents(parent_a).get("left")),
+        ("A-Right", legacy_entry_grandparents(parent_a).get("right")),
+        ("B-Left", legacy_entry_grandparents(parent_b).get("left")),
+        ("B-Right", legacy_entry_grandparents(parent_b).get("right")),
+    ):
+        if not isinstance(grandparent, dict):
+            grandparent_pairs.append(
+                {
+                    "label": branch_label,
+                    "missing": True,
+                    "score": 0,
+                    "shared_group_count": 0,
+                    "shared_groups": [],
+                }
+            )
+            continue
+        pair = build_pair_compatibility(main_base_character_id, int(grandparent.get("base_character_id") or 0), catalogs)
+        grandparent_pairs.append(
+            {
+                "label": branch_label,
+                "missing": False,
+                "score": int(pair.get("score") or 0),
+                "shared_group_count": int(pair.get("shared_group_count") or 0),
+                "shared_groups": list(pair.get("shared_groups") or []),
+                "grandparent_name": str(grandparent.get("name") or ""),
+            }
+        )
+
+    direct_factors = legacy_entry_to_factors(parent_a) + legacy_entry_to_factors(parent_b)
+    grandparent_factors: list[dict] = []
+    for grandparent in get_legacy_lineage_entries(parent_a) + get_legacy_lineage_entries(parent_b):
+        grandparent_factors.extend(legacy_entry_to_factors(grandparent))
+    combined_factors = direct_factors + grandparent_factors
+
+    direct_factor_summary = summarize_legacy_factors(direct_factors)
+    grandparent_factor_summary = summarize_legacy_factors(grandparent_factors)
+    combined_factor_summary = summarize_legacy_factors(combined_factors)
+    aptitude_coverage = build_detailed_aptitude_coverage(main_detail, direct_factors, grandparent_factors)
+
+    direct_total = int(main_to_parent_a.get("score") or 0) + int(main_to_parent_b.get("score") or 0)
+    lineage_support_total = sum(int(item.get("score") or 0) for item in grandparent_pairs if not item.get("missing"))
+    overall_total = direct_total + lineage_support_total
 
     highlights = []
     warnings = []
     if main_to_parent_a["score"] >= 20 and main_to_parent_b["score"] >= 20:
-        highlights.append("Both parents have strong base compatibility with the main candidate.")
+        highlights.append("Both direct parents have strong compatibility with the main candidate.")
     if parent_pair["score"] >= 20:
-        highlights.append("The two parents also share a strong compatibility basis.")
-    if factor_summary["counts"].get("g1"):
-        highlights.append("The pair contributes visible G1 inheritance value.")
-    if factor_summary["counts"].get("scenario"):
-        highlights.append("Scenario factors are present in the pair.")
-    if factor_summary["counts"].get("unique"):
-        highlights.append("At least one parent contributes a resolved green unique spark.")
+        highlights.append("The two direct parents also share a strong mutual compatibility basis.")
+    if lineage_support_total >= 20:
+        highlights.append("Grandparents add meaningful compatibility support across the two branches.")
+    if combined_factor_summary["counts"].get("g1"):
+        highlights.append("The lineage contributes visible G1 inheritance value.")
+    if combined_factor_summary["counts"].get("scenario"):
+        highlights.append("Scenario sparks are present in the lineage.")
+    if combined_factor_summary["counts"].get("unique"):
+        highlights.append("At least one direct parent contributes a resolved green unique spark.")
+    if build_lineage_completion(parent_a)["filled_count"] < 2 or build_lineage_completion(parent_b)["filled_count"] < 2:
+        warnings.append("The lineage is incomplete: one or more grandparent slots are still missing.")
+    if main_to_parent_a["score"] == 0 or main_to_parent_b["score"] == 0:
+        warnings.append("At least one direct parent has no resolved compatibility points with the main candidate.")
     for coverage in aptitude_coverage:
         if coverage["missing"]:
             warnings.append(f"Missing {coverage['category']} support for: {', '.join(coverage['missing'])}.")
-    if main_to_parent_a["score"] == 0 or main_to_parent_b["score"] == 0:
-        warnings.append("At least one parent has no resolved compatibility points with the main candidate.")
+
+    raw_details = {}
+    if main_to_parent_a.get("shared_groups"):
+        raw_details["main_to_parent_a_groups"] = build_compact_pair_summary(main_to_parent_a, "Main -> Parent A")
+    if main_to_parent_b.get("shared_groups"):
+        raw_details["main_to_parent_b_groups"] = build_compact_pair_summary(main_to_parent_b, "Main -> Parent B")
+    if parent_pair.get("shared_groups"):
+        raw_details["parent_pair_groups"] = build_compact_pair_summary(parent_pair, "Parent A -> Parent B")
+    grandparent_raw_groups = [item for item in grandparent_pairs if item.get("shared_groups")]
+    if grandparent_raw_groups:
+        raw_details["grandparent_groups"] = grandparent_raw_groups
 
     return {
         "main": {
@@ -1359,18 +1664,44 @@ def build_legacy_simulator_preview(profile_id: str, payload: dict) -> dict:
         "parent_b": parent_b,
         "parent_a_sparks": build_legacy_spark_summary(parent_a),
         "parent_b_sparks": build_legacy_spark_summary(parent_b),
-        "compatibility": {
-            "main_to_parent_a": main_to_parent_a,
-            "main_to_parent_b": main_to_parent_b,
-            "parent_pair": parent_pair,
-            "main_total": int(main_to_parent_a["score"]) + int(main_to_parent_b["score"]),
+        "parent_a_grandparents": parent_a_grandparents,
+        "parent_b_grandparents": parent_b_grandparents,
+        "compatibility_summary": {
+            "direct": {
+                "parent_a": build_compact_pair_summary(main_to_parent_a, "Main -> Parent A"),
+                "parent_b": build_compact_pair_summary(main_to_parent_b, "Main -> Parent B"),
+                "pair_synergy": build_compact_pair_summary(parent_pair, "Parent A -> Parent B"),
+                "total_score": direct_total,
+            },
+            "grandparent_support": {
+                "slots": grandparent_pairs,
+                "filled_slots": sum(1 for item in grandparent_pairs if not item.get("missing")),
+                "total_score": lineage_support_total,
+            },
+            "overall_score": overall_total,
         },
-        "factor_summary": factor_summary,
-        "aptitude_coverage": aptitude_coverage,
-        "scenario_summary": factor_summary["groups"].get("scenario") or [],
-        "g1_summary": factor_summary["groups"].get("g1") or [],
+        "spark_summary": {
+            "direct": direct_factor_summary,
+            "grandparents": grandparent_factor_summary,
+            "combined": combined_factor_summary,
+        },
+        "coverage_summary": {
+            "aptitude_coverage": aptitude_coverage,
+            "direct_factor_groups": direct_factor_summary["groups"],
+            "grandparent_factor_groups": grandparent_factor_summary["groups"],
+            "combined_factor_groups": combined_factor_summary["groups"],
+        },
+        "scenario_summary": {
+            "direct": direct_factor_summary["groups"].get("scenario") or [],
+            "grandparents": grandparent_factor_summary["groups"].get("scenario") or [],
+        },
+        "g1_summary": {
+            "direct": direct_factor_summary["groups"].get("g1") or [],
+            "grandparents": grandparent_factor_summary["groups"].get("g1") or [],
+        },
         "highlights": highlights,
         "warnings": warnings,
+        "raw_details": raw_details,
     }
 
 

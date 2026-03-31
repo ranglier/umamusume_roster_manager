@@ -190,7 +190,7 @@ Ouvrir l'application locale:
 python ./scripts/serve_reference.py --open
 ```
 
-- variante pratique pour regénérer puis servir dans la foulée:
+- variante pratique pour regenerer puis servir dans la foulee:
 
 ```bash
 python ./scripts/serve_reference.py --update-first --open
@@ -311,7 +311,10 @@ Le roster personnel stocke maintenant aussi des champs locaux d'organisation et 
   - `awakening`
   - `custom_tags`
   - `status_flags`
-  - `factors[]`
+  - `blue_spark`
+  - `pink_spark`
+  - `green_spark`
+  - `white_sparks[]`
 
 Le serveur expose en plus des projections enrichies, fusionnant roster + reference:
 
@@ -328,8 +331,11 @@ Ces projections servent a afficher localement:
 - les hint skills / event skills disponibles dans l'etat reel de la carte
 - les parents sauvegardes avec leurs facteurs normalises
 - les sparks parents structurees (`blue`, `pink`, `green`, `white`)
-- une preview deterministe d'heritage basee sur `compatibility`, `g1_factors` et les scenarios locaux
+- des sous-parents / grands-parents embarques localement dans chaque parent
+- une preview deterministe d'heritage basee sur `compatibility`, `g1_factors`, les scenarios locaux et la structure complete `main + 2 parents + 4 sous-parents`
 - des filtres roster derives utilisables en UI
+- un editeur `legacy` assiste avec selection structuree des sparks
+- un simulateur `legacy` avec choix visuel des parents sauvegardes, slots de sous-parents derives et preview orientee synthese
 
 L'UI source est dans:
 
@@ -371,7 +377,36 @@ Note:
 - le depot Git ne contient pas les donnees GameTora importees; elles doivent etre regenerees localement
 - la creation initiale de la base locale peut etre longue a froid, surtout lors du telechargement des assets
 - `training_events` reste volontairement conservateur: les choix et outcomes sont preserves et relies, mais leur semantique fine n'est pas encore completement decodee pour du scoring
-- le simulateur `legacy` v1 reste une projection deterministe explicable; il ne couvre pas encore les calculs probabilistes complets d'heritage
+- le simulateur `legacy` reste une projection deterministe explicable; il ne couvre pas encore les calculs probabilistes complets d'heritage
+- la couche `legacy` couvre maintenant les sous-parents / grands-parents, mais pas encore les probabilites detaillees d'inheritance ni les moteurs de recommandation
+- les futures briques `Visualizers` et `Meta / Insights` devront rester separees du coeur de reference; elles sont cadrees mais pas encore implementees
+
+## Sources externes et briques futures
+
+Des sources externes complementaires a GameTora ont ete etudiees pour renforcer l'application avant le moteur de build:
+
+- `alpha123 / uma-tools`
+  - cible: brique `Visualizers`
+  - usage pressenti: visualisation locale des zones d'activation de skills sur `races`, puis `cm_targets`, puis futurs `builds`
+- `uma.moe`
+  - cible: brique `Meta / Insights`
+  - usage pressenti: snapshots meta, tierlists, statistiques et signaux d'aide pour les futurs builds
+- `umamoe-backend`
+  - cible: inspiration d'architecture pour la recherche `legacy` / inheritance et la future recherche de builds
+
+Choix retenu:
+
+- ne pas melanger ces briques au referentiel canonique
+- ne pas creer de dependance runtime directe a ces sites
+- commencer par `Visualizers`, puis seulement ensuite `Meta / Insights`
+- la doc dediee precise aussi:
+  - pourquoi la licence `GPL-3.0-or-later` de `uma-tools` impose de privilegier une reimplementation locale
+  - pourquoi un visualizer maison est faisable
+  - quelle charge approximative est attendue selon le niveau de couverture vise
+
+Document de cadrage associe:
+
+- `docs/EXTERNAL_SOURCES_PLAN.md`
 
 ## Revue code
 
@@ -395,10 +430,12 @@ Nettoyages appliques:
 
 Phase suivante recommandee:
 
-1. approfondir la couche `legacy / parents`
-2. conserver la separation stricte entre reference globale, roster et donnees utilisateur
-3. exploiter `cm_targets`, `scenarios`, `training_events` et le simulateur `legacy` pour preparer les futurs builds / Champions Meeting
+1. approfondir le simulateur `legacy` avec des projections encore plus proches du comportement reel d'inheritance
+2. implementer la brique `Visualizers` pour les `races` et `cm_targets`
+3. introduire les objets `builds` et les evaluations de faisabilite CM
+4. conserver la separation stricte entre reference globale, donnees utilisateur et futures couches `Meta / Insights`
 
 Document de cadrage associe:
 
 - `docs/CM_BUILD_PLAN.md`
+- `docs/EXTERNAL_SOURCES_PLAN.md`

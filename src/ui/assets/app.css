@@ -1691,6 +1691,101 @@ body.route-wizard .profile-gate::after {
   block-size: 18px;
 }
 
+.legacy-section-heading {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.legacy-section-heading h4 {
+  margin: 0;
+}
+
+.legacy-grandparent-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.legacy-grandparent-panel {
+  margin: 0;
+  border: 1px solid rgba(115, 160, 198, 0.12);
+  border-radius: 16px;
+  background: rgba(8, 17, 26, 0.5);
+  overflow: hidden;
+}
+
+.legacy-grandparent-panel summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 14px 16px;
+  font-weight: 700;
+  color: var(--ink-deep);
+  border-bottom: 1px solid rgba(115, 160, 198, 0.08);
+}
+
+.legacy-grandparent-panel summary::-webkit-details-marker {
+  display: none;
+}
+
+.legacy-grandparent-body {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.legacy-preview-ancestor-grid,
+.legacy-simulator-lineage-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.legacy-preview-ancestor-card,
+.legacy-simulator-ancestor-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(115, 160, 198, 0.12);
+  background: rgba(8, 17, 26, 0.55);
+}
+
+.legacy-preview-ancestor-card strong,
+.legacy-simulator-ancestor-card strong {
+  color: var(--ink-deep);
+}
+
+.legacy-preview-ancestor-card p,
+.legacy-simulator-ancestor-card p {
+  margin: 0;
+  color: var(--text-soft);
+}
+
+.legacy-preview-ancestor-card.is-empty,
+.legacy-simulator-ancestor-card.is-empty {
+  opacity: 0.78;
+}
+
+.legacy-simulator-ancestor-card-left {
+  border-color: rgba(85, 191, 255, 0.2);
+}
+
+.legacy-simulator-ancestor-card-right {
+  border-color: rgba(255, 146, 201, 0.2);
+}
+
+.legacy-simulator-ancestor-media {
+  inline-size: 48px;
+  block-size: 48px;
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid rgba(115, 160, 198, 0.16);
+  background: rgba(255, 255, 255, 0.03);
+}
+
 .legacy-simulator-card {
   display: grid;
   gap: 14px;
@@ -1707,6 +1802,22 @@ body.route-wizard .profile-gate::after {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+}
+
+.legacy-simulator-main-shell {
+  display: flex;
+  justify-content: center;
+}
+
+.legacy-simulator-main-card {
+  inline-size: min(100%, 420px);
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(244, 187, 98, 0.22);
+  border-radius: 16px;
+  background: rgba(8, 17, 26, 0.6);
+  box-shadow: inset 0 1px 0 rgba(244, 187, 98, 0.08);
 }
 
 .legacy-simulator-parent-card {
@@ -2803,6 +2914,9 @@ code {
 }
 
 @media (max-width: 1100px) {
+  .legacy-grandparent-grid,
+  .legacy-preview-ancestor-grid,
+  .legacy-simulator-lineage-grid,
   .legacy-simulator-parent-grid {
     grid-template-columns: 1fr;
   }

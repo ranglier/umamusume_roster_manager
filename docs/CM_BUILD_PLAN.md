@@ -158,6 +158,8 @@ Le projet a deja une base tres utile pour cette phase:
   - possession des `supports`
   - niveau / limit break des supports
   - stars / awakening des characters
+  - inventaire local `legacy / parents`
+  - simulateur d'heritage v1
 
 En bref: la reference locale actuelle couvre deja une bonne partie du "catalogue" necessaire au build, mais pas encore les couches "preparation du run", "legacy reel", "plan de build" et "evaluation CM".
 
@@ -181,19 +183,19 @@ Sans cette couche, toute recommandation de build reste trop abstraite.
 
 ### 2. Une vraie couche `legacy / parents`
 
-Le projet n'a pas encore de roster pour les parents.
-
 Mise a jour:
 
 - une premiere couche `Legacy / Parent` est maintenant en place dans `My Roster`
 - les parents sont stockes localement par profil dans `data/user/profiles/<profile_id>/legacy.json`
-- un simulateur d'heritage v1 existe deja en preview locale
+- un simulateur d'heritage local existe deja en preview locale
 - cette couche reste volontairement deterministe et explicable; elle ne remplace pas encore un moteur probabiliste complet
 - le modele de parent a ete corrige pour suivre la structure reelle:
   - `1` blue spark
   - `1` pink spark
   - `0 ou 1` green spark unique
   - `0..n` white sparks
+- chaque parent embarque maintenant aussi ses `2` sous-parents / grands-parents
+- le simulateur couvre deja la structure `main + 2 parents + 4 sous-parents` avec une preview orientee synthese
 
 Pourtant, des builds CM serieux ont besoin de:
 
@@ -202,17 +204,12 @@ Pourtant, des builds CM serieux ont besoin de:
 - quels aptitudes / scenario / G1 ils apportent
 - quelle compatibilite ils ont avec le candidat principal
 
-Il faudra donc ajouter une couche utilisateur dediee, separee du roster courant, par exemple:
+Ce qui manque maintenant n'est plus l'existence de cette couche, mais son approfondissement:
 
-- `data/user/profiles/<profile_id>/legacy.json`
-
-Cette couche devra stocker au minimum:
-
-- les parents sauvegardes
-- leur personnage / variante
-- leurs facteurs reels
-- leur build d'origine si connu
-- des notes et tags libres
+- projection d'heritage plus riche et plus proche du comportement reel
+- prise en compte plus fine des probabilites et des timings d'inheritance
+- meilleure couverture des cas reels d'inheritance
+- articulation avec les futurs objets `builds`
 
 ### 3. Une vraie couche `builds`
 
@@ -392,7 +389,6 @@ Au-dela de la reference, il nous manque aussi plusieurs briques cote profil:
 
 ### Ce que le profil ne sait pas encore stocker
 
-- parents / legacies possedes
 - builds sauvegardes
 - runs finalisees
 - tags perso de build
@@ -401,23 +397,21 @@ Au-dela de la reference, il nous manque aussi plusieurs briques cote profil:
 
 ### Ce qu'il manque dans l'UI
 
-- une page `CM Targets`
 - une page `Builds`
-- une page `Legacies`
 - un comparateur de builds
 - une vue "faisabilite" d'un build pour le profil actif
 - une vue "manques" montrant ce qu'il faut encore obtenir / monter
+- une vue `legacy` et simulateur encore plus avances pour exploiter les sous-parents / grands-parents deja stockes
 
 ### Ce qu'il manque dans l'API locale
 
 Probable extension du serveur local avec:
 
-- `GET /api/profiles/<id>/legacies`
-- `PUT /api/profiles/<id>/legacies`
 - `GET /api/profiles/<id>/builds`
 - `POST /api/profiles/<id>/builds`
 - `PUT /api/profiles/<id>/builds/<build_id>`
 - `DELETE /api/profiles/<id>/builds/<build_id>`
+- extensions `legacy` pour une projection d'heritage encore plus complete
 
 ## Ce qu'il faut mettre en place en premier
 
@@ -471,6 +465,11 @@ Statut:
 Ajouter une couche utilisateur:
 
 - `legacy roster`
+
+Statut:
+
+- deja implemente en v1 dans `My Roster`
+- a approfondir pour couvrir la simulation avancee et les probabilites detaillees d'inheritance
 
 Objectif:
 
@@ -638,6 +637,62 @@ Recommendation:
 - ne pas utiliser comme moteur principal de build
 - eventuellement utile plus tard comme couche d'explication par-dessus un moteur deterministe
 
+## Sources externes et briques complementaires
+
+En plus de GameTora, deux familles de sources externes ont ete etudiees pour consolider l'application avant l'auto-build:
+
+### 1. Brique `Visualizers`
+
+Source principale etudiee:
+
+- `https://alpha123.github.io/uma-tools/skill-visualizer-global/`
+- depot associe: `https://github.com/alpha123/uma-tools`
+
+Interet:
+
+- visualiser les zones d'activation de skills sur une course
+- mieux lire une `race` ou une `cm_target`
+- preparer la future lecture d'un package de skills dans un build CM
+
+Choix retenu:
+
+- traiter cette source comme base de cadrage pour une future brique `Visualizers`
+- ne pas l'integrer comme dependance runtime directe
+- rester prudent sur la licence `GPL-3.0-or-later` du depot en cas de reutilisation directe du code
+
+### 2. Brique `Meta / Insights`
+
+Sources principales etudiees:
+
+- `https://uma.moe/tools/statistics`
+- `https://uma.moe/tierlist`
+- backend associe: `https://github.com/Tunnelbliick/umamoe-backend`
+
+Interet:
+
+- suivre des signaux meta
+- enrichir plus tard les choix de candidates, de decks et de priorites de build
+- nourrir des heuristiques futures sans polluer la reference locale
+
+Choix retenu:
+
+- garder ces donnees dans une future couche `Meta / Insights`
+- importer en snapshots locaux dates
+- ne jamais les melanger au coeur canonique de la reference
+
+### Impact sur la suite du plan
+
+La future phase builds doit donc raisonner avec 4 couches distinctes:
+
+- `reference`
+- `roster`
+- `legacy`
+- `visualizers / meta`
+
+Le cadrage detaille de ces nouvelles briques est dans:
+
+- `docs/EXTERNAL_SOURCES_PLAN.md`
+
 ## Recommendation de strategie
 
 La strategie la plus pertinente pour ce projet semble etre:
@@ -752,12 +807,14 @@ La prochaine etape la plus saine n'est pas encore "l'auto-build".
 
 La prochaine etape recommandee est:
 
-1. ajouter `cm_targets`
-2. ajouter `scenarios`
-3. concevoir la couche `legacies`
+1. poser la brique `Visualizers`
+2. livrer un `Race Skill Visualizer` local MVP pour `races`, puis `cm_targets`
+3. approfondir `legacy` sur la partie probabiliste et explicative
 4. concevoir le format `build`
+5. definir une evaluation locale de faisabilite
+6. articuler `cm_targets`, `scenarios`, `training_events`, `legacy` et `visualizers` dans un planner exploitable
 
-Une fois ces quatre briques posees, on pourra commencer l'etude implementation par implementation du moteur de scoring, puis de l'auto-generation.
+Une fois ces briques posees, on pourra commencer l'etude implementation par implementation du moteur de scoring, puis de l'auto-generation.
 
 ## Sources utiles
 
@@ -783,3 +840,11 @@ Datasets GameTora particulierement pertinents identifies dans le manifest:
 - `ura-objectives`
 - `ura-race-rewards`
 - `status-effects`
+
+Sources externes complementaires etudiees:
+
+- `https://alpha123.github.io/uma-tools/skill-visualizer-global/`
+- `https://github.com/alpha123/uma-tools`
+- `https://uma.moe/tools/statistics`
+- `https://uma.moe/tierlist`
+- `https://github.com/Tunnelbliick/umamoe-backend`

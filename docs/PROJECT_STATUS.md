@@ -17,7 +17,7 @@ Le scope actuellement implemente est:
 - `scenarios`
 - `training_events`
 
-Les builds et l'optimisation Champions Meeting ne sont pas encore traites. Une premiere couche `legacy / parent` est maintenant presente, mais elle ne constitue pas encore un moteur complet de build CM.
+Les builds et l'optimisation Champions Meeting ne sont pas encore traites. La couche `legacy / parent` couvre maintenant les parents et leurs sous-parents embarques localement, mais elle ne constitue pas encore un moteur complet de build CM.
 
 ## Ce qui a ete realise
 
@@ -82,7 +82,7 @@ Une couche utilisateur locale a ete ajoutee via le serveur Python:
 - creation, selection et suppression de profils
 - stockage local des profils dans `data/user/`
 - stockage roster separe par profil
-- `My Roster` limite aux personnages et supports possedes
+- `My Roster` pour les `characters`, `supports` et `legacy`
 - `Catalog` pour ajouter / retirer les personnages et supports possedes
 - edition locale des personnages et supports depuis `My Roster`
 - mode `detail` pour l'edition fine
@@ -99,6 +99,8 @@ API locale ajoutee:
 - `PUT /api/profiles/<id>/roster`
 - `GET /api/profiles/<id>/roster-view/characters`
 - `GET /api/profiles/<id>/roster-view/supports`
+- `GET /api/profiles/<id>/legacy-view`
+- `POST /api/profiles/<id>/legacy-simulator/preview`
 
 ### 5. Approfondissement du roster characters / supports
 
@@ -289,15 +291,17 @@ Etat:
 - nouvelle vue `Legacy` dans `My Roster`
 - inventaire local de parents par profil dans `data/user/profiles/<profile_id>/legacy.json`
 - CRUD local complet sur les fiches parents
-- saisie assistee des sparks et facteurs
+- saisie assistee des sparks
 - modele parent realigne sur le fonctionnement reel:
   - `1` blue spark
   - `1` pink spark
   - `0 ou 1` green spark unique
   - `0..n` white sparks
-- simulateur d'heritage v1 base sur:
+- chaque parent embarque maintenant ses `2` grands-parents locaux
+- simulateur d'heritage v2 base sur:
   - le roster `characters` possede
   - deux parents issus de l'inventaire local
+  - quatre sous-parents derives des fiches parent
   - `compatibility`
   - `g1_factors`
   - `scenarios`
@@ -306,7 +310,9 @@ Choix:
 
 - une seule fiche `legacy` porte a la fois les infos de run source et de parent reutilisable
 - pas de separation `run_result` / `parent`
-- simulateur v1 deterministe et explicable, pas encore stochastique
+- les sous-parents sont stockes en embarque local dans chaque fiche parent, sans recursion supplementaire
+- simulateur deterministe et explicable, pas encore stochastique
+- UI `legacy` avec edition plus guidee, sections grands-parents et choix visuel des parents / sous-parents dans le simulateur
 
 ### Python pour le pipeline d'update
 
@@ -376,17 +382,48 @@ Apres clonage, un import local est donc necessaire pour regenerer les donnees et
 - parents personnels
 - heuristiques Champions Meeting
 - decodage semantique fin des outcomes de `training_events`
+- briques `Visualizers` et `Meta / Insights`
+
+## Sources externes preparees
+
+Une etude de sources externes complementaires a GameTora a ete menee pour renforcer le projet avant le moteur de build:
+
+- `alpha123 / uma-tools`
+  - retenu comme base de cadrage pour une future brique `Visualizers`
+  - cible prioritaire: visualisation des skills sur `races`, puis `cm_targets`
+- `uma.moe`
+  - retenu comme source potentielle pour une future brique `Meta / Insights`
+  - cible: statistiques, tierlists et signaux meta, stockes en snapshots locaux
+- `umamoe-backend`
+  - retenu surtout comme inspiration d'architecture pour la recherche `legacy` / inheritance et, plus tard, l'aide aux builds
+
+Choix structurants:
+
+- ne pas integrer ces sources dans le coeur de `reference`
+- ne pas dependre d'elles a l'execution de l'UI
+- commencer par `Visualizers`, puis seulement ensuite `Meta / Insights`
+- documenter explicitement:
+  - la prudence a avoir face a la licence `GPL-3.0-or-later` de `uma-tools`
+  - la faisabilite d'un visualizer maison
+  - l'estimation de charge pour un MVP puis une version orientee build
+
+Le cadrage dedie est dans:
+
+- `docs/EXTERNAL_SOURCES_PLAN.md`
 
 ## Prochaine etape logique
 
-La suite naturelle est maintenant d'enrichir la phase 2:
+La suite naturelle est maintenant d'enrichir la phase 2 et de preparer la phase builds:
 
-- exploiter le roster enrichi pour la future couche `legacies`
-- ajouter la couche `legacies`
+- approfondir le simulateur `legacy` au-dela de la projection deterministe actuelle
+- poser la brique `Visualizers` pour les `races` et `cm_targets`
 - exploiter `cm_targets` et `scenarios` comme vraies cibles de planification
+- introduire les objets `builds` et les evaluations de faisabilite
 - conserver la separation stricte entre reference globale et donnees utilisateur
+- preparer une future couche `Meta / Insights` separee du referentiel canonique
 - preparer ensuite les croisements necessaires a la phase builds / CM
 
 Un cadrage dedie a la future couche `builds / Champions Meeting` est disponible dans:
 
 - `docs/CM_BUILD_PLAN.md`
+- `docs/EXTERNAL_SOURCES_PLAN.md`
