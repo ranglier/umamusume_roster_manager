@@ -142,6 +142,10 @@ body.legacy-detail-expanded .app-layout {
   grid-template-columns: minmax(320px, 0.76fr) minmax(620px, 1.24fr);
 }
 
+body.legacy-detail-expanded.legacy-create-active .app-layout {
+  grid-template-columns: minmax(280px, 0.62fr) minmax(860px, 1.38fr);
+}
+
 .main-column {
   min-width: 0;
   display: grid;
@@ -1559,6 +1563,125 @@ body.route-wizard .profile-gate::after {
   background: rgba(8, 17, 26, 0.42);
 }
 
+.legacy-create-wizard .detail-section {
+  margin-block-start: 0;
+}
+
+.legacy-create-wizard .legacy-grandparent-grid {
+  grid-template-columns: 1fr;
+}
+
+.legacy-create-wizard .legacy-factor-adder {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.legacy-wizard-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 18px 0 20px;
+}
+
+.legacy-wizard-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(115, 160, 198, 0.12);
+  border-radius: 14px;
+  background: rgba(8, 17, 26, 0.35);
+  color: var(--text-soft);
+}
+
+.legacy-wizard-step.is-active {
+  border-color: rgba(87, 156, 210, 0.32);
+  background: rgba(11, 26, 40, 0.82);
+  color: var(--ink-deep);
+}
+
+.legacy-wizard-step.is-complete {
+  border-color: rgba(67, 164, 101, 0.22);
+  background: rgba(11, 31, 23, 0.62);
+}
+
+.legacy-wizard-step-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 26px;
+  block-size: 26px;
+  border-radius: 999px;
+  background: rgba(244, 187, 98, 0.16);
+  color: var(--ink-deep);
+  font-weight: 700;
+}
+
+.legacy-wizard-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(260px, 0.72fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.legacy-wizard-main {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.legacy-wizard-summary {
+  position: sticky;
+  top: calc(var(--sticky-offset) + 8px);
+}
+
+.legacy-wizard-summary-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid rgba(115, 160, 198, 0.14);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(10, 20, 31, 0.94), rgba(7, 15, 24, 0.9));
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.24);
+}
+
+.legacy-wizard-summary-card h4 {
+  margin: 0;
+}
+
+.legacy-wizard-summary-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.legacy-wizard-summary-grid > div {
+  display: grid;
+  gap: 4px;
+}
+
+.legacy-wizard-summary-grid span {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.legacy-wizard-summary-grid strong {
+  color: var(--ink-deep);
+}
+
+.legacy-wizard-summary-lineage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.legacy-wizard-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
 .legacy-spark-card h4 {
   margin: 0;
 }
@@ -2911,6 +3034,14 @@ code {
   .active-profile-actions {
     display: grid;
   }
+
+  .legacy-wizard-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .legacy-wizard-summary {
+    position: static;
+  }
 }
 
 @media (max-width: 1100px) {
@@ -2922,6 +3053,10 @@ code {
   }
 
   .legacy-simulator-choice-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .legacy-wizard-steps {
     grid-template-columns: 1fr;
   }
 

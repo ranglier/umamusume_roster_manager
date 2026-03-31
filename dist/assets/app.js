@@ -164,6 +164,28 @@
     { value: "scenario_mecha", label: "Run! Mecha Umamusume" },
     { value: "scenario_legend", label: "Twinkle Legends" },
   ];
+  const LEGACY_RATING_OPTIONS = [
+    { value: "", label: "Unknown" },
+    { value: "G", label: "G" },
+    { value: "F", label: "F" },
+    { value: "E", label: "E" },
+    { value: "E+", label: "E+" },
+    { value: "D", label: "D" },
+    { value: "D+", label: "D+" },
+    { value: "C", label: "C" },
+    { value: "C+", label: "C+" },
+    { value: "B", label: "B" },
+    { value: "B+", label: "B+" },
+    { value: "A", label: "A" },
+    { value: "A+", label: "A+" },
+    { value: "S", label: "S" },
+    { value: "S+", label: "S+" },
+    { value: "SS", label: "SS" },
+    { value: "SS+", label: "SS+" },
+    { value: "UF", label: "UF" },
+    { value: "UG", label: "UG" },
+    { value: "UE", label: "UE" },
+  ];
 
   function createEmptyLegacySparkState() {
     return {
@@ -177,7 +199,7 @@
       greenEnabled: false,
       greenStars: 3,
       whiteSparks: [],
-      whiteKind: "scenario",
+      whiteKind: "skill",
       whiteTargetKey: "",
       whiteQuery: "",
       whiteStars: 3,
@@ -245,6 +267,7 @@
     legacyView: { profile_id: null, updated_at: "", items: [], filter_definitions: [], filter_options: {} },
     legacyStatus: { kind: "idle", message: "" },
     legacyEditor: createEmptyLegacyEditorState(),
+    legacyCreateStep: 1,
     legacyFormDraft: null,
     legacySimulator: {
       main_character_id: "",
@@ -964,19 +987,26 @@
     return asArray(data.entities?.[entityKey]?.items);
   }
 
-  function getOwnedCharacterOptions() {
+  function getAllCharacterOptions() {
     return getEntityItems("characters")
-      .filter((item) => getRosterEntry("characters", item).owned)
       .map((item) => ({
         value: item.id,
         label: item.subtitle ? `${item.title} ${item.subtitle}` : item.title,
+        availabilityEn: String(item.filters?.availability_en || "").toLowerCase(),
+        owned: Boolean(getRosterEntry("characters", item).owned),
       }))
       .sort((left, right) => left.label.localeCompare(right.label));
   }
 
+  function getOwnedCharacterOptions() {
+    return getAllCharacterOptions().filter((item) => item.owned);
+  }
+
   function getLegacyCharacterOptions(selectedCharacterCardId) {
     const optionsById = new Map(
-      getOwnedCharacterOptions().map((option) => [String(option.value), option]),
+      getAllCharacterOptions()
+        .filter((option) => option.availabilityEn === "available")
+        .map((option) => [String(option.value), option]),
     );
     const selectedId = String(selectedCharacterCardId || "").trim();
     if (selectedId && !optionsById.has(selectedId)) {
@@ -985,7 +1015,9 @@
         const label = item.subtitle ? `${item.title} ${item.subtitle}` : item.title;
         optionsById.set(selectedId, {
           value: selectedId,
-          label: `${label} (not owned)`,
+          label,
+          availabilityEn: String(item.filters?.availability_en || "").toLowerCase(),
+          owned: false,
         });
       }
     }
@@ -996,12 +1028,19 @@
     return getEntityItems("characters").find((item) => String(item.id) === String(characterCardId)) || null;
   }
 
+  function getCharacterBaseRarity(characterCardId) {
+    return Number(getCharacterReferenceItem(characterCardId)?.detail?.rarity) || 0;
+  }
+
   function getCharacterRosterDefaults(characterCardId) {
     const item = getCharacterReferenceItem(characterCardId);
     const entry = item ? getRosterEntry("characters", item) : null;
+    const isOwned = Boolean(entry?.owned);
     return {
-      stars: clampNumber(entry?.stars, 0, 5, Number(item?.detail?.rarity) || 0),
-      awakening: clampNumber(entry?.awakening, 0, 5, 0),
+      stars: isOwned
+        ? clampNumber(entry?.stars, 0, 5, Number(item?.detail?.rarity) || 0)
+        : (Number(item?.detail?.rarity) || 0),
+      awakening: isOwned ? clampNumber(entry?.awakening, 0, 5, 0) : 0,
     };
   }
 
@@ -1013,7 +1052,7 @@
 
   function characterSupportsGreenSpark(characterCardId, starsOverride = null) {
     const resolvedStars = starsOverride == null
-      ? getCharacterRosterDefaults(characterCardId).stars
+      ? getCharacterBaseRarity(characterCardId)
       : clampNumber(starsOverride, 0, 5, 0);
     return resolvedStars >= 3 && Boolean(getCharacterUniqueSkill(characterCardId));
   }
@@ -1049,10 +1088,22 @@
       }));
     }
     if (kind === "skill") {
-      return getEntityItems("skills").map((item) => ({
-        value: String(item.detail?.skill_id || item.id),
-        label: item.title,
-      }));
+      return getEntityItems("skills")
+        .filter((item) => {
+          const title = String(item.title || "").trim();
+          const rarity = String(item.detail?.rarity || "").toLowerCase();
+          const isUnique =
+            rarity === "unique" ||
+            Boolean(item.detail?.is_unique) ||
+            asArray(item.badges).some((badge) => String(badge || "").toLowerCase() === "unique");
+          const isNegative = /[×◎]$/i.test(title);
+          const isTechnicalSkillFactor = /^skill\s*:/i.test(title);
+          return !isUnique && !isNegative && !isTechnicalSkillFactor;
+        })
+        .map((item) => ({
+          value: String(item.detail?.skill_id || item.id),
+          label: item.title,
+        }));
     }
     return [];
   }
@@ -1674,7 +1725,7 @@
     nextState.greenEnabled = Boolean(greenSpark);
     nextState.greenStars = clampNumber(greenSpark?.stars, 1, 3, 3);
     nextState.whiteSparks = whiteSparks;
-    nextState.whiteKind = whiteSparks[0]?.kind || "scenario";
+    nextState.whiteKind = whiteSparks[0]?.kind || "skill";
     nextState.whiteStars = clampNumber(whiteSparks[0]?.stars, 1, 3, 3);
     const whiteOptions = getLegacyFactorTargetOptions(nextState.whiteKind);
     nextState.whiteTargetKey = whiteSparks[0]?.target_key && whiteOptions.some((option) => option.value === whiteSparks[0].target_key)
@@ -1706,7 +1757,7 @@
 
   function createLegacyEditorStateFromEntry(entry, targetKey) {
     const nextState = createEmptyLegacyEditorState();
-    const fallbackCharacterId = getOwnedCharacterOptions()[0]?.value || "";
+    const fallbackCharacterId = getLegacyCharacterOptions("")[0]?.value || "";
     const characterCardId = String(entry?.character_card_id || fallbackCharacterId || "");
     const blueSpark = entry?.blue_spark || asArray(entry?.factors).find((factor) => factor?.kind === "stat") || null;
     const pinkSpark = entry?.pink_spark || asArray(entry?.factors).find((factor) => ["surface", "distance", "style"].includes(factor?.kind)) || null;
@@ -1724,7 +1775,7 @@
     nextState.greenEnabled = Boolean(greenSpark);
     nextState.greenStars = clampNumber(greenSpark?.stars, 1, 3, 3);
     nextState.whiteSparks = whiteSparks;
-    nextState.whiteKind = whiteSparks[0]?.kind || "scenario";
+    nextState.whiteKind = whiteSparks[0]?.kind || "skill";
     nextState.whiteStars = clampNumber(whiteSparks[0]?.stars, 1, 3, 3);
     const whiteOptions = getLegacyFactorTargetOptions(nextState.whiteKind);
     nextState.whiteTargetKey = whiteSparks[0]?.target_key && whiteOptions.some((option) => option.value === whiteSparks[0].target_key)
@@ -1743,6 +1794,9 @@
       return;
     }
     state.legacyEditor = createLegacyEditorStateFromEntry(entry, targetKey);
+    if (targetKey === "__new__") {
+      state.legacyCreateStep = 1;
+    }
     state.legacyFormDraft = null;
   }
 
@@ -1752,25 +1806,21 @@
       return;
     }
     const formData = new FormData(legacyForm);
+    const previousDraft = state.legacyFormDraft || {};
+    const readField = (name) => (
+      formData.has(name)
+        ? String(formData.get(name) || "").trim()
+        : String(previousDraft[name] || "")
+    );
     state.legacyFormDraft = {
-      scenario_id: String(formData.get("scenario_id") || "").trim(),
-      stars: String(formData.get("stars") || "").trim(),
-      awakening: String(formData.get("awakening") || "").trim(),
-      source_date: String(formData.get("source_date") || "").trim(),
-      source_note: String(formData.get("source_note") || "").trim(),
-      note: String(formData.get("note") || "").trim(),
-      custom_tags: String(formData.get("custom_tags") || "").trim(),
-      status_flags: String(formData.get("status_flags") || "").trim(),
-      gp_left_scenario_id: String(formData.get("gp_left_scenario_id") || "").trim(),
-      gp_left_stars: String(formData.get("gp_left_stars") || "").trim(),
-      gp_left_awakening: String(formData.get("gp_left_awakening") || "").trim(),
-      gp_left_source_date: String(formData.get("gp_left_source_date") || "").trim(),
-      gp_left_note: String(formData.get("gp_left_note") || "").trim(),
-      gp_right_scenario_id: String(formData.get("gp_right_scenario_id") || "").trim(),
-      gp_right_stars: String(formData.get("gp_right_stars") || "").trim(),
-      gp_right_awakening: String(formData.get("gp_right_awakening") || "").trim(),
-      gp_right_source_date: String(formData.get("gp_right_source_date") || "").trim(),
-      gp_right_note: String(formData.get("gp_right_note") || "").trim(),
+      scenario_id: readField("scenario_id"),
+      rating: readField("rating"),
+      custom_tags: readField("custom_tags"),
+      status_flags: readField("status_flags"),
+      gp_left_scenario_id: readField("gp_left_scenario_id"),
+      gp_left_rating: readField("gp_left_rating"),
+      gp_right_scenario_id: readField("gp_right_scenario_id"),
+      gp_right_rating: readField("gp_right_rating"),
     };
   }
 
@@ -1839,21 +1889,13 @@
               </select>
             </label>
             <label class="field-stack field-stack-search">
-              <span>Search Spark</span>
-              <input id="${idPrefix}PinkQuery" class="legacy-search-input" type="search" placeholder="Search spark..." value="${escapeHtml(sparkState.pinkQuery || "")}">
-              <small class="legacy-select-meta">${escapeHtml(
-                pinkTargetOptions.hasQuery
-                  ? `${pinkTargetOptions.visibleCount} result(s)`
-                  : pinkTargetOptions.isLimited
-                    ? `${pinkTargetOptions.visibleCount}/${pinkTargetOptions.totalCount} shown. Type to narrow.`
-                    : `${pinkTargetOptions.totalCount} option(s)`,
-              )}</small>
-            </label>
-            <label class="field-stack field-stack-search">
               <span>Spark</span>
               <select id="${idPrefix}PinkTarget" class="legacy-themed-select">
                 ${renderLegacyTargetOptions(pinkTargetOptions.options, sparkState.pinkTargetKey)}
               </select>
+              <small class="legacy-select-meta">${escapeHtml(
+                `${pinkTargetOptions.totalCount} option(s)`,
+              )}</small>
             </label>
             <label class="field-stack">
               <span>Stars</span>
@@ -1932,12 +1974,7 @@
     const slotLabel = slotKey === "left" ? "Left Grandparent" : "Right Grandparent";
     const sparkState = getLegacyEditorSparkState(slotKey);
     const currentCharacterId = sparkState.characterCardId || String(entry?.character_card_id || "");
-    const currentStars = clampNumber(
-      formDraft?.[`${slotKey}_stars`] ?? entry?.stars ?? getCharacterRosterDefaults(currentCharacterId).stars,
-      0,
-      5,
-      0,
-    );
+    const currentStars = getCharacterBaseRarity(currentCharacterId);
     const characterOptions = getLegacyCharacterOptions(currentCharacterId);
     const scenarioOptions = getLegacyScenarioOptions();
 
@@ -1961,20 +1998,10 @@
               </select>
             </label>
             <label class="field-stack">
-              <span>Stars</span>
-              <input name="gp_${slotKey}_stars" type="number" min="0" max="5" value="${escapeHtml(formDraft?.[`${slotKey}_stars`] ?? entry?.stars ?? 0)}">
-            </label>
-            <label class="field-stack">
-              <span>Awakening</span>
-              <input name="gp_${slotKey}_awakening" type="number" min="0" max="5" value="${escapeHtml(formDraft?.[`${slotKey}_awakening`] ?? entry?.awakening ?? 0)}">
-            </label>
-            <label class="field-stack field-stack-full">
-              <span>Run Date</span>
-              <input name="gp_${slotKey}_source_date" type="text" placeholder="Optional free date" value="${escapeHtml(formDraft?.[`${slotKey}_source_date`] ?? entry?.source_date ?? "")}">
-            </label>
-            <label class="field-stack field-stack-full">
-              <span>Note</span>
-              <textarea name="gp_${slotKey}_note" rows="3" placeholder="Optional local note">${escapeHtml(formDraft?.[`${slotKey}_note`] ?? entry?.note ?? "")}</textarea>
+              <span>Rating</span>
+              <select name="gp_${slotKey}_rating" class="roster-themed-select">
+                ${LEGACY_RATING_OPTIONS.map((option) => `<option value="${escapeHtml(option.value)}" ${option.value === String(formDraft?.[`${slotKey}_rating`] ?? entry?.rating ?? "") ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
+              </select>
             </label>
           </div>
           ${renderLegacySparkEditor(slotKey, currentStars)}
@@ -1983,20 +2010,202 @@
     `;
   }
 
-  function renderLegacyEditor(entry, isCreateMode) {
-    ensureLegacyEditorState(entry, isCreateMode ? "__new__" : entry.id);
-    const draft = state.legacyFormDraft || {};
-    const currentCharacterStars = clampNumber(
-      draft.stars ?? entry.stars ?? getCharacterRosterDefaults(state.legacyEditor.characterCardId || entry.character_card_id).stars,
-      0,
-      5,
-      0,
-    );
-    const characterOptions = getLegacyCharacterOptions(state.legacyEditor.characterCardId || entry.character_card_id);
-    const scenarioOptions = getLegacyScenarioOptions();
+  function renderLegacyWizardStepNav(currentStep) {
+    const steps = [
+      { step: 1, label: "Parent identity" },
+      { step: 2, label: "Direct sparks" },
+      { step: 3, label: "Grandparents" },
+    ];
+    return `
+      <div class="legacy-wizard-steps" aria-label="Parent creation steps">
+        ${steps.map(({ step, label }) => `
+          <div class="legacy-wizard-step ${step === currentStep ? "is-active" : step < currentStep ? "is-complete" : ""}">
+            <span class="legacy-wizard-step-index">${step}</span>
+            <span>${escapeHtml(label)}</span>
+          </div>
+        `).join("")}
+      </div>
+    `;
+  }
+
+  function renderLegacyWizardSummary(entry, draft, selectedCharacterCardId, lineageCount) {
+    const selectedItem = getCharacterReferenceItem(selectedCharacterCardId);
+    const characterLabel = selectedItem
+      ? (selectedItem.subtitle ? `${selectedItem.title} ${selectedItem.subtitle}` : selectedItem.title)
+      : "Select a parent";
+    const scenarioLabel = getLegacyScenarioLabel(draft.scenario_id || entry.scenario_id || "") || "Unknown";
+    const directBlue = buildLegacyFactorPayload("stat", state.legacyEditor.blueTargetKey, state.legacyEditor.blueStars, {
+      characterCardId: selectedCharacterCardId,
+    });
+    const directPink = buildLegacyFactorPayload(state.legacyEditor.pinkKind, state.legacyEditor.pinkTargetKey, state.legacyEditor.pinkStars, {
+      characterCardId: selectedCharacterCardId,
+    });
+    const greenAvailable = characterSupportsGreenSpark(selectedCharacterCardId);
+    const leftGrandparent = getLegacyEditorSparkState("left").characterCardId || deriveLegacyGrandparentEntry(entry, "left");
+    const rightGrandparent = getLegacyEditorSparkState("right").characterCardId || deriveLegacyGrandparentEntry(entry, "right");
+    return `
+      <aside class="legacy-wizard-summary">
+        <div class="legacy-wizard-summary-card">
+          <span class="eyebrow">Parent Summary</span>
+          <h4>${escapeHtml(characterLabel)}</h4>
+          <div class="legacy-wizard-summary-grid">
+            <div>
+              <span>Scenario</span>
+              <strong>${escapeHtml(scenarioLabel)}</strong>
+            </div>
+            <div>
+              <span>Rating</span>
+              <strong>${escapeHtml(draft.rating ?? entry.rating ?? "-")}</strong>
+            </div>
+            <div>
+              <span>Blue spark</span>
+              <strong>${escapeHtml(directBlue ? formatLegacyFactorLabel(directBlue) : "Missing")}</strong>
+            </div>
+            <div>
+              <span>Pink spark</span>
+              <strong>${escapeHtml(directPink ? formatLegacyFactorLabel(directPink) : "Missing")}</strong>
+            </div>
+            <div>
+              <span>Green spark</span>
+              <strong>${escapeHtml(
+                greenAvailable
+                  ? (getCharacterUniqueSkill(selectedCharacterCardId)?.name || "Eligible")
+                  : "Unavailable",
+              )}</strong>
+            </div>
+            <div>
+              <span>White sparks</span>
+              <strong>${escapeHtml(String(state.legacyEditor.whiteSparks.length))}</strong>
+            </div>
+            <div>
+              <span>Grandparents</span>
+              <strong>${escapeHtml(`${lineageCount}/2 configured`)}</strong>
+            </div>
+            <div>
+              <span>Lineage state</span>
+              <strong>${escapeHtml(
+                lineageCount === 2 ? "Complete" : lineageCount === 1 ? "Partial" : "Direct only",
+              )}</strong>
+            </div>
+          </div>
+          <div class="legacy-wizard-summary-lineage">
+            <div>${renderBadge(leftGrandparent ? "Left ready" : "Left missing", leftGrandparent ? "good" : "muted")}</div>
+            <div>${renderBadge(rightGrandparent ? "Right ready" : "Right missing", rightGrandparent ? "good" : "muted")}</div>
+          </div>
+        </div>
+      </aside>
+    `;
+  }
+
+  function renderLegacyWizardIdentityStep(entry, draft, characterOptions, scenarioOptions, selectedCharacterCardId) {
+    const canSelectCharacter = characterOptions.length > 0;
+    return `
+      <div class="detail-section">
+        <h4>Parent identity</h4>
+        <p class="source-note">Pick an EN-available Uma, set its run scenario and keep only the rating plus spark structure needed for inheritance planning.</p>
+        <div class="roster-field-grid">
+          <label class="field-stack">
+            <span>Parent Character</span>
+            <select name="character_card_id" class="roster-themed-select">
+              ${canSelectCharacter
+                ? characterOptions.map((option) => `<option value="${escapeHtml(option.value)}" ${option.value === String(selectedCharacterCardId || "") ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")
+                : `<option value="">No EN character available</option>`}
+            </select>
+          </label>
+          <label class="field-stack">
+            <span>Run Scenario</span>
+            <select name="scenario_id" class="roster-themed-select">
+              <option value="">Unknown</option>
+              ${scenarioOptions.map((option) => `<option value="${escapeHtml(option.value)}" ${option.value === String(draft.scenario_id ?? entry.scenario_id ?? "") ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
+            </select>
+          </label>
+          <label class="field-stack">
+            <span>Rating</span>
+            <select name="rating" class="roster-themed-select">
+              ${LEGACY_RATING_OPTIONS.map((option) => `<option value="${escapeHtml(option.value)}" ${option.value === String(draft.rating ?? entry.rating ?? "") ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
+            </select>
+          </label>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderLegacyWizardDirectSparksStep(currentCharacterStars) {
+    return `
+      <div class="detail-section">
+        <h4>Direct sparks</h4>
+        <p class="source-note">Configure the direct inheritance payload of the parent. Blue and pink sparks are required. White sparks remain optional.</p>
+        ${renderLegacySparkEditor("main", currentCharacterStars)}
+      </div>
+    `;
+  }
+
+  function renderLegacyWizardGrandparentsStep(entry, draft, leftGrandparent, rightGrandparent, lineageCount) {
+    return `
+      <div class="detail-section">
+        <div class="legacy-section-heading">
+          <h4>Grandparents</h4>
+          <span class="source-note">${escapeHtml(`${lineageCount}/2 configured`)}</span>
+        </div>
+        <p class="source-note">Grandparents are optional, but they make the lineage much more representative for the simulator.</p>
+        <div class="legacy-grandparent-grid">
+          ${renderLegacyGrandparentEditor("left", leftGrandparent, {
+            left_scenario_id: draft.gp_left_scenario_id,
+            left_rating: draft.gp_left_rating,
+          })}
+          ${renderLegacyGrandparentEditor("right", rightGrandparent, {
+            right_scenario_id: draft.gp_right_scenario_id,
+            right_rating: draft.gp_right_rating,
+          })}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderLegacyCreateWizard(entry, draft, selectedCharacterCardId, characterOptions, scenarioOptions, currentCharacterStars) {
+    const currentStep = clampNumber(state.legacyCreateStep, 1, 3, 1);
+    const leftGrandparent = deriveLegacyGrandparentEntry(entry, "left");
+    const rightGrandparent = deriveLegacyGrandparentEntry(entry, "right");
+    const lineageCount = ["left", "right"].filter((slotKey) => {
+      const sparkState = getLegacyEditorSparkState(slotKey);
+      return Boolean(sparkState.characterCardId || deriveLegacyGrandparentEntry(entry, slotKey));
+    }).length;
+    const canSelectCharacter = characterOptions.length > 0;
+    const stepBody = currentStep === 1
+      ? renderLegacyWizardIdentityStep(entry, draft, characterOptions, scenarioOptions, selectedCharacterCardId)
+      : currentStep === 2
+        ? renderLegacyWizardDirectSparksStep(currentCharacterStars)
+        : renderLegacyWizardGrandparentsStep(entry, draft, leftGrandparent, rightGrandparent, lineageCount);
+
+    return `
+      <div class="detail-section roster-section legacy-create-wizard">
+        <h3>Create Parent</h3>
+        <p class="source-note">Create a reusable legacy parent in three compact steps. The simulator still uses only owned mains, but parent sheets can reference any EN-available Uma.</p>
+        ${renderLegacyWizardStepNav(currentStep)}
+        <form id="legacyForm" class="roster-form" data-legacy-mode="create">
+          <div class="legacy-wizard-layout">
+            <div class="legacy-wizard-main">
+              ${stepBody}
+              <div class="legacy-wizard-actions">
+                ${currentStep > 1 ? `<button type="button" class="button-secondary" id="legacyWizardPrev">Previous</button>` : `<span></span>`}
+                ${currentStep < 3
+                  ? `<button type="button" class="button-strong" id="legacyWizardNext" ${canSelectCharacter ? "" : "disabled"}>Next step</button>`
+                  : `<button type="submit" class="button-strong" ${canSelectCharacter ? "" : "disabled"}>Create parent</button>`}
+              </div>
+              <p id="legacyStatus" class="source-note ${state.legacyStatus.kind === "error" ? "error-text" : ""}">${escapeHtml(
+                state.legacyStatus.message || "Changes are stored locally for the active profile.",
+              )}</p>
+            </div>
+            ${renderLegacyWizardSummary(entry, draft, selectedCharacterCardId, lineageCount)}
+          </div>
+        </form>
+      </div>
+    `;
+  }
+
+  function renderLegacyDetailedEditor(entry, draft, selectedCharacterCardId, characterOptions, scenarioOptions, currentCharacterStars) {
     const statusText = state.legacyStatus.message || "Changes are stored locally for the active profile.";
     const canSelectCharacter = characterOptions.length > 0;
-    const selectedCharacterCardId = state.legacyEditor.characterCardId || String(entry.character_card_id || "") || characterOptions[0]?.value || "";
     const leftGrandparent = deriveLegacyGrandparentEntry(entry, "left");
     const rightGrandparent = deriveLegacyGrandparentEntry(entry, "right");
     const lineageCount = ["left", "right"].filter((slotKey) => {
@@ -2006,16 +2215,16 @@
 
     return `
       <div class="detail-section roster-section">
-        <h3>${isCreateMode ? "Create Parent" : "Legacy Parent"}</h3>
-        <p class="source-note">Store the run source and the reusable inheritance data in a single local sheet.${canSelectCharacter ? "" : " Add at least one owned character to My Roster before creating a parent."}</p>
-        <form id="legacyForm" class="roster-form" data-legacy-mode="${isCreateMode ? "create" : "edit"}" data-legacy-id="${escapeHtml(entry.id || "")}">
+        <h3>Legacy Parent</h3>
+        <p class="source-note">Store the reusable inheritance data in a single local sheet, with a compact rating-based summary instead of run progression details.</p>
+        <form id="legacyForm" class="roster-form" data-legacy-mode="edit" data-legacy-id="${escapeHtml(entry.id || "")}">
           <div class="roster-field-grid">
             <label class="field-stack">
               <span>Parent Character</span>
               <select name="character_card_id" class="roster-themed-select">
                 ${canSelectCharacter
                   ? characterOptions.map((option) => `<option value="${escapeHtml(option.value)}" ${option.value === String(selectedCharacterCardId || "") ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")
-                  : `<option value="">No owned character available</option>`}
+                  : `<option value="">No EN character available</option>`}
               </select>
             </label>
             <label class="field-stack">
@@ -2026,20 +2235,10 @@
               </select>
             </label>
             <label class="field-stack">
-              <span>Stars</span>
-              <input name="stars" type="number" min="0" max="5" value="${escapeHtml(draft.stars ?? entry.stars ?? 0)}">
-            </label>
-            <label class="field-stack">
-              <span>Awakening</span>
-              <input name="awakening" type="number" min="0" max="5" value="${escapeHtml(draft.awakening ?? entry.awakening ?? 0)}">
-            </label>
-            <label class="field-stack field-stack-full">
-              <span>Run Date</span>
-              <input name="source_date" type="text" placeholder="Optional free date" value="${escapeHtml(draft.source_date ?? entry.source_date ?? "")}">
-            </label>
-            <label class="field-stack field-stack-full">
-              <span>Run Source Note</span>
-              <textarea name="source_note" rows="3" placeholder="Scenario choices, source build notes, run comments">${escapeHtml(draft.source_note ?? entry.source_note ?? "")}</textarea>
+              <span>Rating</span>
+              <select name="rating" class="roster-themed-select">
+                ${LEGACY_RATING_OPTIONS.map((option) => `<option value="${escapeHtml(option.value)}" ${option.value === String(draft.rating ?? entry.rating ?? "") ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
+              </select>
             </label>
           </div>
           <div class="detail-section">
@@ -2054,34 +2253,34 @@
             <div class="legacy-grandparent-grid">
               ${renderLegacyGrandparentEditor("left", leftGrandparent, {
                 left_scenario_id: draft.gp_left_scenario_id,
-                left_stars: draft.gp_left_stars,
-                left_awakening: draft.gp_left_awakening,
-                left_source_date: draft.gp_left_source_date,
-                left_note: draft.gp_left_note,
+                left_rating: draft.gp_left_rating,
               })}
               ${renderLegacyGrandparentEditor("right", rightGrandparent, {
                 right_scenario_id: draft.gp_right_scenario_id,
-                right_stars: draft.gp_right_stars,
-                right_awakening: draft.gp_right_awakening,
-                right_source_date: draft.gp_right_source_date,
-                right_note: draft.gp_right_note,
+                right_rating: draft.gp_right_rating,
               })}
             </div>
           </div>
-          ${renderRosterLocalNotes({
-            ...entry,
-            custom_tags: draft.custom_tags != null ? parseRosterTokenList(draft.custom_tags) : entry.custom_tags,
-            status_flags: draft.status_flags != null ? parseRosterTokenList(draft.status_flags) : entry.status_flags,
-            note: draft.note != null ? draft.note : entry.note,
-          })}
           <div class="roster-actions">
-            <button type="submit" class="button-strong" ${canSelectCharacter ? "" : "disabled"}>${isCreateMode ? "Create parent" : "Save parent"}</button>
-            ${isCreateMode ? "" : `<button type="button" class="button-secondary" id="deleteLegacyButton">Delete parent</button>`}
+            <button type="submit" class="button-strong" ${canSelectCharacter ? "" : "disabled"}>Save parent</button>
+            <button type="button" class="button-secondary" id="deleteLegacyButton">Delete parent</button>
           </div>
           <p id="legacyStatus" class="source-note ${state.legacyStatus.kind === "error" ? "error-text" : ""}">${escapeHtml(statusText)}</p>
         </form>
       </div>
     `;
+  }
+
+  function renderLegacyEditor(entry, isCreateMode) {
+    ensureLegacyEditorState(entry, isCreateMode ? "__new__" : entry.id);
+    const draft = state.legacyFormDraft || {};
+    const currentCharacterStars = getCharacterBaseRarity(state.legacyEditor.characterCardId || entry.character_card_id);
+    const characterOptions = getLegacyCharacterOptions(state.legacyEditor.characterCardId || entry.character_card_id);
+    const scenarioOptions = getLegacyScenarioOptions();
+    const selectedCharacterCardId = state.legacyEditor.characterCardId || String(entry.character_card_id || "") || characterOptions[0]?.value || "";
+    return isCreateMode
+      ? renderLegacyCreateWizard(entry, draft, selectedCharacterCardId, characterOptions, scenarioOptions, currentCharacterStars)
+      : renderLegacyDetailedEditor(entry, draft, selectedCharacterCardId, characterOptions, scenarioOptions, currentCharacterStars);
   }
 
   function renderLegacyDetailBody(detail) {
@@ -2091,20 +2290,13 @@
     const grandparents = asArray(detail?.grandparents);
     return `
       <div class="detail-section">
-        <h3>Run Source</h3>
+        <h3>Parent Overview</h3>
         ${tableFromRows([
           ["Scenario", escapeHtml(entry.scenario_name || "Unknown")],
-          ["Run Date", escapeHtml(entry.source_date || "-")],
-          ["Stars / Awakening", escapeHtml(`${entry.stars ?? 0} / ${entry.awakening ?? 0}`)],
+          ["Rating", escapeHtml(entry.rating || "-")],
           ["Lineage", escapeHtml(`${lineage.filled_count || 0}/${lineage.total || 2} grandparents`)],
         ])}
       </div>
-      ${entry.source_note ? `
-        <div class="detail-section">
-          <h3>Run Source Note</h3>
-          <p>${escapeHtml(entry.source_note)}</p>
-        </div>
-      ` : ""}
       <div class="detail-section">
         <h3>Spark Structure</h3>
         ${tableFromRows([
@@ -2153,6 +2345,7 @@
                     <span class="legacy-simulator-slot">${escapeHtml(grandparent.slot_label)}</span>
                     <strong>${escapeHtml(grandparent.title || "Unknown grandparent")}</strong>
                     <p>${escapeHtml(grandparent.subtitle || grandparent.scenario_name || "")}</p>
+                    ${grandparent.rating ? `<div class="badge-row">${renderBadge(`Rating ${grandparent.rating}`)}</div>` : ""}
                     <div class="badge-row">
                       ${renderLegacySimulatorSparkBadges({ detail: { spark_summary: grandparent.spark_summary } }).map((badge) => renderBadge(badge)).join("")}
                     </div>
@@ -3657,6 +3850,7 @@
         newLegacyButton.addEventListener("click", () => {
           localState.presentation = "parents";
           state.legacyStatus = { kind: "idle", message: "" };
+          state.legacyCreateStep = 1;
           setBrowseHash(route.mode, route.entityKey, "__new__");
         });
       }
@@ -3897,6 +4091,7 @@
             <strong>${escapeHtml(item.title)}</strong>
             <p>${escapeHtml(item.subtitle || "Saved parent")}</p>
             <div class="badge-row">
+              ${item.detail?.entry?.rating ? renderBadge(`Rating ${item.detail.entry.rating}`) : ""}
               ${sparkBadges.map((badge) => renderBadge(badge)).join("") || renderBadge("No sparks summary")}
               ${item.detail?.lineage_completion ? renderBadge(`${item.detail.lineage_completion.filled_count || 0}/2 lineage`) : ""}
             </div>
@@ -3944,6 +4139,7 @@
         <strong>${escapeHtml(item.title || "Unknown grandparent")}</strong>
         <p>${escapeHtml(item.subtitle || item.scenario_name || "")}</p>
         <div class="badge-row">
+          ${item.rating ? renderBadge(`Rating ${item.rating}`) : ""}
           ${sparkBadges.map((badge) => renderBadge(badge)).join("") || renderBadge("No sparks summary")}
         </div>
       </div>
@@ -3964,6 +4160,7 @@
             <p>${escapeHtml(item.subtitle || "Saved parent")}</p>
             <div class="badge-row">
               ${item.detail?.entry?.scenario_name ? renderBadge(item.detail.entry.scenario_name) : ""}
+              ${item.detail?.entry?.rating ? renderBadge(`Rating ${item.detail.entry.rating}`) : ""}
               ${sparkBadges.map((badge) => renderBadge(badge)).join("")}
               ${item.detail?.lineage_completion ? renderBadge(`${item.detail.lineage_completion.filled_count || 0}/2 lineage`) : ""}
             </div>
@@ -4333,7 +4530,6 @@
       const blueTargetSelect = getSparkElement(slotKey, "BlueTarget");
       const blueStarsSelect = getSparkElement(slotKey, "BlueStars");
       const pinkKindSelect = getSparkElement(slotKey, "PinkKind");
-      const pinkQueryInput = getSparkElement(slotKey, "PinkQuery");
       const pinkTargetSelect = getSparkElement(slotKey, "PinkTarget");
       const pinkStarsSelect = getSparkElement(slotKey, "PinkStars");
       const greenStarsSelect = getSparkElement(slotKey, "GreenStars");
@@ -4372,16 +4568,6 @@
             };
           });
           requestRenderPreservingScroll();
-        });
-      }
-      if (pinkQueryInput) {
-        pinkQueryInput.addEventListener("input", () => {
-          captureLegacyFormDraft();
-          updateLegacyEditorSparkState(slotKey, (sparkState) => ({
-            ...sparkState,
-            pinkQuery: pinkQueryInput.value,
-          }));
-          requestRenderPreservingScrollAndFocus(`${slotPrefixes[slotKey]}PinkQuery`);
         });
       }
       if (pinkTargetSelect) {
@@ -4457,10 +4643,8 @@
     bindSparkSlot("right");
 
     const characterSelect = document.querySelector('#legacyForm select[name="character_card_id"]');
-    const starsInput = document.querySelector('#legacyForm input[name="stars"]');
     const bindGrandparentIdentity = (slotKey) => {
       const characterField = document.querySelector(`#legacyForm select[name="gp_${slotKey}_character_card_id"]`);
-      const starsField = document.querySelector(`#legacyForm input[name="gp_${slotKey}_stars"]`);
       if (characterField) {
         characterField.addEventListener("change", () => {
           captureLegacyFormDraft();
@@ -4468,18 +4652,6 @@
             ...sparkState,
             characterCardId: String(characterField.value || ""),
           }));
-          const defaults = getCharacterRosterDefaults(String(characterField.value || ""));
-          state.legacyFormDraft = {
-            ...(state.legacyFormDraft || {}),
-            [`gp_${slotKey}_stars`]: String(defaults.stars),
-            [`gp_${slotKey}_awakening`]: String(defaults.awakening),
-          };
-          requestRenderPreservingScroll();
-        });
-      }
-      if (starsField) {
-        starsField.addEventListener("change", () => {
-          captureLegacyFormDraft();
           requestRenderPreservingScroll();
         });
       }
@@ -4488,24 +4660,64 @@
     bindGrandparentIdentity("left");
     bindGrandparentIdentity("right");
 
+    const validateLegacyCreateStep = (step) => {
+      const selectedCharacterCardId = String(state.legacyEditor.characterCardId || "").trim();
+      if (step === 1) {
+        if (!selectedCharacterCardId) {
+          state.legacyStatus = { kind: "error", message: "Select an EN-available parent character before continuing." };
+          requestRender();
+          return false;
+        }
+        state.legacyStatus = { kind: "idle", message: "" };
+        return true;
+      }
+      if (step === 2) {
+        if (!selectedCharacterCardId) {
+          state.legacyStatus = { kind: "error", message: "Select an EN-available parent character before configuring sparks." };
+          requestRender();
+          return false;
+        }
+        const blueSpark = buildLegacyFactorPayload("stat", state.legacyEditor.blueTargetKey, state.legacyEditor.blueStars, {
+          characterCardId: selectedCharacterCardId,
+        });
+        const pinkSpark = buildLegacyFactorPayload(state.legacyEditor.pinkKind, state.legacyEditor.pinkTargetKey, state.legacyEditor.pinkStars, {
+          characterCardId: selectedCharacterCardId,
+        });
+        if (!blueSpark || !pinkSpark) {
+          state.legacyStatus = { kind: "error", message: "Blue and pink sparks must both be configured before continuing." };
+          requestRender();
+          return false;
+        }
+        state.legacyStatus = { kind: "idle", message: "" };
+        return true;
+      }
+      return true;
+    };
+
     if (characterSelect) {
       characterSelect.addEventListener("change", () => {
         captureLegacyFormDraft();
         state.legacyEditor.characterCardId = String(characterSelect.value || "");
-        if (isCreateMode) {
-          const defaults = getCharacterRosterDefaults(state.legacyEditor.characterCardId);
-          state.legacyFormDraft = {
-            ...(state.legacyFormDraft || {}),
-            stars: String(defaults.stars),
-            awakening: String(defaults.awakening),
-          };
-        }
         requestRenderPreservingScroll();
       });
     }
-    if (starsInput) {
-      starsInput.addEventListener("change", () => {
+    const previousButton = document.getElementById("legacyWizardPrev");
+    if (previousButton) {
+      previousButton.addEventListener("click", () => {
         captureLegacyFormDraft();
+        state.legacyCreateStep = clampNumber(state.legacyCreateStep - 1, 1, 3, 1);
+        state.legacyStatus = { kind: "idle", message: "" };
+        requestRenderPreservingScroll();
+      });
+    }
+    const nextButton = document.getElementById("legacyWizardNext");
+    if (nextButton) {
+      nextButton.addEventListener("click", () => {
+        captureLegacyFormDraft();
+        if (!validateLegacyCreateStep(state.legacyCreateStep)) {
+          return;
+        }
+        state.legacyCreateStep = clampNumber(state.legacyCreateStep + 1, 1, 3, 3);
         requestRenderPreservingScroll();
       });
     }
@@ -4550,7 +4762,7 @@
         requestRenderPreservingScroll();
       });
     });
-    if (legacyForm) {
+      if (legacyForm) {
       legacyForm.addEventListener("submit", async (event) => {
         event.preventDefault();
         await saveLegacyForm(new FormData(legacyForm), isCreateMode, legacyId);
@@ -4586,17 +4798,15 @@
       }
 
       if (route.itemId === "__new__" || localState?.selectedId === "__new__") {
-        const initialCharacterId = getOwnedCharacterOptions()[0]?.value || "";
+        const initialCharacterId = getLegacyCharacterOptions("")[0]?.value || "";
         const initialProgress = getCharacterRosterDefaults(initialCharacterId);
         const createEntry = {
           id: "",
           character_card_id: initialCharacterId,
           scenario_id: "",
+          rating: "",
           stars: initialProgress.stars,
           awakening: initialProgress.awakening,
-          source_date: "",
-          source_note: "",
-          note: "",
           custom_tags: [],
           status_flags: [],
           blue_spark: null,
@@ -4869,6 +5079,14 @@
         localState.presentation === "parents" &&
         !isBatchMode &&
         Boolean(selectedItem || localState.selectedId === "__new__"),
+    );
+    document.body.classList.toggle(
+      "legacy-create-active",
+      route.mode === "roster" &&
+        route.entityKey === legacyEntityKey &&
+        localState.presentation === "parents" &&
+        !isBatchMode &&
+        localState.selectedId === "__new__",
     );
     syncLayoutMode(Boolean(selectedItem || hasLegacyDetailTarget) && !isBatchMode);
     renderList(route.mode, route.entityKey, filteredItems);
@@ -5198,20 +5416,23 @@
 
   function collectLegacyGrandparentPayload(slotKey, formData) {
     const sparkState = getLegacyEditorSparkState(slotKey);
-    const selectedCharacterCardId = String(formData.get(`gp_${slotKey}_character_card_id`) || sparkState.characterCardId || "").trim();
+    const readField = (name, fallback = "") => (
+      formData.has(name)
+        ? String(formData.get(name) || "").trim()
+        : String(state.legacyFormDraft?.[name] || fallback || "")
+    );
+    const selectedCharacterCardId = String(readField(`gp_${slotKey}_character_card_id`, sparkState.characterCardId) || "").trim();
     if (!selectedCharacterCardId) {
       return null;
     }
-    const selectedScenarioId = String(formData.get(`gp_${slotKey}_scenario_id`) || "").trim();
-    const selectedStars = clampNumber(formData.get(`gp_${slotKey}_stars`), 0, 5, 0);
+    const selectedScenarioId = String(readField(`gp_${slotKey}_scenario_id`) || "").trim();
+    const selectedStars = getCharacterBaseRarity(selectedCharacterCardId);
     return {
       character_card_id: selectedCharacterCardId,
       scenario_id: selectedScenarioId || null,
       scenario_name: selectedScenarioId ? getLegacyScenarioLabel(selectedScenarioId) : null,
+      rating: String(readField(`gp_${slotKey}_rating`) || "").trim().toUpperCase() || null,
       stars: selectedStars,
-      awakening: clampNumber(formData.get(`gp_${slotKey}_awakening`), 0, 5, 0),
-      source_date: String(formData.get(`gp_${slotKey}_source_date`) || "").trim(),
-      note: String(formData.get(`gp_${slotKey}_note`) || "").trim(),
       blue_spark: buildLegacyFactorPayload("stat", sparkState.blueTargetKey, sparkState.blueStars, { characterCardId: selectedCharacterCardId }),
       pink_spark: buildLegacyFactorPayload(sparkState.pinkKind, sparkState.pinkTargetKey, sparkState.pinkStars, { characterCardId: selectedCharacterCardId }),
       green_spark: characterSupportsGreenSpark(selectedCharacterCardId, selectedStars)
@@ -5222,20 +5443,22 @@
   }
 
   function collectLegacyPayload(formData) {
+    const readField = (name, fallback = "") => (
+      formData.has(name)
+        ? String(formData.get(name) || "").trim()
+        : String(state.legacyFormDraft?.[name] || fallback || "")
+    );
     const selectedCharacterCardId = String(formData.get("character_card_id") || state.legacyEditor.characterCardId || "").trim();
-    const selectedScenarioId = String(formData.get("scenario_id") || "").trim();
-    const selectedStars = clampNumber(formData.get("stars"), 0, 5, 3);
+    const selectedScenarioId = String(readField("scenario_id") || "").trim();
+    const selectedStars = getCharacterBaseRarity(selectedCharacterCardId);
     return {
       character_card_id: selectedCharacterCardId,
       scenario_id: selectedScenarioId || null,
       scenario_name: selectedScenarioId ? getLegacyScenarioLabel(selectedScenarioId) : null,
+      rating: String(readField("rating") || "").trim().toUpperCase() || null,
       stars: selectedStars,
-      awakening: clampNumber(formData.get("awakening"), 0, 5, 0),
-      source_date: String(formData.get("source_date") || "").trim(),
-      source_note: String(formData.get("source_note") || "").trim(),
-      note: String(formData.get("note") || "").trim(),
-      custom_tags: parseRosterTokenList(formData.get("custom_tags")),
-      status_flags: parseRosterTokenList(formData.get("status_flags")),
+      custom_tags: parseRosterTokenList(readField("custom_tags")),
+      status_flags: parseRosterTokenList(readField("status_flags")),
       blue_spark: buildLegacyFactorPayload("stat", state.legacyEditor.blueTargetKey, state.legacyEditor.blueStars, { characterCardId: selectedCharacterCardId }),
       pink_spark: buildLegacyFactorPayload(state.legacyEditor.pinkKind, state.legacyEditor.pinkTargetKey, state.legacyEditor.pinkStars, { characterCardId: selectedCharacterCardId }),
       green_spark: characterSupportsGreenSpark(selectedCharacterCardId, selectedStars)

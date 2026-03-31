@@ -77,6 +77,29 @@ LEGACY_FACTOR_KIND_LABELS = {
     "skill": "Skill",
 }
 
+LEGACY_RATING_OPTIONS = {
+    "",
+    "G",
+    "F",
+    "E",
+    "E+",
+    "D",
+    "D+",
+    "C",
+    "C+",
+    "B",
+    "B+",
+    "A",
+    "A+",
+    "S",
+    "S+",
+    "SS",
+    "SS+",
+    "UF",
+    "UG",
+    "UE",
+}
+
 JOB_LOCK = threading.Lock()
 ACTIVE_ADMIN_JOB: dict | None = None
 ADMIN_JOB_HISTORY: list[dict] = []
@@ -105,7 +128,7 @@ def default_roster() -> dict:
 
 def default_legacy_document() -> dict:
     return {
-        "version": 3,
+        "version": 4,
         "updated_at": utc_timestamp(),
         "entries": [],
     }
@@ -777,6 +800,10 @@ def normalize_legacy_grandparent(
             stars=stars,
         )
 
+    rating = str(raw_entry.get("rating") or "").strip().upper()
+    if rating not in LEGACY_RATING_OPTIONS:
+        raise ValueError(f"legacy grandparent {slot_name} rating is invalid.")
+
     if strict_sparks:
         if blue_spark is None:
             raise ValueError(f"legacy grandparent {slot_name} blue spark is required.")
@@ -790,6 +817,7 @@ def normalize_legacy_grandparent(
         "variant": str(detail.get("variant") or raw_entry.get("variant") or "").strip(),
         "scenario_id": scenario_id or None,
         "scenario_name": scenario_name or None,
+        "rating": rating or None,
         "source_date": str(raw_entry.get("source_date") or "").strip() or None,
         "stars": stars,
         "awakening": clamp_int(raw_entry.get("awakening"), 0, 5, 0),
@@ -879,10 +907,13 @@ def normalize_legacy_entry(raw_entry: object, catalogs: dict, *, existing_id: st
     source_date = str(raw_entry.get("source_date") or "").strip()
     note = str(raw_entry.get("note") or "")
     source_note = str(raw_entry.get("source_note") or "")
+    rating = str(raw_entry.get("rating") or "").strip().upper()
     if len(note) > 2000 or len(source_note) > 2000:
         raise ValueError("legacy notes are too long.")
     if len(source_date) > 80:
         raise ValueError("legacy source_date is too long.")
+    if rating not in LEGACY_RATING_OPTIONS:
+        raise ValueError("legacy rating is invalid.")
 
     stars = clamp_int(raw_entry.get("stars"), 0, 5, int(detail.get("rarity") or 0))
     awakening = clamp_int(raw_entry.get("awakening"), 0, 5, 0)
@@ -929,6 +960,7 @@ def normalize_legacy_entry(raw_entry: object, catalogs: dict, *, existing_id: st
         "variant": variant,
         "scenario_id": scenario_id or None,
         "scenario_name": scenario_name or None,
+        "rating": rating or None,
         "source_date": source_date or None,
         "created_at": str(raw_entry.get("created_at") or utc_timestamp()),
         "updated_at": utc_timestamp(),
@@ -972,7 +1004,7 @@ def inspect_legacy_document(raw_document: object) -> dict:
     except (FileNotFoundError, ValueError):
         return {
             "document": {
-                "version": 3,
+                "version": 4,
                 "updated_at": str(raw_document.get("updated_at") or document["updated_at"]),
                 "entries": [],
             },
@@ -999,7 +1031,7 @@ def inspect_legacy_document(raw_document: object) -> dict:
 
     return {
         "document": {
-            "version": 3,
+            "version": 4,
             "updated_at": str(raw_document.get("updated_at") or document["updated_at"]),
             "entries": sorted(entries, key=lambda entry: str(entry.get("updated_at") or entry.get("created_at") or ""), reverse=True),
         },
@@ -1051,7 +1083,7 @@ def save_legacies(profile_id: str, document: dict, *, preserve_existing_unresolv
         atomic_write_json(
             profile_legacy_path(profile_id),
             {
-                "version": 3,
+                "version": 4,
                 "updated_at": normalized["updated_at"],
                 "entries": list(normalized["entries"]) + unresolved_entries,
             },
@@ -1064,7 +1096,7 @@ def save_legacies(profile_id: str, document: dict, *, preserve_existing_unresolv
 def persist_unresolved_legacies(profile_id: str, document: object) -> dict:
     raw_document = document if isinstance(document, dict) else {}
     preserved = {
-        "version": 3,
+        "version": 4,
         "updated_at": str(raw_document.get("updated_at") or utc_timestamp()),
         "entries": list(raw_document.get("entries") or []),
     }
@@ -1208,6 +1240,7 @@ def build_legacy_grandparent_view_item(slot_name: str, grandparent: dict | None,
         "title": str(grandparent.get("name") or detail.get("name") or "Unknown grandparent"),
         "subtitle": str(grandparent.get("variant") or detail.get("variant") or ""),
         "scenario_name": str(grandparent.get("scenario_name") or ""),
+        "rating": str(grandparent.get("rating") or ""),
         "media": character_ref.get("media") if isinstance(character_ref, dict) else {},
         "spark_summary": spark_summary,
     }
@@ -1279,6 +1312,8 @@ def build_legacy_view(profile_id: str) -> dict:
         badges = []
         if entry.get("scenario_name"):
             badges.append(entry["scenario_name"])
+        if entry.get("rating"):
+            badges.append(f"Rating {entry['rating']}")
         if spark_summary["blue"]:
             badges.append(f"Blue {spark_summary['blue']['target_label']} {int(spark_summary['blue'].get('stars') or 0)}\u2605")
         if spark_summary["pink"]:
@@ -1379,6 +1414,7 @@ def build_legacy_view(profile_id: str) -> dict:
                     [
                         str(entry.get("name") or ""),
                         str(entry.get("variant") or ""),
+                        str(entry.get("rating") or ""),
                         scenario_label,
                         " ".join(str(factor.get("target_label") or "") for factor in factors),
                         " ".join(str(factor.get("target_label") or "") for grandparent in get_legacy_lineage_entries(entry) for factor in legacy_entry_to_factors(grandparent)),
@@ -1403,6 +1439,7 @@ def build_legacy_view(profile_id: str) -> dict:
                 },
                 "detail": {
                     "entry": entry,
+                    "rating": str(entry.get("rating") or ""),
                     "character_ref": linked_refs[:1],
                     "scenario_ref": linked_refs[1:2] if scenario_ref is not None else [],
                     "spark_summary": spark_summary,
