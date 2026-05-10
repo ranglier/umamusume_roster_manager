@@ -754,6 +754,12 @@ Sortie attendue:
 - nouvelles API locales
 - nouveaux fichiers JSON utilisateur
 
+Etat actuel:
+
+- `legacies` est en place avec inventaire parent et simulateur d'heritage v1
+- `builds` est en place comme document utilisateur local et API CRUD
+- `run_results` reste a ajouter
+
 ### Phase 3C. Build planner manuel assiste
 
 Ajouter a l'UI:

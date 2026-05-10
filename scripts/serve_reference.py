@@ -37,6 +37,7 @@ PROFILES_INDEX_PATH = USER_DATA_ROOT / "profiles.json"
 PROFILE_DATA_ROOT = USER_DATA_ROOT / "profiles"
 PROFILE_ID_PATTERN = re.compile(r"^p_\d{3,}$")
 LEGACY_ID_PATTERN = re.compile(r"^legacy_\d{3,}$")
+BUILD_ID_PATTERN = re.compile(r"^build_\d{3,}$")
 BACKUP_ID_PATTERN = re.compile(r"^backup_\d{8}_\d{6}_[0-9a-f]{8}$")
 PROFILE_EXPORT_KIND = "umamusume-profile-export"
 FULL_BACKUP_KIND = "umamusume-full-backup"
@@ -129,6 +130,14 @@ def default_roster() -> dict:
 def default_legacy_document() -> dict:
     return {
         "version": 4,
+        "updated_at": utc_timestamp(),
+        "entries": [],
+    }
+
+
+def default_builds_document() -> dict:
+    return {
+        "version": 1,
         "updated_at": utc_timestamp(),
         "entries": [],
     }
@@ -1806,6 +1815,10 @@ def profile_roster_path(profile_id: str) -> Path:
     return PROFILE_DATA_ROOT / profile_id / "roster.json"
 
 
+def profile_builds_path(profile_id: str) -> Path:
+    return PROFILE_DATA_ROOT / profile_id / "builds.json"
+
+
 def profile_exists(profile_id: str) -> bool:
     return profile_id in {profile["id"] for profile in load_profiles_index()["profiles"]}
 
@@ -1927,6 +1940,264 @@ def save_roster(profile_id: str, roster: dict) -> dict:
     return normalized
 
 
+def normalize_build_id_list(value: object, *, field_name: str, max_items: int = 32) -> list[str]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError(f"{field_name} must be a list.")
+
+    normalized: list[str] = []
+    for entry in value:
+        entry_id = str(entry or "").strip()
+        if not entry_id:
+            continue
+        if len(entry_id) > 96:
+            raise ValueError(f"{field_name} entries are too long.")
+        if entry_id not in normalized:
+            normalized.append(entry_id)
+        if len(normalized) > max_items:
+            raise ValueError(f"{field_name} has too many entries.")
+    return normalized
+
+
+def normalize_build_stats(value: object) -> dict:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError("build.target_stats must be an object.")
+
+    normalized: dict[str, int] = {}
+    for key in ("speed", "stamina", "power", "guts", "wit"):
+        if key not in value:
+            continue
+        stat_value = value[key]
+        if not isinstance(stat_value, int) or stat_value < 0 or stat_value > 2500:
+            raise ValueError(f"build.target_stats.{key} must be an integer between 0 and 2500.")
+        normalized[key] = stat_value
+    return normalized
+
+
+def normalize_build_aptitudes(value: object) -> dict:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError("build.target_aptitudes must be an object.")
+
+    normalized: dict[str, str] = {}
+    valid_grades = {"S", "A", "B", "C", "D", "E", "F", "G"}
+    for key in ("surface", "distance", "style"):
+        if key not in value:
+            continue
+        grade = str(value.get(key) or "").strip().upper()
+        if grade not in valid_grades:
+            raise ValueError(f"build.target_aptitudes.{key} must be a grade from S to G.")
+        normalized[key] = grade
+    return normalized
+
+
+def normalize_build_legacy_pair(value: object) -> dict:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError("build.legacy_pair must be an object.")
+
+    normalized: dict[str, str] = {}
+    for key in ("parent_a", "parent_b"):
+        legacy_id = str(value.get(key) or "").strip()
+        if not legacy_id:
+            continue
+        if not LEGACY_ID_PATTERN.match(legacy_id):
+            raise ValueError(f"build.legacy_pair.{key} must be a legacy id.")
+        normalized[key] = legacy_id
+    if normalized.get("parent_a") and normalized.get("parent_a") == normalized.get("parent_b"):
+        raise ValueError("build.legacy_pair parents must be different.")
+    return normalized
+
+
+def validate_build_references(profile_id: str, entry: dict) -> None:
+    reference_checks = [
+        ("target_id", "cm_targets"),
+        ("character_id", "characters"),
+        ("scenario_id", "scenarios"),
+    ]
+    for field_name, entity_key in reference_checks:
+        ref_id = str(entry.get(field_name) or "").strip()
+        if not ref_id:
+            continue
+        try:
+            if ref_id not in load_reference_items_lookup(entity_key):
+                raise ValueError(f"build.{field_name} does not exist in local reference.")
+        except FileNotFoundError:
+            continue
+
+    support_ids = entry.get("support_deck") or []
+    if support_ids:
+        try:
+            support_lookup = load_reference_items_lookup("supports")
+        except FileNotFoundError:
+            support_lookup = {}
+        if support_lookup:
+            missing = [support_id for support_id in support_ids if support_id not in support_lookup]
+            if missing:
+                raise ValueError("build.support_deck contains unknown supports.")
+
+    skill_ids = list(entry.get("required_skills") or []) + list(entry.get("optional_skills") or [])
+    if skill_ids:
+        try:
+            skill_lookup = load_reference_items_lookup("skills")
+        except FileNotFoundError:
+            skill_lookup = {}
+        if skill_lookup:
+            missing = [skill_id for skill_id in skill_ids if skill_id not in skill_lookup]
+            if missing:
+                raise ValueError("build skills contain unknown skill ids.")
+
+    legacy_ids = set((entry.get("legacy_pair") or {}).values())
+    if legacy_ids:
+        known_legacy_ids = {legacy["id"] for legacy in load_legacies(profile_id).get("entries", [])}
+        missing = sorted(legacy_ids - known_legacy_ids)
+        if missing:
+            raise ValueError("build.legacy_pair contains unknown legacy parents.")
+
+
+def normalize_build_entry(raw_entry: object, profile_id: str, *, existing_id: str | None = None) -> dict:
+    if not isinstance(raw_entry, dict):
+        raise ValueError("build entry must be an object.")
+
+    build_id = existing_id or str(raw_entry.get("id") or "").strip()
+    if build_id and not BUILD_ID_PATTERN.match(build_id):
+        raise ValueError("build id is invalid.")
+
+    mode = str(raw_entry.get("mode") or "champions_meeting").strip()
+    if mode not in {"champions_meeting", "freeform"}:
+        raise ValueError("build.mode must be champions_meeting or freeform.")
+
+    status = str(raw_entry.get("status") or "draft").strip()
+    if status not in {"draft", "planned", "testing", "done", "archived"}:
+        raise ValueError("build.status is invalid.")
+
+    name = str(raw_entry.get("name") or "").strip()
+    if len(name) > 120:
+        raise ValueError("build.name is too long.")
+
+    notes = str(raw_entry.get("notes") or "").strip()
+    if len(notes) > 4000:
+        raise ValueError("build.notes is too long.")
+
+    entry = {
+        "id": build_id,
+        "mode": mode,
+        "name": name,
+        "target_id": str(raw_entry.get("target_id") or "").strip(),
+        "character_id": str(raw_entry.get("character_id") or "").strip(),
+        "scenario_id": str(raw_entry.get("scenario_id") or "").strip(),
+        "support_deck": normalize_build_id_list(raw_entry.get("support_deck"), field_name="build.support_deck", max_items=6),
+        "legacy_pair": normalize_build_legacy_pair(raw_entry.get("legacy_pair")),
+        "target_stats": normalize_build_stats(raw_entry.get("target_stats")),
+        "target_aptitudes": normalize_build_aptitudes(raw_entry.get("target_aptitudes")),
+        "required_skills": normalize_build_id_list(raw_entry.get("required_skills"), field_name="build.required_skills"),
+        "optional_skills": normalize_build_id_list(raw_entry.get("optional_skills"), field_name="build.optional_skills"),
+        "status": status,
+        "notes": notes,
+        "custom_tags": normalize_string_list(raw_entry.get("custom_tags"), field_name="build.custom_tags"),
+        "created_at": str(raw_entry.get("created_at") or utc_timestamp()),
+        "updated_at": str(raw_entry.get("updated_at") or utc_timestamp()),
+    }
+    if not entry["name"]:
+        entry["name"] = "Champions Meeting draft" if mode == "champions_meeting" else "Build draft"
+
+    validate_build_references(profile_id, entry)
+    return entry
+
+
+def next_build_id(entries: list[dict]) -> str:
+    next_number = 1
+    for entry in entries:
+        match = re.match(r"^build_(\d+)$", str(entry.get("id") or ""))
+        if match:
+            next_number = max(next_number, int(match.group(1)) + 1)
+    return f"build_{next_number:03d}"
+
+
+def normalize_builds_document(raw_document: object, profile_id: str) -> dict:
+    document = default_builds_document()
+    if not isinstance(raw_document, dict):
+        return document
+
+    entries: list[dict] = []
+    for raw_entry in raw_document.get("entries") or []:
+        try:
+            entry = normalize_build_entry(raw_entry, profile_id)
+        except ValueError:
+            continue
+        if not entry["id"]:
+            entry["id"] = next_build_id(entries)
+        entries.append(entry)
+
+    return {
+        "version": 1,
+        "updated_at": str(raw_document.get("updated_at") or document["updated_at"]),
+        "entries": entries,
+    }
+
+
+def load_builds(profile_id: str) -> dict:
+    return normalize_builds_document(read_json(profile_builds_path(profile_id), default_builds_document), profile_id)
+
+
+def save_builds(profile_id: str, document: dict) -> dict:
+    normalized = normalize_builds_document(document, profile_id)
+    normalized["updated_at"] = utc_timestamp()
+    atomic_write_json(profile_builds_path(profile_id), normalized)
+    return normalized
+
+
+def create_build_entry(profile_id: str, payload: dict) -> dict:
+    document = load_builds(profile_id)
+    entry = normalize_build_entry(payload, profile_id)
+    entry["id"] = next_build_id(document["entries"])
+    timestamp = utc_timestamp()
+    entry["created_at"] = timestamp
+    entry["updated_at"] = timestamp
+    document["entries"].append(entry)
+    saved_document = save_builds(profile_id, document)
+    saved_entry = next(item for item in saved_document["entries"] if item["id"] == entry["id"])
+    return {"document": saved_document, "entry": saved_entry}
+
+
+def update_build_entry(profile_id: str, build_id: str, payload: dict) -> dict:
+    if not BUILD_ID_PATTERN.match(build_id):
+        raise FileNotFoundError("Build not found.")
+
+    document = load_builds(profile_id)
+    existing_entry = next((entry for entry in document["entries"] if entry["id"] == build_id), None)
+    if existing_entry is None:
+        raise FileNotFoundError("Build not found.")
+
+    merged_payload = {**existing_entry, **(payload or {}), "id": build_id, "created_at": existing_entry.get("created_at")}
+    entry = normalize_build_entry(merged_payload, profile_id, existing_id=build_id)
+    entry["updated_at"] = utc_timestamp()
+    for index, current in enumerate(document["entries"]):
+        if current["id"] == build_id:
+            document["entries"][index] = entry
+            break
+    saved_document = save_builds(profile_id, document)
+    saved_entry = next(item for item in saved_document["entries"] if item["id"] == build_id)
+    return {"document": saved_document, "entry": saved_entry}
+
+
+def delete_build_entry(profile_id: str, build_id: str) -> dict:
+    if not BUILD_ID_PATTERN.match(build_id):
+        raise FileNotFoundError("Build not found.")
+
+    document = load_builds(profile_id)
+    remaining_entries = [entry for entry in document["entries"] if entry["id"] != build_id]
+    if len(remaining_entries) == len(document["entries"]):
+        raise FileNotFoundError("Build not found.")
+    document["entries"] = remaining_entries
+    return save_builds(profile_id, document)
+
+
 def next_profile_id(profiles: list[dict]) -> str:
     next_number = 1
     for profile in profiles:
@@ -1957,6 +2228,7 @@ def create_profile(name: str) -> tuple[dict, dict]:
     saved_index = save_profiles_index(index)
     save_roster(profile["id"], default_roster())
     save_legacies(profile["id"], default_legacy_document())
+    save_builds(profile["id"], default_builds_document())
     return saved_index, profile
 
 
@@ -2035,9 +2307,10 @@ def export_profile_archive_bytes(profile_id: str) -> tuple[bytes, str]:
 
     roster = load_roster(profile_id)
     legacies = read_raw_legacies(profile_id)
+    builds = load_builds(profile_id)
     manifest = {
         "kind": PROFILE_EXPORT_KIND,
-        "version": 1,
+        "version": 2,
         "created_at": utc_timestamp(),
         "profile_id": profile_id,
     }
@@ -2048,6 +2321,7 @@ def export_profile_archive_bytes(profile_id: str) -> tuple[bytes, str]:
         archive.writestr("profile.json", json.dumps(profile, ensure_ascii=False, indent=2) + "\n")
         archive.writestr("roster.json", json.dumps(roster, ensure_ascii=False, indent=2) + "\n")
         archive.writestr("legacy.json", json.dumps(legacies, ensure_ascii=False, indent=2) + "\n")
+        archive.writestr("builds.json", json.dumps(builds, ensure_ascii=False, indent=2) + "\n")
 
     safe_name = re.sub(r"[^A-Za-z0-9._-]+", "-", profile["name"]).strip("-") or profile_id
     return buffer.getvalue(), f"{safe_name}.zip"
@@ -2074,6 +2348,12 @@ def import_profile_archive_bytes(payload: bytes, target_profile_id: str | None =
             legacy_document = default_legacy_document()
         except json.JSONDecodeError as exc:
             raise ValueError("Profile archive contains invalid legacy JSON.") from exc
+        try:
+            builds_document = json.loads(archive.read("builds.json").decode("utf-8"))
+        except KeyError:
+            builds_document = default_builds_document()
+        except json.JSONDecodeError as exc:
+            raise ValueError("Profile archive contains invalid builds JSON.") from exc
 
     if manifest.get("kind") != PROFILE_EXPORT_KIND:
         raise ValueError("Unsupported profile archive format.")
@@ -2098,6 +2378,7 @@ def import_profile_archive_bytes(payload: bytes, target_profile_id: str | None =
             save_legacies(target_profile_id, legacy_document, preserve_existing_unresolved=False)
         else:
             persist_unresolved_legacies(target_profile_id, legacy_document)
+        save_builds(target_profile_id, builds_document)
         saved_profile = next(entry for entry in saved_index["profiles"] if entry["id"] == target_profile_id)
         return saved_index, saved_profile
 
@@ -2121,6 +2402,7 @@ def import_profile_archive_bytes(payload: bytes, target_profile_id: str | None =
         save_legacies(profile_id, legacy_document, preserve_existing_unresolved=False)
     else:
         persist_unresolved_legacies(profile_id, legacy_document)
+    save_builds(profile_id, builds_document)
     return saved_index, new_profile
 
 
@@ -2510,6 +2792,15 @@ class ReferenceRequestHandler(http.server.SimpleHTTPRequestHandler):
             self._send_json(load_legacies(profile_id))
             return
 
+        match = re.fullmatch(r"/api/profiles/(p_\d{3,})/builds", request_path)
+        if match:
+            profile_id = match.group(1)
+            if not profile_exists(profile_id):
+                self._send_api_error(404, "Profile not found.")
+                return
+            self._send_json(load_builds(profile_id))
+            return
+
         match = re.fullmatch(r"/api/profiles/(p_\d{3,})/legacy-view", request_path)
         if match:
             profile_id = match.group(1)
@@ -2646,6 +2937,21 @@ class ReferenceRequestHandler(http.server.SimpleHTTPRequestHandler):
             self._send_json(result, status=201)
             return
 
+        match = re.fullmatch(r"/api/profiles/(p_\d{3,})/builds", request_path)
+        if match:
+            profile_id = match.group(1)
+            if not profile_exists(profile_id):
+                self._send_api_error(404, "Profile not found.")
+                return
+            try:
+                payload = self._read_json_body()
+                result = create_build_entry(profile_id, payload)
+            except ValueError as exc:
+                self._send_api_error(400, str(exc))
+                return
+            self._send_json(result, status=201)
+            return
+
         match = re.fullmatch(r"/api/profiles/(p_\d{3,})/legacy-simulator/preview", request_path)
         if match:
             profile_id = match.group(1)
@@ -2743,6 +3049,25 @@ class ReferenceRequestHandler(http.server.SimpleHTTPRequestHandler):
             self._send_json(result)
             return
 
+        match = re.fullmatch(r"/api/profiles/(p_\d{3,})/builds/(build_\d{3,})", request_path)
+        if match:
+            profile_id = match.group(1)
+            build_id = match.group(2)
+            if not profile_exists(profile_id):
+                self._send_api_error(404, "Profile not found.")
+                return
+            try:
+                payload = self._read_json_body()
+                result = update_build_entry(profile_id, build_id, payload)
+            except FileNotFoundError:
+                self._send_api_error(404, "Build not found.")
+                return
+            except ValueError as exc:
+                self._send_api_error(400, str(exc))
+                return
+            self._send_json(result)
+            return
+
         match = re.fullmatch(r"/api/profiles/(p_\d{3,})", request_path)
         if not match:
             self._send_api_error(404, "API route not found.")
@@ -2787,6 +3112,21 @@ class ReferenceRequestHandler(http.server.SimpleHTTPRequestHandler):
                 document = delete_legacy_entry(profile_id, legacy_id)
             except FileNotFoundError:
                 self._send_api_error(404, "Legacy entry not found.")
+                return
+            self._send_json(document)
+            return
+
+        match = re.fullmatch(r"/api/profiles/(p_\d{3,})/builds/(build_\d{3,})", request_path)
+        if match:
+            profile_id = match.group(1)
+            build_id = match.group(2)
+            if not profile_exists(profile_id):
+                self._send_api_error(404, "Profile not found.")
+                return
+            try:
+                document = delete_build_entry(profile_id, build_id)
+            except FileNotFoundError:
+                self._send_api_error(404, "Build not found.")
                 return
             self._send_json(document)
             return
