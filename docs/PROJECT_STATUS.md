@@ -427,3 +427,24 @@ Un cadrage dedie a la future couche `builds / Champions Meeting` est disponible 
 
 - `docs/CM_BUILD_PLAN.md`
 - `docs/EXTERNAL_SOURCES_PLAN.md`
+
+## Filet de tests
+
+Le projet n'avait jusqu'ici aucun test. Une premiere suite a ete ajoutee dans `tests/` (stdlib `unittest`, zero dependance ajoutee) pour couvrir la logique la plus fragile et non triviale du serveur local:
+
+- calculs de progression `characters` / `supports` (`summarize_character_progression`, `summarize_support_progression`, `resolve_support_effect_value`, `get_support_curve_progress`, `get_support_level_cap`)
+- normalisation des sparks `legacy` (blue / pink / green / white) et des facteurs (`normalize_legacy_factor`, `dedupe_legacy_factors`, `character_supports_green_spark`)
+- compatibilite de paire (`build_pair_compatibility`)
+- validation du roster et des `builds` (`normalize_roster_entry`, `normalize_build_stats`, `normalize_build_aptitudes`, `normalize_build_id_list`, `normalize_build_legacy_pair`)
+- generation d'identifiants sequentiels (`next_build_id`, `next_legacy_id`, `next_profile_id`) et de noms de profil uniques
+- categorisation des distances de course (`scripts/lib/gametora_reference.py`)
+
+Lancer la suite:
+
+```bash
+python -m unittest discover -s tests -t . -v
+```
+
+Elle tourne aussi automatiquement sur chaque push / pull request via `.github/workflows/tests.yml`.
+
+Ce n'est qu'un premier filet, cible sur les fonctions pures les plus critiques. Les prochaines couches a couvrir en priorite: `build_legacy_view`, `build_legacy_simulator_preview`, et l'entree/sortie HTTP de `ReferenceRequestHandler`.
