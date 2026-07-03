@@ -1338,6 +1338,15 @@ export function requestRenderPreservingScrollAndFocus(elementId) {
 }
 
 
+// Deferred via queueMicrotask below instead of running inline: app.js and
+// core.js import from each other (core.js needs requestRender for its hash
+// setters), and this file's top-level wiring reads core.js bindings like
+// `searchInput` and `state`. With that cycle, running this code at module
+// top level can throw "Cannot access 'x' before initialization" depending on
+// module evaluation order. queueMicrotask guarantees the whole module graph
+// (including the cyclic parts) has finished evaluating first. If you add a
+// new top-level side effect here that touches an imported binding, keep it
+// inside boot(), not at file scope.
 function boot() {
   searchInput.addEventListener("input", () => {
     const route = currentRouteState();

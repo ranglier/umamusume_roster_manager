@@ -447,4 +447,16 @@ python -m unittest discover -s tests -t . -v
 
 Elle tourne aussi automatiquement sur chaque push / pull request via `.github/workflows/tests.yml`.
 
-Ce n'est qu'un premier filet, cible sur les fonctions pures les plus critiques. Les prochaines couches a couvrir en priorite: `build_legacy_view`, `build_legacy_simulator_preview`, et l'entree/sortie HTTP de `ReferenceRequestHandler`.
+Ce n'est qu'un premier filet, cible sur les fonctions pures les plus critiques. Les prochaines couches a couvrir en priorite: `build_legacy_view`, `build_legacy_simulator_preview`, l'entree/sortie HTTP de `ReferenceRequestHandler`, et `src/ui/assets/js/` (zero couverture cote frontend).
+
+## Refactor serve_reference.py / app.js
+
+Les deux monolithes signales plus haut ont ete decoupes en suivant `docs/REFACTOR_PLAN.md`:
+
+- `scripts/serve_reference.py`: 3310 -> 2214 lignes. Logique pure extraite dans `scripts/lib/common.py`, `legacy_factors.py`, `roster_progression.py`, `builds_validation.py`, `profiles.py`. L'orchestration I/O et le handler HTTP restent dans `serve_reference.py`.
+- `src/ui/assets/app.js`: 7318 -> 1401 lignes, servi en `<script type="module">`. Decoupe en `src/ui/assets/js/core.js`, `dom-utils.js`, `catalog.js`, `roster.js`, `legacy.js`, `builds.js`, `admin.js`.
+
+Statut et limites detaillees dans `docs/REFACTOR_PLAN.md`. A retenir pour la suite:
+
+- `src/ui/assets/js/` n'a toujours aucun test automatise (voir section precedente).
+- Le decoupage en modules ES a introduit une dependance cyclique volontaire entre `core.js` et `app.js`; le cablage des event listeners en fin de `app.js` doit rester dans `boot()` (differe via `queueMicrotask`), pas au top-level du fichier — voir le commentaire au-dessus de `function boot()`.

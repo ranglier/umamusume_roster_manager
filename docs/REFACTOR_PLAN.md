@@ -18,6 +18,39 @@ python -m unittest discover -s tests -t . -v
 If a step makes a test fail, the refactor introduced a behavior change — fix the
 refactor, not the test.
 
+## Status: both halves done
+
+Steps 0-4 below (Python) and the `app.js` split (last section) are complete,
+each as its own commit. `serve_reference.py` went from 3310 to 2214 lines;
+`app.js` went from 7318 to 1401 lines. Step 5 (the HTTP handler) was reviewed
+but not restructured — every route handler was already a thin
+`re.fullmatch(...)` + one domain call, so there was nothing to split.
+
+What actually shipped differs slightly from the plan below:
+
+- The `app.js` split added a `builds.js` module (the build planner UI landed
+  after this plan was written) alongside the four originally listed
+  (`catalog.js`, `roster.js`, `legacy.js`, `admin.js`), plus a `core.js` for
+  shared state/DOM refs/constants that the plan didn't name explicitly but
+  turned out to be necessary — every feature module needs the same `state`
+  and `data` singletons.
+- Splitting `app.js` into ES modules with several modules importing back and
+  forth (e.g. `core.js` needs `requestRender` from `app.js`) surfaced a real
+  circular-import footgun: code that runs immediately at module top level
+  (the event-listener wiring at the end of `app.js`) can throw
+  `"Cannot access 'x' before initialization"` depending on module evaluation
+  order. Fixed by deferring that wiring into a `boot()` function invoked via
+  `queueMicrotask`; see the comment above `function boot()` in `app.js` before
+  adding new top-level side effects there.
+- No Playwright/smoke tests were added (point 4 of the `app.js` section below
+  was not done). Verification was manual: click through Catalog, My Roster
+  (characters/supports/legacy/builds), and Administration with the browser
+  console open, plus an A/B comparison against the untouched original `app.js`
+  to confirm two issues hit along the way (a crash on empty reference data,
+  and a profile-select screen that didn't advance) were pre-existing
+  data/environment artifacts, not regressions. Frontend test coverage remains
+  the biggest gap — see `docs/PROJECT_STATUS.md`.
+
 ## Guiding principle
 
 Every function in `serve_reference.py` falls into one of two buckets:
