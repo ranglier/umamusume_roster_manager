@@ -72,6 +72,7 @@ from lib.legacy_factors import (
     build_detailed_aptitude_coverage,
     build_compact_pair_summary,
 )
+from lib.profiles import next_profile_id, unique_profile_name
 from lib.roster_progression import (
     SUPPORT_STAGE_LEVELS,
     SUPPORT_BASE_CAP_BY_RARITY,
@@ -1127,15 +1128,6 @@ def delete_build_entry(profile_id: str, build_id: str) -> dict:
     return save_builds(profile_id, document)
 
 
-def next_profile_id(profiles: list[dict]) -> str:
-    next_number = 1
-    for profile in profiles:
-        match = re.match(r"^p_(\d+)$", profile["id"])
-        if match:
-            next_number = max(next_number, int(match.group(1)) + 1)
-    return f"p_{next_number:03d}"
-
-
 def create_profile(name: str) -> tuple[dict, dict]:
     normalized_name = str(name or "").strip()
     if not normalized_name:
@@ -1209,23 +1201,6 @@ def rename_profile(profile_id: str, name: str) -> tuple[dict, dict]:
     saved_index = save_profiles_index(index)
     saved_profile = next(entry for entry in saved_index["profiles"] if entry["id"] == profile_id)
     return saved_index, saved_profile
-
-
-def unique_profile_name(base_name: str, existing_names: set[str]) -> str:
-    if base_name not in existing_names:
-        return base_name
-
-    suffix = " (imported)"
-    candidate = f"{base_name}{suffix}"
-    if candidate not in existing_names:
-        return candidate
-
-    index = 2
-    while True:
-        candidate = f"{base_name}{suffix} {index}"
-        if candidate not in existing_names:
-            return candidate
-        index += 1
 
 
 def export_profile_archive_bytes(profile_id: str) -> tuple[bytes, str]:
