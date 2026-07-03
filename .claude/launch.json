@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "reference-server",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["./scripts/serve_reference.py", "--port", "8420"],
+      "port": 8420
+    }
+  ]
+}

@@ -3125,7 +3125,12 @@ def save_static_app(payload: dict[str, Any], asset_metadata: Any = None) -> None
     write_utf8_file(dist_assets / "app.css", (ui_root / "assets" / "app.css").read_text(encoding="utf-8"), with_bom=True)
     write_utf8_file(dist_assets / "app.js", (ui_root / "assets" / "app.js").read_text(encoding="utf-8"), with_bom=True)
     for ui_asset_path in (ui_root / "assets").iterdir():
-        if not ui_asset_path.is_file():
+        if ui_asset_path.is_dir():
+            if ui_asset_path.name == "js":
+                dist_js = dist_assets / "js"
+                ensure_directory(dist_js)
+                for js_module_path in ui_asset_path.glob("*.js"):
+                    write_utf8_file(dist_js / js_module_path.name, js_module_path.read_text(encoding="utf-8"), with_bom=True)
             continue
         if ui_asset_path.name in {"app.css", "app.js"}:
             continue
