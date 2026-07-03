@@ -29,34 +29,14 @@ from lib.builds_validation import (
     normalize_build_legacy_pair,
     next_build_id,
 )
-from lib.common import clamp_int, normalize_string_list, utc_timestamp
+from lib.common import normalize_string_list, utc_timestamp
 from lib.gametora_reference import update_umamusume_reference
 from lib.legacy_factors import (
     LEGACY_ID_PATTERN,
-    LEGACY_STAT_LABELS,
-    LEGACY_SURFACE_LABELS,
-    LEGACY_DISTANCE_LABELS,
-    LEGACY_STYLE_LABELS,
     LEGACY_FACTOR_KIND_LABELS,
-    LEGACY_RATING_OPTIONS,
     get_character_detail,
-    get_character_unique_skill,
-    character_supports_green_spark,
-    legacy_factor_label,
-    normalize_legacy_factor,
-    build_legacy_factor,
-    default_legacy_grandparents,
-    dedupe_legacy_factors,
-    dedupe_legacy_white_sparks,
-    normalize_blue_spark,
-    normalize_pink_spark,
-    normalize_green_spark,
-    normalize_white_sparks,
-    migrate_legacy_sparks_from_factors,
     legacy_entry_to_factors,
     build_legacy_spark_summary,
-    normalize_legacy_grandparent,
-    normalize_legacy_grandparents,
     legacy_entry_grandparents,
     get_legacy_lineage_entries,
     build_lineage_completion,
@@ -68,17 +48,12 @@ from lib.legacy_factors import (
     build_legacy_grandparent_view_item,
     build_lineage_factor_summary,
     build_empty_legacy_view,
-    build_aptitude_coverage,
     build_detailed_aptitude_coverage,
     build_compact_pair_summary,
 )
 from lib.profiles import next_profile_id, unique_profile_name
 from lib.roster_progression import (
-    SUPPORT_STAGE_LEVELS,
-    SUPPORT_BASE_CAP_BY_RARITY,
     get_support_level_cap,
-    get_support_curve_progress,
-    resolve_support_effect_value,
     summarize_character_progression,
     summarize_support_progression,
     normalize_roster_entry,

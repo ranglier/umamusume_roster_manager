@@ -3,6 +3,7 @@ import unittest
 from . import _pathsetup  # noqa: F401  (must run before importing serve_reference)
 
 import serve_reference as sr
+from lib import common, legacy_factors, roster_progression
 
 
 def make_catalogs(**overrides):
@@ -37,21 +38,21 @@ def make_character_ref(*, rarity=3, unique_id="unique_1", unique_name="Special S
 
 class ClampIntTests(unittest.TestCase):
     def test_within_range_is_unchanged(self):
-        self.assertEqual(sr.clamp_int(3, 0, 5, 0), 3)
+        self.assertEqual(common.clamp_int(3, 0, 5, 0), 3)
 
     def test_below_minimum_is_clamped(self):
-        self.assertEqual(sr.clamp_int(-1, 0, 5, 0), 0)
+        self.assertEqual(common.clamp_int(-1, 0, 5, 0), 0)
 
     def test_above_maximum_is_clamped(self):
-        self.assertEqual(sr.clamp_int(99, 0, 5, 0), 5)
+        self.assertEqual(common.clamp_int(99, 0, 5, 0), 5)
 
     def test_non_int_uses_fallback(self):
-        self.assertEqual(sr.clamp_int("3", 0, 5, 2), 2)
-        self.assertEqual(sr.clamp_int(None, 0, 5, 2), 2)
+        self.assertEqual(common.clamp_int("3", 0, 5, 2), 2)
+        self.assertEqual(common.clamp_int(None, 0, 5, 2), 2)
 
     def test_bool_is_treated_as_int_by_python(self):
         # bool is a subclass of int; documenting existing behavior rather than asserting a "should".
-        self.assertEqual(sr.clamp_int(True, 0, 5, 0), 1)
+        self.assertEqual(common.clamp_int(True, 0, 5, 0), 1)
 
 
 class NormalizeStringListTests(unittest.TestCase):
@@ -106,22 +107,22 @@ class SupportCurveProgressTests(unittest.TestCase):
         }
 
     def test_level_is_clamped_to_cap(self):
-        result = sr.get_support_curve_progress(self.progression_item, level=999, cap=30)
+        result = roster_progression.get_support_curve_progress(self.progression_item, level=999, cap=30)
         self.assertEqual(result["level"], 30)
         self.assertEqual(result["total_exp"], 12000)
         self.assertEqual(result["cap_total_exp"], 12000)
 
     def test_level_is_clamped_to_at_least_one(self):
-        result = sr.get_support_curve_progress(self.progression_item, level=0, cap=30)
+        result = roster_progression.get_support_curve_progress(self.progression_item, level=0, cap=30)
         self.assertEqual(result["level"], 1)
         self.assertEqual(result["total_exp"], 0)
 
     def test_missing_level_in_curve_yields_none_total_exp(self):
-        result = sr.get_support_curve_progress(self.progression_item, level=15, cap=30)
+        result = roster_progression.get_support_curve_progress(self.progression_item, level=15, cap=30)
         self.assertIsNone(result["total_exp"])
 
     def test_none_progression_item_does_not_crash(self):
-        result = sr.get_support_curve_progress(None, level=10, cap=30)
+        result = roster_progression.get_support_curve_progress(None, level=10, cap=30)
         self.assertEqual(result["level"], 10)
         self.assertIsNone(result["total_exp"])
 
@@ -138,7 +139,7 @@ class ResolveSupportEffectValueTests(unittest.TestCase):
             ],
         }
         # Stage thresholds come from SUPPORT_STAGE_LEVELS = [1, 5, 10, ...]
-        result = sr.resolve_support_effect_value(effect, effective_level=10)
+        result = roster_progression.resolve_support_effect_value(effect, effective_level=10)
         self.assertEqual(result["current_value"], 30)
         self.assertEqual(result["current_stage_index"], 3)
         self.assertEqual(result["current_unlock_level"], 10)
@@ -146,7 +147,7 @@ class ResolveSupportEffectValueTests(unittest.TestCase):
 
     def test_below_first_threshold_has_no_current_value(self):
         effect = {"values": [{"stage_index": 2, "value": 20}]}
-        result = sr.resolve_support_effect_value(effect, effective_level=1)
+        result = roster_progression.resolve_support_effect_value(effect, effective_level=1)
         self.assertIsNone(result["current_value"])
         self.assertEqual(result["next_unlock_level"], 5)
 
@@ -200,7 +201,7 @@ class SupportProgressionSummaryTests(unittest.TestCase):
 
 class LegacyFactorNormalizationTests(unittest.TestCase):
     def test_stat_factor(self):
-        factor = sr.normalize_legacy_factor(
+        factor = legacy_factors.normalize_legacy_factor(
             {"kind": "stat", "target_key": "speed", "stars": 2}, make_catalogs()
         )
         self.assertEqual(factor["target_label"], "Speed")
@@ -208,39 +209,39 @@ class LegacyFactorNormalizationTests(unittest.TestCase):
 
     def test_invalid_kind_raises(self):
         with self.assertRaises(ValueError):
-            sr.normalize_legacy_factor({"kind": "bogus", "target_key": "x", "stars": 1}, make_catalogs())
+            legacy_factors.normalize_legacy_factor({"kind": "bogus", "target_key": "x", "stars": 1}, make_catalogs())
 
     def test_stars_out_of_range_raises(self):
         with self.assertRaises(ValueError):
-            sr.normalize_legacy_factor({"kind": "stat", "target_key": "speed", "stars": 4}, make_catalogs())
+            legacy_factors.normalize_legacy_factor({"kind": "stat", "target_key": "speed", "stars": 4}, make_catalogs())
 
     def test_unknown_stat_target_raises(self):
         with self.assertRaises(ValueError):
-            sr.normalize_legacy_factor({"kind": "stat", "target_key": "luck", "stars": 1}, make_catalogs())
+            legacy_factors.normalize_legacy_factor({"kind": "stat", "target_key": "luck", "stars": 1}, make_catalogs())
 
     def test_scenario_factor_resolves_against_catalog(self):
-        factor = sr.normalize_legacy_factor(
+        factor = legacy_factors.normalize_legacy_factor(
             {"kind": "scenario", "target_key": "scn_1", "stars": 3}, make_catalogs()
         )
         self.assertEqual(factor["target_label"], "URA Finale")
         self.assertEqual(factor["scenario_id"], "scn_1")
 
     def test_g1_factor_resolves_by_race_id_fallback(self):
-        factor = sr.normalize_legacy_factor(
+        factor = legacy_factors.normalize_legacy_factor(
             {"kind": "g1", "target_key": "", "race_id": "race_1", "stars": 1}, make_catalogs()
         )
         self.assertEqual(factor["target_key"], "g1_1")
         self.assertEqual(factor["target_label"], "Tokyo Yushun")
 
     def test_skill_factor_resolves_against_catalog(self):
-        factor = sr.normalize_legacy_factor(
+        factor = legacy_factors.normalize_legacy_factor(
             {"kind": "skill", "skill_id": "skill_1", "target_key": "", "stars": 1}, make_catalogs()
         )
         self.assertEqual(factor["target_label"], "Corner Recovery")
 
     def test_unique_factor_requires_character_unique_skill(self):
         character_ref = make_character_ref(unique_id="unique_1", unique_name="Uma Stan")
-        factor = sr.normalize_legacy_factor(
+        factor = legacy_factors.normalize_legacy_factor(
             {"kind": "unique", "target_key": "", "stars": 1},
             make_catalogs(),
             character_ref=character_ref,
@@ -251,7 +252,7 @@ class LegacyFactorNormalizationTests(unittest.TestCase):
     def test_unique_factor_without_character_unique_skill_raises(self):
         character_ref = make_character_ref(unique_id=None)
         with self.assertRaises(ValueError):
-            sr.normalize_legacy_factor(
+            legacy_factors.normalize_legacy_factor(
                 {"kind": "unique", "target_key": "", "stars": 1},
                 make_catalogs(),
                 character_ref=character_ref,
@@ -264,7 +265,7 @@ class DedupeLegacyFactorsTests(unittest.TestCase):
             {"kind": "stat", "target_key": "speed", "target_label": "Speed", "stars": 1},
             {"kind": "stat", "target_key": "speed", "target_label": "Speed", "stars": 3},
         ]
-        deduped = sr.dedupe_legacy_factors(factors)
+        deduped = legacy_factors.dedupe_legacy_factors(factors)
         self.assertEqual(len(deduped), 1)
         self.assertEqual(deduped[0]["stars"], 3)
 
@@ -273,7 +274,7 @@ class DedupeLegacyFactorsTests(unittest.TestCase):
             {"kind": "stat", "target_key": "wit", "target_label": "Wit", "stars": 1},
             {"kind": "stat", "target_key": "speed", "target_label": "Speed", "stars": 1},
         ]
-        deduped = sr.dedupe_legacy_factors(factors)
+        deduped = legacy_factors.dedupe_legacy_factors(factors)
         self.assertEqual([f["target_label"] for f in deduped], ["Speed", "Wit"])
 
     def test_white_sparks_only_keep_scenario_g1_skill(self):
@@ -281,7 +282,7 @@ class DedupeLegacyFactorsTests(unittest.TestCase):
             {"kind": "stat", "target_key": "speed", "target_label": "Speed", "stars": 1},
             {"kind": "scenario", "target_key": "scn_1", "target_label": "URA Finale", "stars": 2},
         ]
-        deduped = sr.dedupe_legacy_white_sparks(sparks)
+        deduped = legacy_factors.dedupe_legacy_white_sparks(sparks)
         self.assertEqual(len(deduped), 1)
         self.assertEqual(deduped[0]["kind"], "scenario")
 
@@ -289,27 +290,27 @@ class DedupeLegacyFactorsTests(unittest.TestCase):
 class SparkTypeValidationTests(unittest.TestCase):
     def test_blue_spark_accepts_stat_only(self):
         catalogs = make_catalogs()
-        spark = sr.normalize_blue_spark({"kind": "stat", "target_key": "speed", "stars": 2}, catalogs)
+        spark = legacy_factors.normalize_blue_spark({"kind": "stat", "target_key": "speed", "stars": 2}, catalogs)
         self.assertEqual(spark["kind"], "stat")
         with self.assertRaises(ValueError):
-            sr.normalize_blue_spark({"kind": "surface", "target_key": "turf", "stars": 2}, catalogs)
+            legacy_factors.normalize_blue_spark({"kind": "surface", "target_key": "turf", "stars": 2}, catalogs)
 
     def test_blue_spark_none_or_empty_is_none(self):
         catalogs = make_catalogs()
-        self.assertIsNone(sr.normalize_blue_spark(None, catalogs))
-        self.assertIsNone(sr.normalize_blue_spark("", catalogs))
+        self.assertIsNone(legacy_factors.normalize_blue_spark(None, catalogs))
+        self.assertIsNone(legacy_factors.normalize_blue_spark("", catalogs))
 
     def test_pink_spark_accepts_surface_distance_or_style(self):
         catalogs = make_catalogs()
-        spark = sr.normalize_pink_spark({"kind": "surface", "target_key": "turf", "stars": 1}, catalogs)
+        spark = legacy_factors.normalize_pink_spark({"kind": "surface", "target_key": "turf", "stars": 1}, catalogs)
         self.assertEqual(spark["kind"], "surface")
         with self.assertRaises(ValueError):
-            sr.normalize_pink_spark({"kind": "stat", "target_key": "speed", "stars": 1}, catalogs)
+            legacy_factors.normalize_pink_spark({"kind": "stat", "target_key": "speed", "stars": 1}, catalogs)
 
     def test_green_spark_requires_character_that_supports_it(self):
         catalogs = make_catalogs()
         eligible_character = make_character_ref(rarity=3, unique_id="unique_1")
-        spark = sr.normalize_green_spark(
+        spark = legacy_factors.normalize_green_spark(
             {"kind": "unique", "target_key": "", "stars": 1},
             catalogs,
             character_ref=eligible_character,
@@ -321,7 +322,7 @@ class SparkTypeValidationTests(unittest.TestCase):
         catalogs = make_catalogs()
         character_ref = make_character_ref(rarity=3, unique_id="unique_1")
         with self.assertRaises(ValueError):
-            sr.normalize_green_spark(
+            legacy_factors.normalize_green_spark(
                 {"kind": "unique", "target_key": "", "stars": 1},
                 catalogs,
                 character_ref=character_ref,
@@ -331,7 +332,7 @@ class SparkTypeValidationTests(unittest.TestCase):
     def test_white_sparks_rejects_non_white_kinds(self):
         catalogs = make_catalogs()
         with self.assertRaises(ValueError):
-            sr.normalize_white_sparks(
+            legacy_factors.normalize_white_sparks(
                 [{"kind": "stat", "target_key": "speed", "stars": 1}], catalogs
             )
 
@@ -339,15 +340,15 @@ class SparkTypeValidationTests(unittest.TestCase):
 class CharacterSupportsGreenSparkTests(unittest.TestCase):
     def test_true_when_three_stars_and_unique_skill(self):
         character_ref = make_character_ref(rarity=3, unique_id="unique_1")
-        self.assertTrue(sr.character_supports_green_spark(character_ref, stars=3))
+        self.assertTrue(legacy_factors.character_supports_green_spark(character_ref, stars=3))
 
     def test_false_below_three_stars(self):
         character_ref = make_character_ref(rarity=3, unique_id="unique_1")
-        self.assertFalse(sr.character_supports_green_spark(character_ref, stars=2))
+        self.assertFalse(legacy_factors.character_supports_green_spark(character_ref, stars=2))
 
     def test_false_without_unique_skill(self):
         character_ref = make_character_ref(rarity=3, unique_id=None)
-        self.assertFalse(sr.character_supports_green_spark(character_ref, stars=5))
+        self.assertFalse(legacy_factors.character_supports_green_spark(character_ref, stars=5))
 
 
 class BuildPairCompatibilityTests(unittest.TestCase):
