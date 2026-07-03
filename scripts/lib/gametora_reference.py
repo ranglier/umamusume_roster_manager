@@ -1152,14 +1152,19 @@ def normalize_supports(
         hint_other: list[dict[str, Any]] = []
         hints = card.get("hints") or {}
         for hint in as_array(get_named_value(hints, "hint_others")):
-            hint_other.append(
-                OrderedDict(
-                    [
-                        ("hint_type", hint.get("hint_type")),
-                        ("hint_value", hint.get("hint_value")),
-                    ]
+            # Some cards group multiple hints unlocked together as a nested
+            # list instead of a single hint object; flatten those too.
+            for sub_hint in hint if isinstance(hint, list) else [hint]:
+                if not isinstance(sub_hint, dict):
+                    continue
+                hint_other.append(
+                    OrderedDict(
+                        [
+                            ("hint_type", sub_hint.get("hint_type")),
+                            ("hint_value", sub_hint.get("hint_value")),
+                        ]
+                    )
                 )
-            )
 
         name = coalesce(card.get("char_name"), card.get("name_jp"))
         items.append(
