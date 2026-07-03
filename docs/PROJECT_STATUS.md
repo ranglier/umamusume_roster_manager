@@ -447,7 +447,20 @@ python -m unittest discover -s tests -t . -v
 
 Elle tourne aussi automatiquement sur chaque push / pull request via `.github/workflows/tests.yml`.
 
-Ce n'est qu'un premier filet, cible sur les fonctions pures les plus critiques. Les prochaines couches a couvrir en priorite: `build_legacy_view`, `build_legacy_simulator_preview`, l'entree/sortie HTTP de `ReferenceRequestHandler`, et `src/ui/assets/js/` (zero couverture cote frontend).
+Ce n'est qu'un premier filet, cible sur les fonctions pures les plus critiques. Les prochaines couches a couvrir en priorite: `build_legacy_view`, `build_legacy_simulator_preview`, et l'entree/sortie HTTP de `ReferenceRequestHandler`.
+
+Cote frontend, une premiere suite existe aussi dans `tests/js/` (stdlib `node:test` + `node:assert/strict`, zero dependance ajoutee, meme philosophie que le cote Python). `tests/js/_domshim.mjs` pose un `document`/`window` minimal pour que `src/ui/assets/js/core.js` (qui interroge des elements DOM au chargement du module) soit importable sous Node tout court. Couverture actuelle:
+
+- `dom-utils.js`: `escapeHtml`, `hashText`, `badgePalette`, `clampRatio`, `clampNumber`, `parseRosterTokenList`, `tableFromRows`
+- `core.js`: `asArray`, `normalizeProfilesIndex`, `normalizeRosterDocument`, `normalizeBuildEntry`, `normalizeBuildsDocument`, `getSupportLevelCap`, `hasFilterOption`, `defaultEntityKeyForMode`, `allowedEntityKeys`, `currentRouteState`
+
+Lancer la suite (necessite Node 18+, non installe dans cet environnement de dev — non verifiee localement, seulement dans `.github/workflows/tests.yml` via `actions/setup-node`):
+
+```bash
+node --test tests/js/
+```
+
+Cette suite couvre les fonctions les plus faciles a isoler (`dom-utils.js`, une partie de `core.js`). Les modules `catalog.js`, `roster.js`, `legacy.js`, `builds.js`, `admin.js` restent entierement non testes — ce sont surtout des fonctions de rendu HTML et d'orchestration, plus couteuses a tester unitairement (attendraient plutot des tests d'integration type Playwright, deja evoques dans `docs/REFACTOR_PLAN.md`).
 
 ## Refactor serve_reference.py / app.js
 
