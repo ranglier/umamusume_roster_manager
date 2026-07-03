@@ -26,3 +26,20 @@ jobs:
           node-version: "20"
       - name: Run frontend test suite
         run: node --test tests/js/
+
+  lint:
+    runs-on: ubuntu-latest
+    # Advisory for now: this dev environment has no pip, so the ruff config
+    # in pyproject.toml has never been run against this codebase. Once a run
+    # confirms it's clean (or the findings are triaged), drop
+    # continue-on-error so this job actually gates merges.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install ruff
+        run: pip install ruff
+      - name: Run ruff
+        run: ruff check .

@@ -471,5 +471,12 @@ Les deux monolithes signales plus haut ont ete decoupes en suivant `docs/REFACTO
 
 Statut et limites detaillees dans `docs/REFACTOR_PLAN.md`. A retenir pour la suite:
 
-- `src/ui/assets/js/` n'a toujours aucun test automatise (voir section precedente).
+- `src/ui/assets/js/` a maintenant un premier filet (`tests/js/`, voir section precedente), mais `catalog.js`/`roster.js`/`legacy.js`/`builds.js`/`admin.js` restent non couverts.
 - Le decoupage en modules ES a introduit une dependance cyclique volontaire entre `core.js` et `app.js`; le cablage des event listeners en fin de `app.js` doit rester dans `boot()` (differe via `queueMicrotask`), pas au top-level du fichier — voir le commentaire au-dessus de `function boot()`.
+
+## Outillage qualite
+
+- Tests: voir "Filet de tests" plus haut (Python: `python -m unittest discover -s tests -t . -v`; JS: `node --test tests/js/`).
+- Lint Python: `pyproject.toml` configure `ruff` (regles `E`/`F`, `E501` ignore volontairement — le style du projet privilegie des lignes longues et plates plutot que le wrapping). Job CI `lint` dans `.github/workflows/tests.yml`, en `continue-on-error: true` pour l'instant: cet environnement de dev n'a pas `pip`, donc la config n'a jamais tourne localement. A verifier et durcir (retirer `continue-on-error`) des qu'un run confirme l'etat reel.
+- Pas de linter JS pour l'instant (pas de Node en local pour le mettre en place et le verifier de la meme maniere).
+- Pas de type-checker (`mypy` ou equivalent) — non fait, a considerer si le lint Python de base s'avere utile.

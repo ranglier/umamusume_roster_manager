@@ -1,0 +1,13 @@
+[tool.ruff]
+target-version = "py312"
+line-length = 320
+exclude = ["data", "dist"]
+
+[tool.ruff.lint]
+# Conservative selection on purpose: pyflakes (unused imports/names, undefined
+# names, etc.) plus the pycodestyle error set, both usually uncontroversial.
+# Line length is intentionally not enforced (E501) — this codebase favors
+# long, flat data-literal lines over wrapping, and reformatting that is a
+# separate concern from catching real bugs.
+select = ["E", "F"]
+ignore = ["E501"]
