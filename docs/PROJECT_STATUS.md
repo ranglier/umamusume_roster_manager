@@ -438,6 +438,7 @@ Le projet n'avait jusqu'ici aucun test. Une premiere suite a ete ajoutee dans `t
 - validation du roster et des `builds` (`normalize_roster_entry`, `normalize_build_stats`, `normalize_build_aptitudes`, `normalize_build_id_list`, `normalize_build_legacy_pair`)
 - generation d'identifiants sequentiels (`next_build_id`, `next_legacy_id`, `next_profile_id`) et de noms de profil uniques
 - categorisation des distances de course (`scripts/lib/gametora_reference.py`)
+- normalisation `characters` et `supports` (`normalize_characters`, `normalize_supports`): forme des items, aptitudes/grades, degradation propre quand un `base_character_id` n'a pas de fiche de base, et la regression exacte du bug `hint_others` groupes
 
 Lancer la suite:
 

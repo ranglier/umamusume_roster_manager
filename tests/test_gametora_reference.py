@@ -125,5 +125,96 @@ class NormalizeSupportsTests(unittest.TestCase):
         self.assertEqual(item["name"], "スペシャルウィーク")
 
 
+def make_character_card(**overrides):
+    card = {
+        "card_id": 100101,
+        "char_id": 1001,
+        "name_en": "Special Week",
+        "title_en_gl": "[Special Dreamer]",
+        "rarity": 3,
+        # turf, dirt, short, mile, medium, long, runner, leader, betweener, chaser
+        "aptitude": ["A", "G", "B", "A", "A", "C", "A", "B", "C", "D"],
+        "stat_bonus": [10, 10, 5, 5, 0],
+        "base_stats": [90, 80, 70, 60, 50],
+        "four_star_stats": [100, 90, 80, 70, 60],
+        "five_star_stats": [110, 100, 90, 80, 70],
+    }
+    card.update(overrides)
+    return card
+
+
+def make_base_character(**overrides):
+    base = {
+        "char_id": 1001,
+        "url_name": "special-week",
+        "sex": 2,
+        "birth_month": 3,
+        "birth_day": 2,
+        "playable": True,
+    }
+    base.update(overrides)
+    return base
+
+
+class NormalizeCharactersTests(unittest.TestCase):
+    def test_basic_item_shape(self):
+        card = make_character_card()
+        base = make_base_character()
+        result = gt.normalize_characters(make_source_config("characters"), make_source_metadata(), [base], [card], [])
+        item = result["items"][0]
+        self.assertEqual(item["id"], "100101")
+        self.assertEqual(item["card_id"], 100101)
+        self.assertEqual(item["base_character_id"], 1001)
+        self.assertEqual(item["base_url_name"], "special-week")
+        self.assertEqual(item["rarity"], 3)
+        self.assertEqual(item["name"], "Special Week")
+
+    def test_aptitude_grades_map_to_named_slots(self):
+        card = make_character_card()
+        result = gt.normalize_characters(make_source_config("characters"), make_source_metadata(), [make_base_character()], [card], [])
+        aptitudes = result["items"][0]["aptitudes"]
+        self.assertEqual(aptitudes["surface"], {"turf": "A", "dirt": "G"})
+        self.assertEqual(aptitudes["distance"], {"short": "B", "mile": "A", "medium": "A", "long": "C"})
+        self.assertEqual(aptitudes["style"], {"runner": "A", "leader": "B", "betweener": "C", "chaser": "D"})
+
+    def test_viable_aptitudes_keep_only_a_grade_and_above(self):
+        card = make_character_card()
+        result = gt.normalize_characters(make_source_config("characters"), make_source_metadata(), [make_base_character()], [card], [])
+        viable = result["items"][0]["viable_aptitudes"]
+        self.assertEqual(viable["surface"], ["turf"])
+        self.assertEqual(viable["distance"], ["mile", "medium"])
+        self.assertEqual(viable["style"], ["runner"])
+
+    # A card can reference a base_character_id that isn't in the base
+    # characters dataset (e.g. datasets fetched slightly out of sync) — the
+    # profile section must degrade to None fields instead of crashing.
+    def test_missing_base_character_leaves_profile_fields_none(self):
+        card = make_character_card(char_id=9999)
+        result = gt.normalize_characters(make_source_config("characters"), make_source_metadata(), [make_base_character()], [card], [])
+        item = result["items"][0]
+        self.assertIsNone(item["base_url_name"])
+        self.assertEqual(
+            item["profile"],
+            {
+                "birthday": None,
+                "height_cm": None,
+                "measurements": None,
+                "sex": None,
+                "race": None,
+                "playable": None,
+                "active": None,
+                "voice_actor": None,
+                "real_life": None,
+            },
+        )
+
+    def test_profile_resolves_sex_and_birthday_from_base_character(self):
+        card = make_character_card()
+        result = gt.normalize_characters(make_source_config("characters"), make_source_metadata(), [make_base_character()], [card], [])
+        profile = result["items"][0]["profile"]
+        self.assertEqual(profile["sex"], "Stallion")
+        self.assertEqual(profile["birthday"], "03-02")
+
+
 if __name__ == "__main__":
     unittest.main()
