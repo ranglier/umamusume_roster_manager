@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
+from lib.common import clamp_int, normalize_string_list, utc_timestamp
 from lib.gametora_reference import update_umamusume_reference
 from lib.sqlite_reference import get_reference_database_path, read_reference_database_meta
 
@@ -106,10 +107,6 @@ ACTIVE_ADMIN_JOB: dict | None = None
 ADMIN_JOB_HISTORY: list[dict] = []
 
 
-def utc_timestamp() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-
-
 def default_profiles_index() -> dict:
     return {
         "version": 1,
@@ -190,32 +187,6 @@ def load_reference_items_lookup(entity_key: str) -> dict[str, dict]:
         for item in payload.get("items", [])
         if isinstance(item, dict) and str(item.get("id") or "").strip()
     }
-
-
-def normalize_string_list(value: object, *, field_name: str) -> list[str]:
-    if value is None:
-        return []
-    if not isinstance(value, list):
-        raise ValueError(f"{field_name} must be a list of strings.")
-
-    normalized: list[str] = []
-    for entry in value:
-        if not isinstance(entry, str):
-            raise ValueError(f"{field_name} must be a list of strings.")
-        cleaned = entry.strip()
-        if not cleaned:
-            continue
-        if len(cleaned) > 64:
-            raise ValueError(f"{field_name} entries are too long.")
-        if cleaned not in normalized:
-            normalized.append(cleaned)
-    return normalized
-
-
-def clamp_int(value: object, minimum: int, maximum: int, fallback: int) -> int:
-    if not isinstance(value, int):
-        return fallback
-    return max(minimum, min(maximum, value))
 
 
 def get_support_level_cap(rarity: int, limit_break: int) -> int:
