@@ -48,6 +48,17 @@ first, then confirmed for real in CI (`.github/workflows/tests.yml`, job
 same: verify behavior via the browser preview, then let CI be the first real
 execution, and say so.
 
+## Don't run mypy on `serve_reference.py` or `gametora_reference.py` as-is
+
+Tried it, verdict is in `docs/PROJECT_STATUS.md` under "Outillage qualite": mypy
+hangs (90s+, still not done) on `scripts/lib/gametora_reference.py` and
+`scripts/serve_reference.py`, almost certainly because of the huge nested
+`OrderedDict([...])` literals and heavy `Any` typing in those two files. The
+small `scripts/lib/*.py` modules check instantly. Don't burn CI minutes (or
+your own) re-running the full `scripts/` tree through mypy expecting it to
+just finish — it won't, without either scoping it to the small modules only
+or actually restructuring the expensive functions first.
+
 ## Previewing the app
 
 `.claude/launch.json` defines a `reference-server` config
