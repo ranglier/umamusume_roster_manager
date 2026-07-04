@@ -59,6 +59,16 @@ class LiveServerTestCase(unittest.TestCase):
             ("PROFILES_INDEX_PATH", tmp_root / "data" / "user" / "profiles.json"),
             ("NORMALIZED_ROOT", tmp_root / "data" / "normalized"),
             ("BACKUP_ROOT", tmp_root / "data" / "backups"),
+            # REFERENCE_META_PATH/REFERENCE_DB_PATH are computed once at import
+            # time (DIST_ROOT / "data" / "reference-meta.json" and
+            # get_reference_database_path()), so they don't move just because
+            # DIST_ROOT/PROJECT_ROOT are patched above - without patching them
+            # too, /__meta and bootstrap-status would read this real
+            # project's actual generated reference data instead of the
+            # sandbox, which works today but silently stops being
+            # deterministic the moment this repo's data/ is regenerated.
+            ("REFERENCE_META_PATH", tmp_root / "dist" / "data" / "reference-meta.json"),
+            ("REFERENCE_DB_PATH", tmp_root / "data" / "runtime" / "reference.sqlite"),
         ):
             patcher = mock.patch.object(sr, name, value)
             patcher.start()
