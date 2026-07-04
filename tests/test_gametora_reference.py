@@ -413,7 +413,7 @@ def make_race(**overrides):
 
 class NormalizeRacesTests(unittest.TestCase):
     def test_basic_item_shape_with_unknown_track_falls_back(self):
-        result = gt.normalize_races(make_source_config("races"), make_source_metadata(), [make_race()])
+        result = gt.normalize_races(make_source_config("races"), make_source_metadata(), [make_race()], [])
         item = result["items"][0]
         self.assertEqual(item["id"], "10001")
         self.assertEqual(item["race_id"], 20001)
@@ -426,16 +426,16 @@ class NormalizeRacesTests(unittest.TestCase):
         self.assertEqual(item["grade"], "G1")
 
     def test_factor_summary_collects_only_present_effects(self):
-        result = gt.normalize_races(make_source_config("races"), make_source_metadata(), [make_race(factor={"effect_1": "Speed +10%"})])
+        result = gt.normalize_races(make_source_config("races"), make_source_metadata(), [make_race(factor={"effect_1": "Speed +10%"})], [])
         self.assertEqual(result["items"][0]["factor_summary"], ["Speed +10%"])
 
         result_both = gt.normalize_races(
-            make_source_config("races"), make_source_metadata(), [make_race(factor={"effect_1": "Speed +10%", "effect_2": "Stamina +5%"})]
+            make_source_config("races"), make_source_metadata(), [make_race(factor={"effect_1": "Speed +10%", "effect_2": "Stamina +5%"})], []
         )
         self.assertEqual(result_both["items"][0]["factor_summary"], ["Speed +10%", "Stamina +5%"])
 
     def test_factor_summary_is_empty_without_a_factor(self):
-        result = gt.normalize_races(make_source_config("races"), make_source_metadata(), [make_race(factor=None)])
+        result = gt.normalize_races(make_source_config("races"), make_source_metadata(), [make_race(factor=None)], [])
         self.assertEqual(result["items"][0]["factor_summary"], [])
 
     def test_banner_asset_is_built_only_when_banner_id_is_present(self):
@@ -444,7 +444,7 @@ class NormalizeRacesTests(unittest.TestCase):
         config["assets"] = {
             "race_banner": {"role": "banner", "pathTemplate": "races/{banner_id}.png", "urlTemplate": "/images/races/{banner_id}.png"},
         }
-        result = gt.normalize_races(config, make_source_metadata(), [make_race(banner_id=55), make_race(id=10002, banner_id=None)])
+        result = gt.normalize_races(config, make_source_metadata(), [make_race(banner_id=55), make_race(id=10002, banner_id=None)], [])
         self.assertEqual(result["items"][0]["banner_id"], 55)
         self.assertIsNotNone(result["items"][0]["assets"]["banner"])
         self.assertIsNone(result["items"][1]["assets"]["banner"])
@@ -455,8 +455,25 @@ class NormalizeRacesTests(unittest.TestCase):
     # descriptor a few lines below it already guarded the same value with
     # `if race.get("banner_id") is not None`. Pins the fix.
     def test_a_race_without_a_banner_does_not_crash_and_reports_a_null_banner_id(self):
-        result = gt.normalize_races(make_source_config("races"), make_source_metadata(), [make_race(banner_id=None)])
+        result = gt.normalize_races(make_source_config("races"), make_source_metadata(), [make_race(banner_id=None)], [])
         self.assertIsNone(result["items"][0]["banner_id"])
+
+    def test_related_racetracks_matches_by_exact_course_id_not_track_attribute_heuristics(self):
+        # Unlike cm_targets, a race carries an exact course_id - this is a
+        # direct foreign-key lookup, so a race whose own `track` field
+        # doesn't even match the racetrack's track id should still link,
+        # as long as the course_id matches.
+        track = {"id": 55, "courses": [make_racetrack_course(id=101)]}
+        result = gt.normalize_races(make_source_config("races"), make_source_metadata(), [make_race(course_id=101, track=99999)], [track])
+        related = result["items"][0]["related_racetracks"]
+        self.assertEqual(len(related), 1)
+        self.assertEqual(related[0]["entityKey"], "racetracks")
+        self.assertEqual(related[0]["id"], "101")
+
+    def test_related_racetracks_is_empty_when_no_course_matches(self):
+        track = {"id": 55, "courses": [make_racetrack_course(id=999)]}
+        result = gt.normalize_races(make_source_config("races"), make_source_metadata(), [make_race(course_id=101)], [track])
+        self.assertEqual(result["items"][0]["related_racetracks"], [])
 
 
 def make_racetrack_course(**overrides):

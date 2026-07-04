@@ -322,6 +322,11 @@ export function renderRaces(detail) {
       <h3>Factor Summary</h3>
       ${renderSimpleList(detail.factor_summary, (entry) => entry)}
     </div>
+    <div class="detail-section">
+      <h3>Related Racetracks</h3>
+      <p class="source-note">Jump to the course to see the Skill Visualizer for this race's track layout.</p>
+      ${renderReferenceList(detail.related_racetracks)}
+    </div>
   `;
 }
 

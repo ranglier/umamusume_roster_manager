@@ -1495,7 +1495,19 @@ def normalize_skills(
     )
 
 
-def normalize_races(config: dict[str, Any], metadata: dict[str, Any], races: Any) -> dict[str, Any]:
+def normalize_races(config: dict[str, Any], metadata: dict[str, Any], races: Any, racetracks: Any) -> dict[str, Any]:
+    # Unlike cm_targets (which only knows a track/terrain/distance profile and
+    # has to guess candidate courses by matching those attributes), a race
+    # already carries an exact `course_id` that is a direct foreign key into
+    # racetracks' courses (verified against this session's imported data: all
+    # 322 races match a real course id) - so this is a plain id lookup, not a
+    # heuristic match.
+    courses_by_id: dict[str, tuple[str, dict[str, Any]]] = {}
+    for track in as_array(racetracks):
+        track_id_key = str(track.get("id"))
+        for course in as_array(track.get("courses")):
+            courses_by_id[str(course["id"])] = (track_id_key, course)
+
     items: list[dict[str, Any]] = []
     for race in as_array(races):
         track_id = str(race["track"])
@@ -1508,6 +1520,25 @@ def normalize_races(config: dict[str, Any], metadata: dict[str, Any], races: Any
                 factor_summary.append(factor["effect_2"])
 
         name = coalesce(race.get("name_en"), race.get("name_jp"))
+
+        related_racetracks: list[dict[str, Any]] = []
+        course_match = courses_by_id.get(str(race.get("course_id")))
+        if course_match is not None:
+            course_track_id, course = course_match
+            related_racetracks.append(
+                OrderedDict(
+                    [
+                        ("entityKey", "racetracks"),
+                        ("id", str(course["id"])),
+                        ("title", f"{get_track_name(course_track_id)} #{course['id']}"),
+                        (
+                            "subtitle",
+                            f"{get_terrain_label(course['terrain'])} | {get_distance_category_from_code(course['distance'])} | {course['length']}m",
+                        ),
+                    ]
+                )
+            )
+
         items.append(
             OrderedDict(
                 [
@@ -1568,6 +1599,7 @@ def normalize_races(config: dict[str, Any], metadata: dict[str, Any], races: Any
                     ("course_code", race.get("course")),
                     ("career_years", as_array(race.get("list_ura"))),
                     ("factor_summary", factor_summary),
+                    ("related_racetracks", related_racetracks),
                 ]
             )
         )
@@ -2344,7 +2376,7 @@ def build_normalized_reference(config: dict[str, Any], metadata: dict[str, Any])
                 ),
             ),
             ("skills", normalize_skills(config, metadata, raw["skills"], raw["skill_effect_values"], raw["skill_condition_values"])),
-            ("races", normalize_races(config, metadata, raw["races"])),
+            ("races", normalize_races(config, metadata, raw["races"], raw["racetracks"])),
             ("racetracks", normalize_racetracks(config, metadata, raw["racetracks"])),
             ("g1_factors", normalize_g1_factors(config, metadata, raw["factors"], raw["races"], raw["skills"])),
             ("cm_targets", normalize_cm_targets(config, metadata, raw["cm_targets"], raw["races"], raw["racetracks"])),

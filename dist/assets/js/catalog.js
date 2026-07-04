@@ -1,4 +1,4 @@
-// Auto-split from app.js as part of docs/REFACTOR_PLAN.md.
+﻿// Auto-split from app.js as part of docs/REFACTOR_PLAN.md.
 import { TRAINING_EVENT_EFFECT_LABELS, asArray, data, getEntityItems, getSkillReferences, getViewState, state } from "./core.js";
 import { escapeHtml, renderBadge, renderLinkedSkillList, renderReferenceList, renderSimpleList, tableFromRows } from "./dom-utils.js";
 import { getRosterEntry, renderCharacterRosterProjection, renderSupportCurrentEffects, renderSupportRosterProjection } from "./roster.js";
@@ -321,6 +321,11 @@ export function renderRaces(detail) {
     <div class="detail-section">
       <h3>Factor Summary</h3>
       ${renderSimpleList(detail.factor_summary, (entry) => entry)}
+    </div>
+    <div class="detail-section">
+      <h3>Related Racetracks</h3>
+      <p class="source-note">Jump to the course to see the Skill Visualizer for this race's track layout.</p>
+      ${renderReferenceList(detail.related_racetracks)}
     </div>
   `;
 }

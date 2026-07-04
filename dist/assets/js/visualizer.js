@@ -1,4 +1,4 @@
-// New module for the Race Skill Visualizer (docs/CM_BUILD_PLAN.md,
+﻿// New module for the Race Skill Visualizer (docs/CM_BUILD_PLAN.md,
 // docs/EXTERNAL_SOURCES_PLAN.md). Racetrack course geometry here is 1D only
 // (meter-ranges along the course, no 2D curve/(x,y) shape data anywhere in
 // the pipeline) - this stays an honest linear distance view, not a literal

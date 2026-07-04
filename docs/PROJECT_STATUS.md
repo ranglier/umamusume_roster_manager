@@ -316,6 +316,37 @@ Le picker de skill passe de mono- a multi-selection (jusqu'a
   pastille de legende sa couleur via une regle dediee
   `.legend-swatch.track-skill-N::before`.
 
+#### 11quater. Extension du Skill Visualizer a `races`
+
+Contrairement a ce que section 11 supposait initialement ("un vrai
+changement backend, volontairement hors perimetre"), le lien `races` ->
+`racetracks` s'est revele trivial une fois les vraies donnees inspectees:
+chaque `race` porte deja un `course_id` qui est une cle etrangere exacte
+vers l'`id` d'un `racetracks` (verifie sur les 322 races importees cette
+session: 322/322 matchent un id de course reel). Ce n'est donc **pas** le
+meme genre de correspondance que celle de `normalize_cm_targets()`, qui doit
+deviner des courses candidates par attributs (terrain/distance/direction)
+faute de `course_id` direct dans les donnees CM.
+
+- `normalize_races()` (`scripts/lib/gametora_reference.py`) prend maintenant
+  aussi `racetracks` en parametre, construit une table de correspondance
+  `course_id -> (track, course)` en O(1) et ajoute un champ
+  `related_racetracks` (meme forme `{entityKey, id, title, subtitle}` que
+  `cm_targets`) a chaque race — un lookup direct par id, pas une heuristique
+  par attributs
+- `renderRaces()` (`catalog.js`) affiche cette liste via le meme composant
+  `renderReferenceList` deja utilise par `cm_targets`, donc navigation
+  gratuite vers la fiche `racetracks` et son Skill Visualizer
+- aucun changement necessaire cote SQLite (`_insert_races` serialise deja
+  l'item normalise entier dans `payload_json`, donc le nouveau champ est
+  stocke/relu automatiquement) ni cote lecture HTTP (`fetch_reference_item`
+  relit `payload_json` tel quel)
+- teste (`tests/test_gametora_reference.py`): correspondance exacte par
+  `course_id` meme quand le `track` de la race ne correspond pas au track
+  id du racetrack (preuve que c'est bien un lookup direct, pas un
+  matching par attributs), et liste vide quand aucun `course_id` ne
+  correspond
+
 ## Choix techniques et justification
 
 ### Manifest + JSON versionnes plutot que scraping HTML
@@ -492,11 +523,14 @@ Apres clonage, un import local est donc necessaire pour regenerer les donnees et
 - decodage semantique fin des outcomes de `training_events`
 - brique `Meta / Insights`
 - `Visualizers`: `Race Skill Visualizer` livre sur `racetracks` (voir section
-  11 et 11bis/11ter) avec badges lisibles et affichage simultane de
-  jusqu'a 6 skills. Reste ouvert, aucune decision prise: ergonomie
-  mobile/petit ecran du SVG, comparaison de decks, et extension a `races`
-  (toujours pas de lien `related_racetracks` cote donnees — `normalize_races()`
-  ne fait pas ce matching, contrairement a `normalize_cm_targets()`)
+  11 a 11quater) avec badges lisibles, affichage simultane de jusqu'a 6
+  skills, et acces depuis `races` (en plus de `cm_targets`). Reste ouvert,
+  aucune decision prise: comparaison de decks. L'ergonomie mobile/petit
+  ecran n'est **pas** une piste ouverte pour l'instant: l'application
+  entiere n'a aucun portage mobile a ce jour (UI locale pensee desktop de
+  bout en bout), donc une passe mobile isolee sur le seul SVG du visualizer
+  n'aurait pas de sens tant que ce portage plus large n'est pas lui-meme
+  priorise
 
 ## Sources externes preparees
 
