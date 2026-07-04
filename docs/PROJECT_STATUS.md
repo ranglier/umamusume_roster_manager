@@ -267,6 +267,55 @@ Teste dans `tests/js/test_visualizer.mjs` avec les conditions reelles de 3
 skills (Certain Victory, Clear Heart, Xceleration) tirees directement de la
 base SQLite importee cette session.
 
+#### 11bis. Lisibilite des badges pour les skills "tout dynamique"
+
+Limite connue du MVP: beaucoup de skills n'ont aucune variable statiquement
+resolvable (`order`, `order_rate`, `bashin_diff_*`...), donc aucune zone
+projetee sur la piste — juste une liste brute `variable==valeur` en vrac,
+sans distinction AND/OR. Deux ameliorations apportees:
+
+- `describeDynamicTermHuman` (`visualizer.js`): dictionnaire de glose lisible
+  pour ~20 variables dynamiques a semantique non ambigue (`order<=5` -> "Rank
+  <= 5", `bashin_diff_infront<=1` -> "<= 1 body from the horse ahead", etc.).
+  Volontairement **pas exhaustif**: les variables a enumeration
+  (`running_style`, `distance_type`, `weather`, `season`...) sont exclues —
+  l'extraction des vraies conditions depuis `data/normalized/skills.json` a
+  montre que `season` prend au moins 5 valeurs distinctes, pas les 4
+  saisons attendues, preuve concrete qu'une table de mapping enum devinee
+  aurait ete exactement le genre de precision fabriquee que ce projet evite
+  ailleurs (memes principes que `resolveStaticZones` pour les zones). Le
+  terme brut reste toujours visible en tooltip HTML natif au survol du badge.
+- Regroupement AND/OR (`catalog.js`): les badges d'une meme alternative sont
+  affiches dans leur propre encart (`.condition-group`), les alternatives
+  separees par un connecteur "OR" visuel, au lieu d'etre aplaties en une
+  seule liste ambigue qui laissait croire a des conditions simultanees.
+
+#### 11ter. Affichage simultane de plusieurs skills
+
+Le picker de skill passe de mono- a multi-selection (jusqu'a
+`MAX_VISUALIZER_SKILLS = 6`, une palette fixe de 6 couleurs
+`SKILL_HIGHLIGHT_CLASSES`):
+
+- le SVG donne desormais a chaque skill selectionne sa propre bande
+  horizontale empilee sous la bande des pentes (au lieu du seul overlay
+  pleine hauteur du MVP, qui aurait rendu les zones de plusieurs skills
+  illisibles des qu'elles se chevauchent); la hauteur du `viewBox` grandit
+  dynamiquement avec le nombre de skills selectionnes et reste identique au
+  comportement MVP quand aucun n'est selectionne
+- le picker epingle en tete toutes les selections filtrees/scrollees hors
+  vue (dans l'ordre de selection, pour une couleur stable), se grise et se
+  desactive (`disabled` natif) une fois le plafond de 6 atteint, avec un
+  message explicite plutot qu'un clic silencieusement ignore
+- chaque skill selectionne a sa propre carte de resultat (compteur de zones,
+  badges AND/OR, bouton "x" de retrait qui reutilise le meme mecanisme
+  `data-skill-pick` que le picker)
+- bug attrape et corrige pendant la verification navigateur: la classe
+  partagee `.track-skill-N` peignait un fond plein sur les etiquettes du
+  legend/des cartes (texte illisible, couleur sur couleur) — corrige en
+  limitant `.track-skill-N` a `fill`/`stroke` (usage SVG) et en donnant au
+  pastille de legende sa couleur via une regle dediee
+  `.legend-swatch.track-skill-N::before`.
+
 ## Choix techniques et justification
 
 ### Manifest + JSON versionnes plutot que scraping HTML
@@ -442,7 +491,12 @@ Apres clonage, un import local est donc necessaire pour regenerer les donnees et
 - heuristiques Champions Meeting
 - decodage semantique fin des outcomes de `training_events`
 - brique `Meta / Insights`
-- `Visualizers`: MVP `Race Skill Visualizer` livre sur `racetracks` (voir section suivante); reste a etendre a `races` (pas de lien `related_racetracks` cote donnees aujourd'hui) et a couvrir les variables dynamiques (`order`, `bashin_diff_*`, etc.) au-dela du simple badge texte
+- `Visualizers`: `Race Skill Visualizer` livre sur `racetracks` (voir section
+  11 et 11bis/11ter) avec badges lisibles et affichage simultane de
+  jusqu'a 6 skills. Reste ouvert, aucune decision prise: ergonomie
+  mobile/petit ecran du SVG, comparaison de decks, et extension a `races`
+  (toujours pas de lien `related_racetracks` cote donnees — `normalize_races()`
+  ne fait pas ce matching, contrairement a `normalize_cm_targets()`)
 
 ## Sources externes preparees
 
@@ -521,7 +575,7 @@ Elle tourne aussi automatiquement sur chaque push / pull request via `.github/wo
 
 Ce filet couvre maintenant les fonctions pures les plus critiques (y compris les 13 `normalize_X` du pipeline d'import), l'orchestration `legacy`, le handler HTTP dans son integralite, les jobs d'admin/backups, et l'ecriture SQLite de bout en bout. Ce qui reste a couvrir en priorite: les fonctions de rendu HTML (`renderXxx`) et l'orchestration DOM/fetch cote JS (attendraient plutot des tests d'integration type Playwright), et, si la bascule des lectures vers SQLite demarre un jour, les requetes de lecture qui en decouleront.
 
-Cote frontend, une suite existe aussi dans `tests/js/` (stdlib `node:test` + `node:assert/strict`, zero dependance ajoutee, meme philosophie que le cote Python). `tests/js/_domshim.mjs` pose un `document`/`window` minimal pour que `src/ui/assets/js/core.js` (qui interroge des elements DOM au chargement du module) soit importable sous Node tout court — et par ricochet, tous les modules qui l'importent (directement ou via `../app.js`, dependance circulaire volontaire deja documentee plus haut). Couverture actuelle (84 assertions, un fichier de test par module source):
+Cote frontend, une suite existe aussi dans `tests/js/` (stdlib `node:test` + `node:assert/strict`, zero dependance ajoutee, meme philosophie que le cote Python). `tests/js/_domshim.mjs` pose un `document`/`window` minimal pour que `src/ui/assets/js/core.js` (qui interroge des elements DOM au chargement du module) soit importable sous Node tout court — et par ricochet, tous les modules qui l'importent (directement ou via `../app.js`, dependance circulaire volontaire deja documentee plus haut). Couverture actuelle (109 tests / 233 assertions, un fichier de test par module source):
 
 - `dom-utils.js`: `escapeHtml`, `hashText`, `badgePalette`, `clampRatio`, `clampNumber`, `parseRosterTokenList`, `tableFromRows`
 - `core.js`: `asArray`, `normalizeProfilesIndex`, `normalizeRosterDocument`, `normalizeBuildEntry`, `normalizeBuildsDocument`, `getSupportLevelCap`, `hasFilterOption`, `defaultEntityKeyForMode`, `allowedEntityKeys`, `currentRouteState`
@@ -530,6 +584,7 @@ Cote frontend, une suite existe aussi dans `tests/js/` (stdlib `node:test` + `no
 - `builds.js`: `getBuildEditorKey`, `getAptitudeTone`, `getAptitudeHint`, `getCharacterAptitudeForTarget`, `getBuildTargetProfile`, `getLegacySparkSummaryText`, `legacyMatchesBuildTarget`, `createEmptyBuildEntry`
 - `legacy.js`: `getCharacterBaseRarity`, `getCharacterRosterDefaults`, `getCharacterUniqueSkill`, `characterSupportsGreenSpark`, `getLegacyScenarioLabel`, `formatLegacyFactorLabel`, `deriveLegacyWhiteSparks`
 - `admin.js`: `wizardNeedsReferenceBuild`, `getWizardProgress`, `getTimedProgress`, `getUpdateProgress`
+- `visualizer.js` (Race Skill Visualizer, voir section 11/11bis/11ter): `parseConditionString`, `resolveStaticZones`, `describeDynamicTermHuman`, `buildTrackSvg` (dont le comportement multi-groupes/multi-couleurs), `getFilteredSkillPickerOptions` (multi-selection, epinglage dans l'ordre de selection)
 
 Lancer la suite (Node 22 installe et verifie dans cet environnement de dev; sur Windows, utiliser explicitement le glob, la forme repertoire seule echoue avec `ERR_MODULE_NOT_FOUND` — voir `CLAUDE.md`):
 

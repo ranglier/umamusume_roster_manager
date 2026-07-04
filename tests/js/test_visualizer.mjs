@@ -6,8 +6,10 @@ import {
   buildTrackSvg,
   describeDynamicTermHuman,
   getFilteredSkillPickerOptions,
+  MAX_VISUALIZER_SKILLS,
   parseConditionString,
   resolveStaticZones,
+  SKILL_HIGHLIGHT_CLASSES,
   STATIC_ZONE_VARIABLES,
 } from "../../src/ui/assets/js/visualizer.js";
 
@@ -148,16 +150,38 @@ test("buildTrackSvg draws no slope rects when the course has none, and one per s
   assert.match(withSlopes, /track-zone-uphill/);
 });
 
-test("buildTrackSvg overlays a highlight rect per skill zone, using the approximate variant class when flagged", () => {
+test("buildTrackSvg renders one lane per highlight group, tagged with that group's color class", () => {
   const course = makeCourse();
   const svg = buildTrackSvg(course, {
-    highlightZones: [
-      { start: 1100, end: 1350, approximate: false },
-      { start: 250, end: 1000, approximate: true },
+    highlightGroups: [
+      { className: "track-skill-1", zones: [{ start: 1100, end: 1350, approximate: false }] },
+      { className: "track-skill-2", zones: [{ start: 250, end: 1000, approximate: true }] },
     ],
   });
-  assert.equal((svg.match(/track-zone-skill-highlight"/g) || []).length, 1);
-  assert.equal((svg.match(/track-zone-skill-highlight-approx/g) || []).length, 1);
+  assert.match(svg, /class="track-zone-skill-highlight track-skill-1"/);
+  assert.match(svg, /class="track-zone-skill-highlight track-skill-2 track-zone-skill-approx"/);
+});
+
+test("buildTrackSvg grows the viewBox height as more skill lanes are added, and stays at the single-skill baseline with none", () => {
+  const course = makeCourse();
+  const noSkills = buildTrackSvg(course);
+  const oneSkill = buildTrackSvg(course, { highlightGroups: [{ className: "track-skill-1", zones: [] }] });
+  const twoSkills = buildTrackSvg(course, {
+    highlightGroups: [
+      { className: "track-skill-1", zones: [] },
+      { className: "track-skill-2", zones: [] },
+    ],
+  });
+
+  const heightOf = (svg) => Number(svg.match(/viewBox="0 0 1000 (\d+)"/)[1]);
+  assert.equal(heightOf(noSkills), 130);
+  assert.ok(heightOf(oneSkill) > heightOf(noSkills));
+  assert.ok(heightOf(twoSkills) > heightOf(oneSkill));
+});
+
+test("SKILL_HIGHLIGHT_CLASSES has exactly MAX_VISUALIZER_SKILLS entries", () => {
+  assert.equal(SKILL_HIGHLIGHT_CLASSES.length, MAX_VISUALIZER_SKILLS);
+  assert.ok(MAX_VISUALIZER_SKILLS >= 2);
 });
 
 test("describeDynamicTermHuman glosses known variables without discarding the operator/value", () => {
@@ -190,7 +214,7 @@ test("getFilteredSkillPickerOptions filters by a case-insensitive substring on l
     { value: "10451", label: "Clear Heart" },
     { value: "10081", label: "Xceleration" },
   ];
-  const result = getFilteredSkillPickerOptions(options, "victory", null);
+  const result = getFilteredSkillPickerOptions(options, "victory", []);
   assert.equal(result.options.length, 1);
   assert.equal(result.options[0].value, "110031");
   assert.equal(result.hasQuery, true);
@@ -198,7 +222,7 @@ test("getFilteredSkillPickerOptions filters by a case-insensitive substring on l
 
 test("getFilteredSkillPickerOptions caps unfiltered results at 100 and flags isLimited", () => {
   const options = makeSkillOptions(150);
-  const result = getFilteredSkillPickerOptions(options, "", null);
+  const result = getFilteredSkillPickerOptions(options, "", []);
   assert.equal(result.options.length, 100);
   assert.equal(result.totalCount, 150);
   assert.equal(result.isLimited, true);
@@ -206,7 +230,7 @@ test("getFilteredSkillPickerOptions caps unfiltered results at 100 and flags isL
 
 test("getFilteredSkillPickerOptions does not limit when a query is present", () => {
   const options = makeSkillOptions(150).map((option) => ({ ...option, label: `Zzz ${option.label}` }));
-  const result = getFilteredSkillPickerOptions(options, "zzz", null);
+  const result = getFilteredSkillPickerOptions(options, "zzz", []);
   assert.equal(result.options.length, 150);
   assert.equal(result.isLimited, false);
 });
@@ -216,7 +240,26 @@ test("getFilteredSkillPickerOptions keeps a selected skill visible even if the q
     { value: "110031", label: "Certain Victory" },
     { value: "10451", label: "Clear Heart" },
   ];
-  const result = getFilteredSkillPickerOptions(options, "heart", "110031");
+  const result = getFilteredSkillPickerOptions(options, "heart", ["110031"]);
   assert.equal(result.options[0].value, "110031");
   assert.equal(result.options.some((option) => option.value === "10451"), true);
+});
+
+test("getFilteredSkillPickerOptions pins multiple filtered-out selections, in selection order", () => {
+  const options = [
+    { value: "110031", label: "Certain Victory" },
+    { value: "10451", label: "Clear Heart" },
+    { value: "10081", label: "Xceleration" },
+  ];
+  const result = getFilteredSkillPickerOptions(options, "xcel", ["10451", "110031"]);
+  assert.deepEqual(
+    result.options.map((option) => option.value),
+    ["10451", "110031", "10081"],
+  );
+});
+
+test("getFilteredSkillPickerOptions defaults to no selection when the third argument is omitted", () => {
+  const options = [{ value: "110031", label: "Certain Victory" }];
+  const result = getFilteredSkillPickerOptions(options, "");
+  assert.equal(result.options.length, 1);
 });

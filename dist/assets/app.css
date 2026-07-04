@@ -3228,17 +3228,26 @@ body.roster-batch-mode .detail-column {
 }
 
 .track-zone-skill-highlight {
-  fill: rgba(244, 187, 98, 0.28);
-  stroke: var(--accent);
-  stroke-width: 1.5;
+  stroke-width: 1.2;
+  fill-opacity: 0.32;
 }
 
-.track-zone-skill-highlight-approx {
-  fill: rgba(244, 187, 98, 0.14);
-  stroke: var(--accent);
-  stroke-width: 1;
+.track-zone-skill-approx {
   stroke-dasharray: 4 3;
+  fill-opacity: 0.16;
 }
+
+/* One fixed color per simultaneously-displayed skill (capped at 6 - see
+   MAX_VISUALIZER_SKILLS in visualizer.js). Used directly on SVG rects (fill/
+   stroke); the legend/card-heading usage picks up its color from the
+   `.legend-swatch.track-skill-N::before` rules below instead, so it doesn't
+   paint the swatch's own text background. */
+.track-skill-1 { fill: #f4bb62; stroke: #f4bb62; }
+.track-skill-2 { fill: #4dd6a8; stroke: #4dd6a8; }
+.track-skill-3 { fill: #ff6fb0; stroke: #ff6fb0; }
+.track-skill-4 { fill: #5aa9ff; stroke: #5aa9ff; }
+.track-skill-5 { fill: #c6e86a; stroke: #c6e86a; }
+.track-skill-6 { fill: #ff5c5c; stroke: #ff5c5c; }
 
 .track-phase-tick {
   stroke: rgba(216, 229, 239, 0.3);
@@ -3306,10 +3315,12 @@ body.roster-batch-mode .detail-column {
   outline: 1px solid rgba(255, 139, 102, 0.6);
 }
 
-.legend-swatch.track-zone-skill-highlight::before {
-  background: rgba(244, 187, 98, 0.28);
-  outline: 1.5px solid var(--accent);
-}
+.legend-swatch.track-skill-1::before { background: #f4bb62; }
+.legend-swatch.track-skill-2::before { background: #4dd6a8; }
+.legend-swatch.track-skill-3::before { background: #ff6fb0; }
+.legend-swatch.track-skill-4::before { background: #5aa9ff; }
+.legend-swatch.track-skill-5::before { background: #c6e86a; }
+.legend-swatch.track-skill-6::before { background: #ff5c5c; }
 
 .skill-picker-input {
   width: 100%;
@@ -3338,6 +3349,28 @@ body.roster-batch-mode .detail-column {
 .skill-picker-result.active {
   border-color: var(--accent);
   background: rgba(244, 187, 98, 0.1);
+}
+
+.skill-picker-result:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.skill-remove-btn {
+  margin-left: 8px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(115, 160, 198, 0.2);
+  background: transparent;
+  color: var(--text-soft);
+  cursor: pointer;
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+
+.skill-remove-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .skill-dynamic-badge {

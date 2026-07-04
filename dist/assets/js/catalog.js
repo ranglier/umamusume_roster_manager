@@ -2,7 +2,14 @@
 import { TRAINING_EVENT_EFFECT_LABELS, asArray, data, getEntityItems, getSkillReferences, getViewState, state } from "./core.js";
 import { escapeHtml, renderBadge, renderLinkedSkillList, renderReferenceList, renderSimpleList, tableFromRows } from "./dom-utils.js";
 import { getRosterEntry, renderCharacterRosterProjection, renderSupportCurrentEffects, renderSupportRosterProjection } from "./roster.js";
-import { buildTrackSvg, describeDynamicTermHuman, getFilteredSkillPickerOptions, resolveStaticZones } from "./visualizer.js";
+import {
+  buildTrackSvg,
+  describeDynamicTermHuman,
+  getFilteredSkillPickerOptions,
+  MAX_VISUALIZER_SKILLS,
+  resolveStaticZones,
+  SKILL_HIGHLIGHT_CLASSES,
+} from "./visualizer.js";
 import { requestRenderPreservingScroll, requestRenderPreservingScrollAndFocus } from "../app.js";
 
 export function getSkillPickerOptions() {
@@ -25,7 +32,7 @@ function renderConditionGroups(groups) {
 export function getRacetrackVisualizerState(course) {
   const viewState = getViewState("reference", "racetracks");
   if (!viewState.visualizer || viewState.visualizer.courseId !== course.id) {
-    viewState.visualizer = { courseId: course.id, skillQuery: "", selectedSkillId: null };
+    viewState.visualizer = { courseId: course.id, skillQuery: "", selectedSkillIds: [] };
   }
   return viewState.visualizer;
 }
@@ -318,23 +325,29 @@ export function renderRaces(detail) {
   `;
 }
 
-export function renderRacetracks(detail) {
-  const visualizerState = getRacetrackVisualizerState(detail);
-  const picker = getFilteredSkillPickerOptions(getSkillPickerOptions(), visualizerState.skillQuery, visualizerState.selectedSkillId);
-  const selectedSkillItem = visualizerState.selectedSkillId
-    ? getEntityItems("skills").find((item) => String(item.id) === visualizerState.selectedSkillId)
-    : null;
-  const allZones = selectedSkillItem
-    ? asArray(selectedSkillItem.detail?.condition_groups).flatMap((group) => resolveStaticZones(group.condition, group.precondition, detail).zones)
-    : [];
-  const allUnplaced = selectedSkillItem
-    ? asArray(selectedSkillItem.detail?.condition_groups).flatMap((group) => resolveStaticZones(group.condition, group.precondition, detail).unplacedDynamicOnly)
-    : [];
+function buildSkillVisual(skillItem, className, course) {
+  const resolved = asArray(skillItem.detail?.condition_groups).map((group) => resolveStaticZones(group.condition, group.precondition, course));
+  const zones = resolved.flatMap((result) => result.zones);
+  const unplaced = resolved.flatMap((result) => result.unplacedDynamicOnly);
   const seenBadgeGroups = new Set();
-  const badgeGroups = allZones
+  const badgeGroups = zones
     .map((zone) => zone.dynamicBadges)
     .filter((badges) => badges.length && !seenBadgeGroups.has(badges) && seenBadgeGroups.add(badges));
-  const unplacedGroups = allUnplaced.map((entry) => entry.split(" & "));
+  const unplacedGroups = unplaced.map((entry) => entry.split(" & "));
+  return { item: skillItem, className, zones, badgeGroups, unplacedGroups };
+}
+
+export function renderRacetracks(detail) {
+  const visualizerState = getRacetrackVisualizerState(detail);
+  const picker = getFilteredSkillPickerOptions(getSkillPickerOptions(), visualizerState.skillQuery, visualizerState.selectedSkillIds);
+  const skillVisuals = visualizerState.selectedSkillIds
+    .map((id, index) => {
+      const item = getEntityItems("skills").find((entry) => String(entry.id) === id);
+      return item ? buildSkillVisual(item, SKILL_HIGHLIGHT_CLASSES[index % SKILL_HIGHLIGHT_CLASSES.length], detail) : null;
+    })
+    .filter(Boolean);
+  const highlightGroups = skillVisuals.filter((visual) => visual.zones.length).map((visual) => ({ zones: visual.zones, className: visual.className }));
+  const atSkillCap = visualizerState.selectedSkillIds.length >= MAX_VISUALIZER_SKILLS;
 
   return `
     ${tableFromRows([
@@ -356,41 +369,49 @@ export function renderRacetracks(detail) {
         placeholder="Search a skill by name..."
         value="${escapeHtml(visualizerState.skillQuery)}"
       />
+      <p class="source-note">Select up to ${MAX_VISUALIZER_SKILLS} skills to compare their activation zones.</p>
       <div class="skill-picker-results">
         ${picker.options
-          .map(
-            (option) => `
-              <button type="button" class="skill-picker-result${option.value === visualizerState.selectedSkillId ? " active" : ""}" data-skill-pick="${escapeHtml(option.value)}">
+          .map((option) => {
+            const isSelected = visualizerState.selectedSkillIds.includes(option.value);
+            return `
+              <button type="button" class="skill-picker-result${isSelected ? " active" : ""}" data-skill-pick="${escapeHtml(option.value)}"${!isSelected && atSkillCap ? " disabled" : ""}>
                 ${escapeHtml(option.label)}
               </button>
-            `,
-          )
+            `;
+          })
           .join("")}
         ${!picker.options.length ? "<p class='source-note'>No skill matches this search.</p>" : ""}
       </div>
       ${picker.isLimited ? `<p class="source-note">Showing ${picker.visibleCount} of ${picker.totalCount} skills — type to search for more.</p>` : ""}
-      <div class="track-svg-wrap">${buildTrackSvg(detail, { highlightZones: allZones })}</div>
+      ${atSkillCap ? `<p class="source-note">Max ${MAX_VISUALIZER_SKILLS} skills selected — remove one to add another.</p>` : ""}
+      <div class="track-svg-wrap">${buildTrackSvg(detail, { highlightGroups })}</div>
       <div class="track-legend">
         <span class="legend-swatch track-zone-corner">Corner</span>
         <span class="legend-swatch track-zone-straight">Straight</span>
         <span class="legend-swatch track-zone-uphill">Uphill</span>
         <span class="legend-swatch track-zone-downhill">Downhill</span>
-        <span class="legend-swatch track-zone-skill-highlight">Selected skill</span>
+        ${skillVisuals.map((visual) => `<span class="legend-swatch ${visual.className}">${escapeHtml(visual.item.title)}</span>`).join("")}
       </div>
-      ${selectedSkillItem
-        ? `
+      ${skillVisuals
+        .map(
+          (visual) => `
           <div class="detail-section">
-            <h4>${escapeHtml(selectedSkillItem.title)}</h4>
-            ${allZones.length
-              ? `<p class="source-note">${allZones.length} track zone(s) highlighted above.${allZones.some((zone) => zone.approximate) ? " Hatched zones are approximate (e.g. random-phase conditions)." : ""}</p>`
+            <h4>
+              <span class="legend-swatch ${visual.className}">${escapeHtml(visual.item.title)}</span>
+              <button type="button" class="skill-remove-btn" data-skill-pick="${escapeHtml(String(visual.item.id))}" aria-label="Remove ${escapeHtml(visual.item.title)}">&times;</button>
+            </h4>
+            ${visual.zones.length
+              ? `<p class="source-note">${visual.zones.length} track zone(s) highlighted above.${visual.zones.some((zone) => zone.approximate) ? " Hatched zones are approximate (e.g. random-phase conditions)." : ""}</p>`
               : `<p class="source-note">This skill's trigger isn't tied to a track position - it depends on race state:</p>`}
-            ${badgeGroups.length ? `<p class="source-note">Also requires:</p>${renderConditionGroups(badgeGroups)}` : ""}
-            ${allUnplaced.length
-              ? `${allZones.length ? `<p class="source-note">Not shown on track (depends on other horses/ranking):</p>` : ""}${renderConditionGroups(unplacedGroups)}`
+            ${visual.badgeGroups.length ? `<p class="source-note">Also requires:</p>${renderConditionGroups(visual.badgeGroups)}` : ""}
+            ${visual.unplacedGroups.length
+              ? `${visual.zones.length ? `<p class="source-note">Not shown on track (depends on other horses/ranking):</p>` : ""}${renderConditionGroups(visual.unplacedGroups)}`
               : ""}
           </div>
-        `
-        : ""}
+        `,
+        )
+        .join("")}
     </div>
     <div class="detail-section">
       <h3>Course Geometry</h3>
@@ -622,7 +643,13 @@ export function attachRacetrackVisualizerListeners(course) {
   document.querySelectorAll("[data-skill-pick]").forEach((button) => {
     button.addEventListener("click", () => {
       const skillId = button.dataset.skillPick;
-      visualizerState.selectedSkillId = visualizerState.selectedSkillId === skillId ? null : skillId;
+      const ids = visualizerState.selectedSkillIds;
+      const existingIndex = ids.indexOf(skillId);
+      if (existingIndex >= 0) {
+        ids.splice(existingIndex, 1);
+      } else if (ids.length < MAX_VISUALIZER_SKILLS) {
+        ids.push(skillId);
+      }
       requestRenderPreservingScroll();
     });
   });

@@ -194,8 +194,17 @@ const SVG_WIDTH = 1000;
 const LANE_CORNER = { y: 0, height: 24 };
 const LANE_STRAIGHT = { y: 30, height: 24 };
 const LANE_SLOPE = { y: 60, height: 16 };
-const PHASE_TICK_Y = 82;
-const SVG_HEIGHT = 130;
+const SKILL_LANES_TOP = 82;
+const SKILL_LANE_HEIGHT = 14;
+const SKILL_LANE_GAP = 4;
+const BOTTOM_MARGIN = 48;
+
+// One fixed, deliberately small color per simultaneously-displayed skill.
+// Capped (rather than generated on the fly) so the legend and the picker's
+// "max reached" state stay predictable instead of degrading into
+// indistinguishable colors as more skills are added.
+export const SKILL_HIGHLIGHT_CLASSES = ["track-skill-1", "track-skill-2", "track-skill-3", "track-skill-4", "track-skill-5", "track-skill-6"];
+export const MAX_VISUALIZER_SKILLS = SKILL_HIGHLIGHT_CLASSES.length;
 
 function metersToX(meters, lengthM) {
   if (!lengthM) return 0;
@@ -208,7 +217,12 @@ function rangeRect(start, end, lengthM, lane, className) {
   return `<rect class="${className}" x="${x.toFixed(2)}" y="${lane.y}" width="${width.toFixed(2)}" height="${lane.height}" />`;
 }
 
-export function buildTrackSvg(course, { highlightZones = [] } = {}) {
+// highlightGroups: [{ className, zones: [{ start, end, approximate }] }] - one
+// entry per selected skill, each rendered in its own lane (stacked below the
+// slope lane) so overlapping skill zones stay visually distinguishable
+// instead of blending into one overlay like a single-skill view could get
+// away with.
+export function buildTrackSvg(course, { highlightGroups = [] } = {}) {
   const lengthM = Number(course?.length_m) || 0;
   const corners = Array.isArray(course?.corners) ? course.corners : [];
   const straights = Array.isArray(course?.straights) ? course.straights : [];
@@ -221,40 +235,46 @@ export function buildTrackSvg(course, { highlightZones = [] } = {}) {
     rangeRect(slope.start, slope.end, lengthM, LANE_SLOPE, slope.slope > 0 ? "track-zone-uphill" : "track-zone-downhill"),
   );
 
+  const skillLaneRects = highlightGroups.flatMap((group, index) => {
+    const laneY = SKILL_LANES_TOP + index * (SKILL_LANE_HEIGHT + SKILL_LANE_GAP);
+    return group.zones.map((zone) => {
+      const x = metersToX(zone.start, lengthM);
+      const width = Math.max(0, metersToX(zone.end, lengthM) - x);
+      const approxClass = zone.approximate ? " track-zone-skill-approx" : "";
+      return `<rect class="track-zone-skill-highlight ${group.className}${approxClass}" x="${x.toFixed(2)}" y="${laneY}" width="${width.toFixed(2)}" height="${SKILL_LANE_HEIGHT}" />`;
+    });
+  });
+
+  const phaseTickY = SKILL_LANES_TOP + highlightGroups.length * (SKILL_LANE_HEIGHT + SKILL_LANE_GAP) + (highlightGroups.length ? 6 : 0);
+  const svgHeight = phaseTickY + BOTTOM_MARGIN;
+
   const LABEL_EDGE_MARGIN = 40;
   const phaseTicks = phases.map((phase) => {
     const x = metersToX(phase.start, lengthM);
     const anchor = x < LABEL_EDGE_MARGIN ? "start" : x > SVG_WIDTH - LABEL_EDGE_MARGIN ? "end" : "middle";
     return `
-      <line class="track-phase-tick" x1="${x.toFixed(2)}" y1="${PHASE_TICK_Y}" x2="${x.toFixed(2)}" y2="${PHASE_TICK_Y + 10}" />
-      <text class="track-phase-label" style="text-anchor:${anchor};" x="${x.toFixed(2)}" y="${PHASE_TICK_Y + 20}">${escapeHtml(`Phase ${phase.id}`)}</text>
+      <line class="track-phase-tick" x1="${x.toFixed(2)}" y1="${phaseTickY}" x2="${x.toFixed(2)}" y2="${phaseTickY + 10}" />
+      <text class="track-phase-label" style="text-anchor:${anchor};" x="${x.toFixed(2)}" y="${phaseTickY + 20}">${escapeHtml(`Phase ${phase.id}`)}</text>
     `;
   });
 
-  const highlightRects = highlightZones.map((zone) => {
-    const className = zone.approximate ? "track-zone-skill-highlight-approx" : "track-zone-skill-highlight";
-    const x = metersToX(zone.start, lengthM);
-    const width = Math.max(0, metersToX(zone.end, lengthM) - x);
-    return `<rect class="${className}" x="${x.toFixed(2)}" y="-4" width="${width.toFixed(2)}" height="${SVG_HEIGHT - 12}" />`;
-  });
-
   return `
-    <svg class="track-svg" viewBox="0 0 ${SVG_WIDTH} ${SVG_HEIGHT}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Race track distance overview">
+    <svg class="track-svg" viewBox="0 0 ${SVG_WIDTH} ${svgHeight}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Race track distance overview">
       <rect class="track-base-line" x="0" y="${LANE_STRAIGHT.y - 3}" width="${SVG_WIDTH}" height="2" />
       ${straightRects.join("")}
       ${cornerRects.join("")}
       ${slopeRects.join("")}
+      ${skillLaneRects.join("")}
       ${phaseTicks.join("")}
-      <line class="track-finish-line" x1="${SVG_WIDTH}" y1="0" x2="${SVG_WIDTH}" y2="${PHASE_TICK_Y}" />
-      <text class="track-finish-label" x="${SVG_WIDTH - 4}" y="${PHASE_TICK_Y + 20}">Finish</text>
-      ${highlightRects.join("")}
+      <line class="track-finish-line" x1="${SVG_WIDTH}" y1="0" x2="${SVG_WIDTH}" y2="${phaseTickY}" />
+      <text class="track-finish-label" x="${SVG_WIDTH - 4}" y="${phaseTickY + 20}">Finish</text>
     </svg>
   `;
 }
 
 const SKILL_PICKER_LIMIT = 100;
 
-export function getFilteredSkillPickerOptions(allOptions, query, selectedSkillId) {
+export function getFilteredSkillPickerOptions(allOptions, query, selectedSkillIds = []) {
   const normalizedQuery = String(query || "").trim().toLowerCase();
   let visibleOptions = normalizedQuery
     ? allOptions.filter((option) => `${option.label} ${option.value}`.toLowerCase().includes(normalizedQuery))
@@ -265,11 +285,12 @@ export function getFilteredSkillPickerOptions(allOptions, query, selectedSkillId
     visibleOptions = visibleOptions.slice(0, SKILL_PICKER_LIMIT);
   }
 
-  if (selectedSkillId && !visibleOptions.some((option) => option.value === selectedSkillId)) {
-    const selectedOption = allOptions.find((option) => option.value === selectedSkillId);
-    if (selectedOption) {
-      visibleOptions = [selectedOption, ...visibleOptions];
-    }
+  const missingSelected = selectedSkillIds
+    .filter((id) => !visibleOptions.some((option) => option.value === id))
+    .map((id) => allOptions.find((option) => option.value === id))
+    .filter(Boolean);
+  if (missingSelected.length) {
+    visibleOptions = [...missingSelected, ...visibleOptions];
   }
 
   return {
