@@ -208,6 +208,8 @@ Une premiere couche SQLite locale a ete ajoutee pour la reference:
 
 L'UI continue encore de lire le bundle statique existant; la bascule des lectures vers SQLite sera la tranche suivante.
 
+Etat verifie: cote lecture, c'est a 0%. `serve_reference.py` n'interroge jamais le contenu de la base — il verifie seulement son existence (`has_reference_db`) et lit ses metadonnees de build via `/__meta` (`read_reference_database_meta`, schema versions, compteurs). Toutes les routes qui servent reellement des donnees (`/api/reference/*`, roster-view, legacy-view, builds) lisent encore `data/normalized/*.json` ou le bundle statique. Zero reference a SQLite cote JS. Le chantier "generer la base" est donc complet, le chantier "lire depuis la base" n'a pas commence.
+
 ## Choix techniques et justification
 
 ### Manifest + JSON versionnes plutot que scraping HTML
@@ -447,6 +449,9 @@ Le projet n'avait jusqu'ici aucun test. Une premiere suite a ete ajoutee dans `t
 
 Toutes les familles de routes du handler HTTP sont maintenant couvertes: profils, roster, legacy, builds, jobs d'admin, backups, export/import, reference/bootstrap.
 
+- les 11 fonctions `normalize_X` de `scripts/lib/gametora_reference.py` restant a couvrir apres `normalize_characters`/`normalize_supports` (`tests/test_gametora_reference.py`): `normalize_training_event_choices`, `normalize_character_progression`, `normalize_support_progression`, `normalize_skills`, `normalize_races`, `normalize_racetracks`, `normalize_g1_factors`, `normalize_compatibility`, `normalize_cm_targets`, `normalize_scenarios`, `normalize_training_events`. Ce sont les fonctions qui transforment les donnees brutes GameTora en schema stable — le coeur du pipeline d'import, jusque-la jamais protegees contre une regression silencieuse pour 11 entites sur 13. En ecrivant ces tests, une vraie regression a ete trouvee et corrigee dans `normalize_races`: le champ `banner_id` appelait `int(race["banner_id"])` sans garde nulle alors que la construction de l'asset banner juste en dessous verifiait deja explicitement `race.get("banner_id") is not None` — une race sans banniere (cas reel et anticipe par le code lui-meme) faisait planter toute la fonction avec un `TypeError`. Fixe et regression pinnee par un test dedie.
+- `scripts/lib/sqlite_reference.py` (2158 lignes, 0 test avant cette passe): les ~10 petites fonctions pures (`as_array`, `coalesce`, `encode_json`, `join_search_text`, `convert_display_label(_list)`, `get_asset_entries`, `ensure_directory`, `bool_int`, `availability_int`, `score_band_for_value`) dans `tests/test_sqlite_reference.py`, plus une vraie integration de bout en bout de `build_reference_database()` dans `tests/test_sqlite_reference_build.py`: construit un `normalized` reel en rejouant les memes fonctions `normalize_X` que le pipeline reel (memes fixtures que `tests/test_gametora_reference.py`), ecrit une vraie base SQLite sur un chemin temporaire, puis verifie que les lignes sont bien presentes (`SELECT COUNT(*) FROM characters`), que `read_reference_database_meta()` relit correctement le resume de build, et qu'un rebuild remplace la base au lieu d'empiler les lignes. C'est le premier test qui exerce le pipeline complet normalize -> SQLite -> lecture; jusque-la, tout le code d'ecriture (`_insert_*`, ~1300 lignes) tournait en production sans qu'aucune requete ne verifie jamais que les donnees inserees etaient correctes.
+
 Lancer la suite:
 
 ```bash
@@ -455,7 +460,7 @@ python -m unittest discover -s tests -t . -v
 
 Elle tourne aussi automatiquement sur chaque push / pull request via `.github/workflows/tests.yml`.
 
-Ce filet couvre maintenant les fonctions pures les plus critiques, l'orchestration `legacy`, le handler HTTP et les jobs d'admin/backups. Ce qui reste a couvrir en priorite: l'import/export d'archives de profil (`/api/profiles/<id>/export`, `/api/profiles/<id>/import`, `/api/profiles/import`).
+Ce filet couvre maintenant les fonctions pures les plus critiques (y compris les 13 `normalize_X` du pipeline d'import), l'orchestration `legacy`, le handler HTTP dans son integralite, les jobs d'admin/backups, et l'ecriture SQLite de bout en bout. Ce qui reste a couvrir en priorite: les fonctions de rendu HTML (`renderXxx`) et l'orchestration DOM/fetch cote JS (attendraient plutot des tests d'integration type Playwright), et, si la bascule des lectures vers SQLite demarre un jour, les requetes de lecture qui en decouleront.
 
 Cote frontend, une suite existe aussi dans `tests/js/` (stdlib `node:test` + `node:assert/strict`, zero dependance ajoutee, meme philosophie que le cote Python). `tests/js/_domshim.mjs` pose un `document`/`window` minimal pour que `src/ui/assets/js/core.js` (qui interroge des elements DOM au chargement du module) soit importable sous Node tout court — et par ricochet, tous les modules qui l'importent (directement ou via `../app.js`, dependance circulaire volontaire deja documentee plus haut). Couverture actuelle (84 assertions, un fichier de test par module source):
 

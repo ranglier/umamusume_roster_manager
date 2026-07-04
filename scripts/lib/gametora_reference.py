@@ -1560,7 +1560,7 @@ def normalize_races(config: dict[str, Any], metadata: dict[str, Any], races: Any
                     ("track_name", get_track_name(track_id)),
                     ("track_slug", get_track_slug(track_id)),
                     ("course_id", int(race["course_id"])),
-                    ("banner_id", int(race["banner_id"])),
+                    ("banner_id", int(race["banner_id"]) if race.get("banner_id") is not None else None),
                     (
                         "assets",
                         OrderedDict(
