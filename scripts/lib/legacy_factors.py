@@ -753,33 +753,6 @@ def build_empty_legacy_view(profile_id: str, updated_at: str = "") -> dict:
     }
 
 
-def build_aptitude_coverage(main_detail: dict, factors: list[dict]) -> list[dict]:
-    grouped_targets = {
-        "surface": {str(factor.get("target_key")) for factor in factors if factor.get("kind") == "surface"},
-        "distance": {str(factor.get("target_key")) for factor in factors if factor.get("kind") == "distance"},
-        "style": {str(factor.get("target_key")) for factor in factors if factor.get("kind") == "style"},
-    }
-    labels = {
-        "surface": LEGACY_SURFACE_LABELS,
-        "distance": LEGACY_DISTANCE_LABELS,
-        "style": LEGACY_STYLE_LABELS,
-    }
-    result = []
-    viable = main_detail.get("viable_aptitudes") or {}
-    for category in ("surface", "distance", "style"):
-        viable_values = [str(value) for value in (viable.get(category) or [])]
-        supported = [labels[category].get(value, value) for value in viable_values if value in grouped_targets[category]]
-        missing = [labels[category].get(value, value) for value in viable_values if value not in grouped_targets[category]]
-        result.append(
-            {
-                "category": category,
-                "supported": supported,
-                "missing": missing,
-            }
-        )
-    return result
-
-
 def build_detailed_aptitude_coverage(main_detail: dict, direct_factors: list[dict], grandparent_factors: list[dict]) -> list[dict]:
     grouped_targets = {
         "surface": {

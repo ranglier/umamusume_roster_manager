@@ -595,35 +595,6 @@ def get_scenario_display_name(key: Any, factor_name: Any = None) -> str:
     return normalized.title() if normalized else "Scenario"
 
 
-def build_reference_entry(entity_key: str, item: Any, *, subtitle: str | None = None) -> dict[str, Any] | None:
-    if item is None:
-        return None
-
-    item_id = str(get_named_value(item, "id") or "").strip()
-    if not item_id:
-        return None
-
-    title = coalesce(get_named_value(item, "name"), get_named_value(item, "title"), item_id)
-    resolved_subtitle = subtitle if subtitle is not None else get_named_value(item, "subtitle")
-    availability_en = None
-    release = get_named_value(item, "release")
-    available = get_named_value(item, "available")
-    if release is not None:
-        availability_en = "available" if get_named_value(release, "en") else "unreleased"
-    elif isinstance(available, dict):
-        availability_en = "available" if available.get("en") else "unreleased"
-
-    return OrderedDict(
-        [
-            ("entityKey", entity_key),
-            ("id", item_id),
-            ("title", str(title)),
-            ("subtitle", resolved_subtitle),
-            ("availabilityEn", availability_en),
-        ]
-    )
-
-
 def convert_skill_ref(skill_id: Any, skill_lookup: dict[str, Any]) -> dict[str, Any] | None:
     if skill_id is None:
         return None
