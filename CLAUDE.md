@@ -38,15 +38,22 @@ editing `src/ui/`, copy those specific files yourself instead of calling
 
 ```bash
 python -m unittest discover -s tests -t . -v   # backend, stdlib unittest
-node --test tests/js/                           # frontend, stdlib node:test
+node --test tests/js/*.mjs                      # frontend, stdlib node:test
 ```
 
-This dev environment has no `node` binary — frontend test correctness was
-verified by running the equivalent assertions live in the browser preview
-first, then confirmed for real in CI (`.github/workflows/tests.yml`, job
-`js-unittest`). If you add JS tests here and can't run Node either, do the
-same: verify behavior via the browser preview, then let CI be the first real
-execution, and say so.
+On Windows, `node --test tests/js/` (the directory form, no glob) fails with
+`ERR_MODULE_NOT_FOUND` — Node tries to `require()` the bare directory path
+instead of discovering `test_*.mjs` files inside it. This reproduces
+identically in both git-bash and PowerShell, so it isn't a shell quoting
+issue. CI runs on `ubuntu-latest` where the directory form works fine, so
+this has never surfaced there. Always pass the explicit glob
+(`tests/js/*.mjs`) when running locally on Windows.
+
+If a dev sandbox genuinely has no `node` binary at all, frontend test
+correctness must be verified by running the equivalent assertions live in the
+browser preview first, then confirmed for real in CI
+(`.github/workflows/tests.yml`, job `js-unittest`) — say so explicitly when
+that's the case.
 
 ## Don't run mypy on `serve_reference.py` or `gametora_reference.py` as-is
 
