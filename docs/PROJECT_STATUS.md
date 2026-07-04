@@ -227,6 +227,46 @@ Nouveau module `scripts/lib/sqlite_queries.py`: couche de lecture pure au-dessus
 - `GET /api/reference/<entity>` (dump complet d'une entite, sans filtre) reste sur le chemin JSON. Le reconstruire depuis SQLite demanderait de recomposer l'enveloppe complete (`schema_version`, `generated_at`, `source`, `items`, plus des extras specifiques comme `references` pour `skills` ou `model` pour `compatibility`, stockes a part dans `reference_documents`) — travail reel pour une route que rien n'appelle en production aujourd'hui (le frontend utilise le bundle statique, pas cette route). Le dump complet reste sur JSON; la nouvelle route `/browse` couvre le vrai besoin de consultation filtree/paginee.
 - La bascule du Catalog frontend vers du fetch a la demande (au lieu du blob statique 17 Mo) reste un chantier separe, plus consequent (~7400 lignes, zero pagination existante cote JS), a cadrer independamment.
 
+### 11. Race Skill Visualizer (MVP)
+
+Premier chantier produit livre apres plusieurs sessions consacrees a la dette
+technique. Recommande depuis le debut par `docs/CM_BUILD_PLAN.md` et
+`docs/EXTERNAL_SOURCES_PLAN.md`, jamais demarre avant cette session.
+
+Nouveau module frontend `src/ui/assets/js/visualizer.js` (100% frontend,
+zero changement backend), branche sur la fiche detail `racetracks`:
+
+- vue lineaire de la piste (pas un ovale — les donnees `racetracks` sont 1D,
+  aucune geometrie de courbe/(x,y) nulle part dans le pipeline), avec bandes
+  virages/lignes droites/pentes et reperes de phase, rendue en SVG genere a
+  la main (pas de librairie, coherent avec la philosophie "zero dependance"
+  du projet)
+- parseur (`parseConditionString`) des conditions d'activation de skill —
+  chaines booleennes `variable OPERATOR value` jointes par `&`/`@`, **non
+  echappees en HTML** (verifie directement contre les vraies donnees
+  GameTora importees cette session, malgre une premiere piste erronee
+  suggerant un echappement)
+- matcher (`resolveStaticZones`) qui projette sur la piste les seules
+  variables statiquement resolubles (`is_finalcorner`, `is_lastcorner`,
+  `is_last_straight`, `is_laststraight`, `phase`, `phase_random`,
+  `remain_distance`, `slope`) et relegue les variables dynamiques
+  (`order`, `order_rate`, `bashin_diff_*`, `is_overtake`, etc. — dependantes
+  du classement/des adversaires, non deductibles de la reference statique)
+  en badges texte a cote de la zone, sans jamais fabriquer une zone non
+  justifiee
+- selecteur de skill par recherche, recyclant le pattern de
+  `getFilteredLegacyTargetOptions` (`legacy.js`)
+- deja accessible depuis `cm_targets` gratuitement (son "Related Racetracks"
+  existant navigue deja vers la fiche `racetracks`); **pas encore accessible
+  depuis `races`**, qui n'a aujourd'hui aucun champ `related_racetracks` —
+  contrairement a `cm_targets`, `normalize_races()` ne fait pas ce matching
+  cote serveur; l'ajouter est un vrai changement backend, volontairement
+  hors perimetre de ce MVP
+
+Teste dans `tests/js/test_visualizer.mjs` avec les conditions reelles de 3
+skills (Certain Victory, Clear Heart, Xceleration) tirees directement de la
+base SQLite importee cette session.
+
 ## Choix techniques et justification
 
 ### Manifest + JSON versionnes plutot que scraping HTML
@@ -401,7 +441,8 @@ Apres clonage, un import local est donc necessaire pour regenerer les donnees et
 - parents personnels
 - heuristiques Champions Meeting
 - decodage semantique fin des outcomes de `training_events`
-- briques `Visualizers` et `Meta / Insights`
+- brique `Meta / Insights`
+- `Visualizers`: MVP `Race Skill Visualizer` livre sur `racetracks` (voir section suivante); reste a etendre a `races` (pas de lien `related_racetracks` cote donnees aujourd'hui) et a couvrir les variables dynamiques (`order`, `bashin_diff_*`, etc.) au-dela du simple badge texte
 
 ## Sources externes preparees
 

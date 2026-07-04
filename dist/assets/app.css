@@ -1,4 +1,4 @@
-﻿:root {
+:root {
   --bg: #110d0a;
   --panel: rgba(24, 18, 15, 0.84);
   --panel-strong: rgba(29, 22, 17, 0.94);
@@ -3187,6 +3187,167 @@ body.roster-batch-mode .detail-column {
   border: 1px solid rgba(115, 160, 198, 0.12);
   overflow: auto;
   font-size: 0.86rem;
+}
+
+.track-svg-wrap {
+  margin-top: 10px;
+  padding: 14px 10px;
+  border-radius: 14px;
+  background: rgba(6, 14, 22, 0.88);
+  border: 1px solid rgba(115, 160, 198, 0.12);
+}
+
+.track-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.track-base-line {
+  fill: rgba(216, 229, 239, 0.28);
+}
+
+.track-zone-corner {
+  fill: var(--glow-indigo);
+  stroke: rgba(185, 143, 255, 0.55);
+}
+
+.track-zone-straight {
+  fill: var(--glow-cyan);
+  stroke: rgba(104, 184, 255, 0.55);
+}
+
+.track-zone-uphill {
+  fill: var(--glow-gold);
+  stroke: rgba(244, 187, 98, 0.6);
+}
+
+.track-zone-downhill {
+  fill: var(--glow-rose);
+  stroke: rgba(255, 139, 102, 0.6);
+}
+
+.track-zone-skill-highlight {
+  fill: rgba(244, 187, 98, 0.28);
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+
+.track-zone-skill-highlight-approx {
+  fill: rgba(244, 187, 98, 0.14);
+  stroke: var(--accent);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+}
+
+.track-phase-tick {
+  stroke: rgba(216, 229, 239, 0.3);
+  stroke-width: 1;
+}
+
+.track-phase-label,
+.track-finish-label {
+  fill: var(--text-soft);
+  font-size: 20px;
+  text-anchor: middle;
+}
+
+.track-finish-label {
+  text-anchor: end;
+}
+
+.track-finish-line {
+  stroke: var(--text-soft);
+  stroke-width: 1.5;
+}
+
+.track-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-top: 10px;
+}
+
+.legend-swatch {
+  position: relative;
+  padding-left: 18px;
+  font-size: 0.82rem;
+  color: var(--text-soft);
+}
+
+.legend-swatch::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: currentColor;
+}
+
+.legend-swatch.track-zone-corner::before {
+  background: var(--glow-indigo);
+  outline: 1px solid rgba(185, 143, 255, 0.55);
+}
+
+.legend-swatch.track-zone-straight::before {
+  background: var(--glow-cyan);
+  outline: 1px solid rgba(104, 184, 255, 0.55);
+}
+
+.legend-swatch.track-zone-uphill::before {
+  background: var(--glow-gold);
+  outline: 1px solid rgba(244, 187, 98, 0.6);
+}
+
+.legend-swatch.track-zone-downhill::before {
+  background: var(--glow-rose);
+  outline: 1px solid rgba(255, 139, 102, 0.6);
+}
+
+.legend-swatch.track-zone-skill-highlight::before {
+  background: rgba(244, 187, 98, 0.28);
+  outline: 1.5px solid var(--accent);
+}
+
+.skill-picker-input {
+  width: 100%;
+  margin-top: 10px;
+}
+
+.skill-picker-results {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+  margin-top: 8px;
+}
+
+.skill-picker-result {
+  text-align: left;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(115, 160, 198, 0.14);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.skill-picker-result.active {
+  border-color: var(--accent);
+  background: rgba(244, 187, 98, 0.1);
+}
+
+.skill-dynamic-badge {
+  display: inline-block;
+  margin: 2px 6px 2px 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  color: var(--text-soft);
+  border: 1px solid rgba(115, 160, 198, 0.2);
 }
 
 a {

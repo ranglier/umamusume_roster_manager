@@ -1,7 +1,21 @@
-﻿// Auto-split from app.js as part of docs/REFACTOR_PLAN.md.
-import { TRAINING_EVENT_EFFECT_LABELS, asArray, data, getSkillReferences, state } from "./core.js";
+// Auto-split from app.js as part of docs/REFACTOR_PLAN.md.
+import { TRAINING_EVENT_EFFECT_LABELS, asArray, data, getEntityItems, getSkillReferences, getViewState, state } from "./core.js";
 import { escapeHtml, renderBadge, renderLinkedSkillList, renderReferenceList, renderSimpleList, tableFromRows } from "./dom-utils.js";
 import { getRosterEntry, renderCharacterRosterProjection, renderSupportCurrentEffects, renderSupportRosterProjection } from "./roster.js";
+import { buildTrackSvg, getFilteredSkillPickerOptions, resolveStaticZones } from "./visualizer.js";
+import { requestRenderPreservingScroll, requestRenderPreservingScrollAndFocus } from "../app.js";
+
+export function getSkillPickerOptions() {
+  return getEntityItems("skills").map((item) => ({ value: String(item.id), label: item.title || String(item.id) }));
+}
+
+export function getRacetrackVisualizerState(course) {
+  const viewState = getViewState("reference", "racetracks");
+  if (!viewState.visualizer || viewState.visualizer.courseId !== course.id) {
+    viewState.visualizer = { courseId: course.id, skillQuery: "", selectedSkillId: null };
+  }
+  return viewState.visualizer;
+}
 
 
 export function renderCatalogSupportQuickAdd(item) {
@@ -292,6 +306,18 @@ export function renderRaces(detail) {
 }
 
 export function renderRacetracks(detail) {
+  const visualizerState = getRacetrackVisualizerState(detail);
+  const picker = getFilteredSkillPickerOptions(getSkillPickerOptions(), visualizerState.skillQuery, visualizerState.selectedSkillId);
+  const selectedSkillItem = visualizerState.selectedSkillId
+    ? getEntityItems("skills").find((item) => String(item.id) === visualizerState.selectedSkillId)
+    : null;
+  const allZones = selectedSkillItem
+    ? asArray(selectedSkillItem.detail?.condition_groups).flatMap((group) => resolveStaticZones(group.condition, group.precondition, detail).zones)
+    : [];
+  const allUnplaced = selectedSkillItem
+    ? asArray(selectedSkillItem.detail?.condition_groups).flatMap((group) => resolveStaticZones(group.condition, group.precondition, detail).unplacedDynamicOnly)
+    : [];
+
   return `
     ${tableFromRows([
       ["Course ID", escapeHtml(detail.course_id)],
@@ -302,6 +328,50 @@ export function renderRacetracks(detail) {
       ["Corners / Straights", escapeHtml(`${detail.corner_count} / ${detail.straight_count}`)],
       ["Slopes", escapeHtml(`${detail.uphill_count} uphill | ${detail.downhill_count} downhill`)],
     ])}
+    <div class="detail-section" data-visualizer-course-id="${escapeHtml(detail.id)}">
+      <h3>Skill Visualizer</h3>
+      <p class="source-note">Linear distance view — not an actual track shape.</p>
+      <input
+        type="text"
+        class="skill-picker-input"
+        id="visualizerSkillQuery"
+        placeholder="Search a skill by name..."
+        value="${escapeHtml(visualizerState.skillQuery)}"
+      />
+      <div class="skill-picker-results">
+        ${picker.options
+          .map(
+            (option) => `
+              <button type="button" class="skill-picker-result${option.value === visualizerState.selectedSkillId ? " active" : ""}" data-skill-pick="${escapeHtml(option.value)}">
+                ${escapeHtml(option.label)}
+              </button>
+            `,
+          )
+          .join("")}
+        ${!picker.options.length ? "<p class='source-note'>No skill matches this search.</p>" : ""}
+      </div>
+      ${picker.isLimited ? `<p class="source-note">Showing ${picker.visibleCount} of ${picker.totalCount} skills — type to search for more.</p>` : ""}
+      <div class="track-svg-wrap">${buildTrackSvg(detail, { highlightZones: allZones })}</div>
+      <div class="track-legend">
+        <span class="legend-swatch track-zone-corner">Corner</span>
+        <span class="legend-swatch track-zone-straight">Straight</span>
+        <span class="legend-swatch track-zone-uphill">Uphill</span>
+        <span class="legend-swatch track-zone-downhill">Downhill</span>
+        <span class="legend-swatch track-zone-skill-highlight">Selected skill</span>
+      </div>
+      ${selectedSkillItem
+        ? `
+          <div class="detail-section">
+            <h4>${escapeHtml(selectedSkillItem.title)}</h4>
+            ${allZones.length ? `<p class="source-note">${allZones.length} track zone(s) highlighted above.${allZones.some((zone) => zone.approximate) ? " Hatched zones are approximate (e.g. random-phase conditions)." : ""}</p>` : "<p class='source-note'>No track-position data for this skill's activation conditions.</p>"}
+            ${allZones.some((zone) => zone.dynamicBadges.length)
+              ? `<p class="source-note">Also requires:</p><div>${allZones.flatMap((zone) => zone.dynamicBadges).map((badge) => `<span class="skill-dynamic-badge">${escapeHtml(badge)}</span>`).join("")}</div>`
+              : ""}
+            ${allUnplaced.length ? `<p class="source-note">Not shown on track (depends on other horses/ranking): ${escapeHtml(allUnplaced.join("; "))}</p>` : ""}
+          </div>
+        `
+        : ""}
+    </div>
     <div class="detail-section">
       <h3>Course Geometry</h3>
       <pre class="code-block">${escapeHtml(
@@ -516,4 +586,24 @@ export function renderCompatibility(detail, model) {
       )}
     </div>
   `;
+}
+
+export function attachRacetrackVisualizerListeners(course) {
+  const visualizerState = getRacetrackVisualizerState(course);
+
+  const queryInput = document.getElementById("visualizerSkillQuery");
+  if (queryInput) {
+    queryInput.addEventListener("input", () => {
+      visualizerState.skillQuery = queryInput.value;
+      requestRenderPreservingScrollAndFocus("visualizerSkillQuery");
+    });
+  }
+
+  document.querySelectorAll("[data-skill-pick]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const skillId = button.dataset.skillPick;
+      visualizerState.selectedSkillId = visualizerState.selectedSkillId === skillId ? null : skillId;
+      requestRenderPreservingScroll();
+    });
+  });
 }

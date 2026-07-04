@@ -393,16 +393,35 @@ Pourquoi:
 - les signaux meta peuvent etre region-specific ou date-sensitive
 - le backend `umamoe-backend` n'expose pas, dans l'etat observe, une API meta simple et stable equivalente a tout le site public
 
-## Recommandation immediate
+## Statut: Race Skill Visualizer MVP livre
 
-La prochaine tranche recommandee n'est pas encore la meta.
+La brique `Visualizers` recommandee ci-dessous a ete posee. Un premier
+`Race Skill Visualizer` est en place sur la fiche detail `racetracks`
+(`src/ui/assets/js/visualizer.js`, teste dans `tests/js/test_visualizer.mjs`):
 
-La prochaine tranche a implementer est:
+- vue lineaire (pas un ovale — les donnees `racetracks` sont 1D, pas de
+  geometrie de courbe/(x,y)) avec bandes virages/lignes droites/pentes et
+  reperes de phase
+- parseur des conditions d'activation de skill (chaines booleennes
+  `variable OPERATOR value` jointes par `&`/`@`, non echappees en HTML,
+  verifie contre les vraies donnees GameTora importees)
+- allowlist de variables statiquement projetables sur la piste
+  (`is_finalcorner`, `is_lastcorner`, `is_last_straight`, `is_laststraight`,
+  `phase`, `phase_random`, `remain_distance`, `slope`) vs variables
+  dynamiques (`order`, `order_rate`, `bashin_diff_*`, etc.) volontairement
+  non projetees — affichees comme badges texte plutot que fabriquees en zone
+- selecteur de skill par recherche (recyclant le pattern de
+  `getFilteredLegacyTargetOptions`), zero changement backend
 
-1. poser la brique `Visualizers`
-2. livrer un `Race Skill Visualizer` local MVP
-3. l'afficher dans `races`, puis `cm_targets`
-4. seulement apres, cadrer un adaptateur `Meta / Insights`
+Deja branche gratuitement sur `cm_targets` (son "Related Racetracks"
+existant navigue deja vers la fiche `racetracks`). Pas encore branche sur
+`races`: cette entite n'a aujourd'hui aucun champ `related_racetracks` (a la
+difference de `cm_targets`, qui a deja cette logique de matching
+cote serveur dans `normalize_cm_targets()`) — l'ajouter demanderait un vrai
+changement backend, volontairement hors perimetre de ce MVP.
+
+Prochaine tranche recommandee: seulement apres, cadrer un adaptateur
+`Meta / Insights`.
 
 Cette sequence maximise:
 

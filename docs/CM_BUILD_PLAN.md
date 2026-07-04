@@ -809,16 +809,17 @@ Sortie attendue:
 
 ## Recommandation immediate
 
-La prochaine etape la plus saine n'est pas encore "l'auto-build".
+"L'auto-build" reste hors de portee immediate. Etape 1 (poser la brique
+`Visualizers`, livrer un `Race Skill Visualizer` MVP) est faite — voir
+`docs/EXTERNAL_SOURCES_PLAN.md` pour le detail technique. Reste a faire:
 
-La prochaine etape recommandee est:
-
-1. poser la brique `Visualizers`
-2. livrer un `Race Skill Visualizer` local MVP pour `races`, puis `cm_targets`
-3. approfondir `legacy` sur la partie probabiliste et explicative
-4. concevoir le format `build`
-5. definir une evaluation locale de faisabilite
-6. articuler `cm_targets`, `scenarios`, `training_events`, `legacy` et `visualizers` dans un planner exploitable
+1. ~~poser la brique `Visualizers`~~ — fait (MVP sur `racetracks`, deja
+   accessible depuis `cm_targets` via son lien "Related Racetracks" existant;
+   `races` n'a pas encore ce lien, changement backend hors perimetre du MVP)
+2. approfondir `legacy` sur la partie probabiliste et explicative
+3. concevoir le format `build`
+4. definir une evaluation locale de faisabilite
+5. articuler `cm_targets`, `scenarios`, `training_events`, `legacy` et `visualizers` dans un planner exploitable
 
 Une fois ces briques posees, on pourra commencer l'etude implementation par implementation du moteur de scoring, puis de l'auto-generation.
 
