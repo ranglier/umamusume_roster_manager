@@ -8,13 +8,22 @@ ThreadingTCPServer on an ephemeral port against an isolated temp user-data
 root and drives it with real HTTP requests via urllib, covering the core
 profile / roster / legacy / builds CRUD flows end to end.
 
-Scope: this deliberately does not cover admin jobs, backups, or
-import/export (those touch background threads and zip archives, and would
-need a much larger fixture). It also monkeypatches
+Scope: this deliberately does not cover profile import/export (zip archives
+with their own edge cases). Admin jobs and backups are covered separately in
+tests/test_http_admin_routes.py. It also monkeypatches
 build_legacy_reference_catalogs the same way tests/test_legacy_view.py does,
 for the same reason: NORMALIZED_ROOT is pointed at a temp directory so these
 tests don't depend on a real GameTora import being present (data/normalized/
 and dist/ are gitignored, see CLAUDE.md).
+
+LiveServerTestCase also sandboxes PROJECT_ROOT and DIST_ROOT, not just the
+USER_DATA_ROOT family: create_full_backup()/restore_full_backup() in
+serve_reference.py read/write several paths (data/runtime, data/raw,
+data/normalized, data/user) built directly from the bare PROJECT_ROOT
+constant rather than from the overridable USER_DATA_ROOT/NORMALIZED_ROOT
+module globals, and restore_full_backup() does an rmtree on those paths. Any
+test built on this base class - now or later - must not be able to resolve
+those paths to the real project directory.
 """
 
 import json
@@ -39,13 +48,17 @@ class LiveServerTestCase(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
-        tmp_root = Path(self._tmp.name)
+        self.tmp_root = Path(self._tmp.name)
+        tmp_root = self.tmp_root
 
         for name, value in (
-            ("USER_DATA_ROOT", tmp_root / "user"),
-            ("PROFILE_DATA_ROOT", tmp_root / "user" / "profiles"),
-            ("PROFILES_INDEX_PATH", tmp_root / "user" / "profiles.json"),
-            ("NORMALIZED_ROOT", tmp_root / "normalized_missing"),
+            ("PROJECT_ROOT", tmp_root),
+            ("DIST_ROOT", tmp_root / "dist"),
+            ("USER_DATA_ROOT", tmp_root / "data" / "user"),
+            ("PROFILE_DATA_ROOT", tmp_root / "data" / "user" / "profiles"),
+            ("PROFILES_INDEX_PATH", tmp_root / "data" / "user" / "profiles.json"),
+            ("NORMALIZED_ROOT", tmp_root / "data" / "normalized"),
+            ("BACKUP_ROOT", tmp_root / "data" / "backups"),
         ):
             patcher = mock.patch.object(sr, name, value)
             patcher.start()
