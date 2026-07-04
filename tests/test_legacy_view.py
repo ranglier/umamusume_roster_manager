@@ -21,8 +21,12 @@ from unittest import mock
 from . import _pathsetup  # noqa: F401  (must run before importing serve_reference)
 
 import serve_reference as sr
+from lib import gametora_reference as gt
+from lib import sqlite_reference as sqlite_sr
 
+from .test_gametora_reference import make_base_character, make_character_card, make_source_config, make_source_metadata
 from .test_serve_reference import make_catalogs
+from .test_sqlite_reference_build import build_minimal_normalized_reference
 
 
 def make_full_character_ref(
@@ -72,6 +76,7 @@ class LegacyIntegrationTestCase(unittest.TestCase):
             ("PROFILE_DATA_ROOT", tmp_root / "user" / "profiles"),
             ("PROFILES_INDEX_PATH", tmp_root / "user" / "profiles.json"),
             ("NORMALIZED_ROOT", tmp_root / "normalized_missing"),
+            ("REFERENCE_DB_PATH", tmp_root / "reference_missing.sqlite"),
         ):
             patcher = mock.patch.object(sr, name, value)
             patcher.start()
@@ -198,6 +203,61 @@ class BuildLegacySimulatorPreviewTests(LegacyIntegrationTestCase):
             "The lineage is incomplete: one or more grandparent slots are still missing.",
             preview["warnings"],
         )
+
+
+class BuildLegacyReferenceCatalogsFromSqliteTests(LegacyIntegrationTestCase):
+    """Exercises build_legacy_reference_catalogs() for real (not the
+    patch_catalogs() bypass every other test in this file uses on purpose),
+    against a real temp SQLite database - this is the only place that
+    actually verifies the SQL-backed rewrite of that function.
+    """
+
+    def build_database(self, *, with_characters=True):
+        normalized = build_minimal_normalized_reference()
+        if with_characters:
+            normalized["characters"] = gt.normalize_characters(
+                make_source_config("characters"), make_source_metadata(), [make_base_character()], [make_character_card()], []
+            )
+        normalized["scenarios"] = gt.normalize_scenarios(
+            make_source_config("scenarios"), make_source_metadata(), [{"id": "10", "order": 1}], [{"id": "10", "str": "scenario_ura", "factors": []}], []
+        )
+        normalized["g1_factors"] = gt.normalize_g1_factors(
+            make_source_config("g1_factors"),
+            make_source_metadata(),
+            {"race": [{"id": 900, "race_id": 42, "name_en": "Tokyo Yushun Aptitude", "type": 1, "effects": []}]},
+            [],
+            [],
+        )
+        normalized["skills"] = gt.normalize_skills(
+            make_source_config("skills"), make_source_metadata(), [{"id": 200452, "rarity": 1, "name_en": "Corner Recovery"}], [], []
+        )
+        normalized["compatibility"] = gt.normalize_compatibility(
+            make_source_config("compatibility"),
+            make_source_metadata(),
+            [{"relation_type": "classmate", "relation_point": 10}],
+            [{"relation_type": "classmate", "chara_id": 1001}, {"relation_type": "classmate", "chara_id": 1002}],
+            [{"char_id": 1001, "en_name": "Special Week"}, {"char_id": 1002, "en_name": "Silence Suzuka"}],
+            [],
+        )
+        sqlite_sr.build_reference_database({}, normalized, None, target_path=sr.REFERENCE_DB_PATH)
+
+    def test_all_five_catalogs_are_loaded_from_the_real_database(self):
+        self.build_database()
+        catalogs = sr.build_legacy_reference_catalogs()
+        self.assertEqual(catalogs["characters"]["100101"]["name"], "Special Week")
+        self.assertEqual(catalogs["scenarios"]["10"]["key"], "scenario_ura")
+        self.assertEqual(catalogs["g1_factors"]["900"]["name"], "Tokyo Yushun Aptitude")
+        self.assertEqual(catalogs["skills"]["200452"]["name"], "Corner Recovery")
+        self.assertEqual(catalogs["compatibility"]["1001"]["top_matches"][0]["character_id"], 1002)
+
+    def test_missing_database_raises_uncaught_file_not_found_error(self):
+        # build_legacy_reference_catalogs() has never wrapped its characters
+        # fetch in a try/except (only scenarios/g1_factors/skills/
+        # compatibility are individually tolerant of a missing table) - a
+        # missing database must still propagate uncaught here, exactly like
+        # the original load_reference_items_lookup("characters") JSON call did.
+        with self.assertRaises(FileNotFoundError):
+            sr.build_legacy_reference_catalogs()
 
 
 if __name__ == "__main__":

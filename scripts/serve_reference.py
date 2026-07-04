@@ -20,7 +20,7 @@ import webbrowser
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from lib.builds_validation import (
     normalize_build_id_list,
@@ -57,6 +57,19 @@ from lib.roster_progression import (
     summarize_character_progression,
     summarize_support_progression,
     normalize_roster_entry,
+)
+from lib.sqlite_queries import (
+    entity_has_any_rows,
+    existing_ids,
+    fetch_all_reference_items,
+    fetch_browsable_entity,
+    fetch_character_progression_lookup,
+    fetch_compatibility_by_character_id,
+    fetch_entity_listing,
+    fetch_reference_item,
+    fetch_reference_items_by_id,
+    fetch_support_progression_lookup,
+    fetch_support_rarity_by_id,
 )
 from lib.sqlite_reference import get_reference_database_path, read_reference_database_meta
 
@@ -167,25 +180,16 @@ def load_reference_items_lookup(entity_key: str) -> dict[str, dict]:
 
 def build_character_progression_lookup() -> dict[str, dict]:
     try:
-        return load_reference_items_lookup("character_progression")
-    except (FileNotFoundError, ValueError):
+        return fetch_character_progression_lookup(database_path=REFERENCE_DB_PATH)
+    except FileNotFoundError:
         return {}
 
 
 def build_support_progression_lookup() -> dict[int, dict]:
-    lookup: dict[int, dict] = {}
     try:
-        items = load_reference_entity("support_progression").get("items", [])
-    except (FileNotFoundError, ValueError):
-        return lookup
-
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        rarity = int(item.get("rarity") or 0)
-        if rarity > 0:
-            lookup[rarity] = item
-    return lookup
+        return fetch_support_progression_lookup(database_path=REFERENCE_DB_PATH)
+    except FileNotFoundError:
+        return {}
 
 
 def build_roster_view(profile_id: str, entity_key: str) -> dict:
@@ -193,7 +197,12 @@ def build_roster_view(profile_id: str, entity_key: str) -> dict:
         raise ValueError("Unsupported roster entity.")
 
     roster = load_roster(profile_id)
-    reference_lookup = load_reference_items_lookup(entity_key)
+    owned_ids = [
+        str(item_id)
+        for item_id, roster_entry in (roster.get(entity_key) or {}).items()
+        if isinstance(roster_entry, dict) and roster_entry.get("owned")
+    ]
+    reference_lookup = fetch_reference_items_by_id(entity_key, owned_ids, database_path=REFERENCE_DB_PATH)
     progression_lookup = build_character_progression_lookup() if entity_key == "characters" else build_support_progression_lookup()
 
     entries: dict[str, dict] = {}
@@ -230,28 +239,23 @@ def profile_legacy_path(profile_id: str) -> Path:
 
 
 def build_legacy_reference_catalogs() -> dict:
-    characters = load_reference_items_lookup("characters")
+    characters = fetch_all_reference_items("characters", database_path=REFERENCE_DB_PATH)
     try:
-        scenarios = load_reference_items_lookup("scenarios")
-    except (FileNotFoundError, ValueError):
+        scenarios = fetch_all_reference_items("scenarios", database_path=REFERENCE_DB_PATH)
+    except FileNotFoundError:
         scenarios = {}
     try:
-        g1_factors = load_reference_items_lookup("g1_factors")
-    except (FileNotFoundError, ValueError):
+        g1_factors = fetch_all_reference_items("g1_factors", database_path=REFERENCE_DB_PATH)
+    except FileNotFoundError:
         g1_factors = {}
     try:
-        skills = load_reference_items_lookup("skills")
-    except (FileNotFoundError, ValueError):
+        skills = fetch_all_reference_items("skills", database_path=REFERENCE_DB_PATH)
+    except FileNotFoundError:
         skills = {}
     try:
-        compatibility_items = load_reference_entity("compatibility").get("items", [])
-    except (FileNotFoundError, ValueError):
-        compatibility_items = []
-    compatibility = {
-        str(item.get("character_id")): item
-        for item in compatibility_items
-        if isinstance(item, dict) and str(item.get("character_id") or "").strip()
-    }
+        compatibility = fetch_compatibility_by_character_id(database_path=REFERENCE_DB_PATH)
+    except FileNotFoundError:
+        compatibility = {}
 
     return {
         "characters": characters,
@@ -878,14 +882,9 @@ def normalize_roster(raw_roster: object) -> dict:
     if not isinstance(raw_roster, dict):
         return roster
 
-    support_rarity_lookup: dict[str, int] = {}
     try:
-        for item_id, item in load_reference_items_lookup("supports").items():
-            detail = item.get("detail") if isinstance(item, dict) and item.get("detail") else item
-            rarity = int(detail.get("rarity") or 0)
-            if rarity > 0:
-                support_rarity_lookup[item_id] = rarity
-    except (FileNotFoundError, ValueError):
+        support_rarity_lookup = fetch_support_rarity_by_id(database_path=REFERENCE_DB_PATH)
+    except FileNotFoundError:
         support_rarity_lookup = {}
 
     normalized = {
@@ -939,7 +938,7 @@ def validate_build_references(profile_id: str, entry: dict) -> None:
         if not ref_id:
             continue
         try:
-            if ref_id not in load_reference_items_lookup(entity_key):
+            if ref_id not in existing_ids(entity_key, [ref_id], database_path=REFERENCE_DB_PATH):
                 raise ValueError(f"build.{field_name} does not exist in local reference.")
         except FileNotFoundError:
             continue
@@ -947,22 +946,24 @@ def validate_build_references(profile_id: str, entry: dict) -> None:
     support_ids = entry.get("support_deck") or []
     if support_ids:
         try:
-            support_lookup = load_reference_items_lookup("supports")
+            has_supports = entity_has_any_rows("supports", database_path=REFERENCE_DB_PATH)
         except FileNotFoundError:
-            support_lookup = {}
-        if support_lookup:
-            missing = [support_id for support_id in support_ids if support_id not in support_lookup]
+            has_supports = False
+        if has_supports:
+            known_support_ids = existing_ids("supports", support_ids, database_path=REFERENCE_DB_PATH)
+            missing = [support_id for support_id in support_ids if support_id not in known_support_ids]
             if missing:
                 raise ValueError("build.support_deck contains unknown supports.")
 
     skill_ids = list(entry.get("required_skills") or []) + list(entry.get("optional_skills") or [])
     if skill_ids:
         try:
-            skill_lookup = load_reference_items_lookup("skills")
+            has_skills = entity_has_any_rows("skills", database_path=REFERENCE_DB_PATH)
         except FileNotFoundError:
-            skill_lookup = {}
-        if skill_lookup:
-            missing = [skill_id for skill_id in skill_ids if skill_id not in skill_lookup]
+            has_skills = False
+        if has_skills:
+            known_skill_ids = existing_ids("skills", skill_ids, database_path=REFERENCE_DB_PATH)
+            missing = [skill_id for skill_id in skill_ids if skill_id not in known_skill_ids]
             if missing:
                 raise ValueError("build skills contain unknown skill ids.")
 
@@ -1596,28 +1597,11 @@ class ReferenceRequestHandler(http.server.SimpleHTTPRequestHandler):
             return
 
         if request_path == "/api/reference":
-            if not NORMALIZED_ROOT.exists():
+            try:
+                items = fetch_entity_listing(database_path=REFERENCE_DB_PATH)
+            except FileNotFoundError:
                 self._send_api_error(404, "Normalized reference data not found. Run the update command first.")
                 return
-
-            items = []
-            for path in sorted(NORMALIZED_ROOT.glob("*.json")):
-                if path.name == "reference-meta.json":
-                    continue
-                try:
-                    payload = json.loads(path.read_text(encoding="utf-8-sig"))
-                except json.JSONDecodeError:
-                    continue
-                if not isinstance(payload, dict):
-                    continue
-                items.append(
-                    {
-                        "entity": path.stem,
-                        "count": len(payload.get("items") or []),
-                        "generated_at": payload.get("generated_at"),
-                        "source": payload.get("source"),
-                    }
-                )
             self._send_json({"items": items})
             return
 
@@ -1632,20 +1616,52 @@ class ReferenceRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self._send_api_error(500, "Reference entity payload is invalid.")
             return
 
+        match = re.fullmatch(r"/api/reference/([a-z_]+)/browse", request_path)
+        if match:
+            entity_key = match.group(1)
+            query = parse_qs(urlparse(self.path).query)
+            filters: dict[str, list[str]] = {}
+            for raw_filter in query.get("filter", []):
+                filter_key, separator, filter_value = raw_filter.partition(":")
+                if not separator:
+                    continue
+                filters.setdefault(filter_key, []).append(filter_value)
+            search = (query.get("q") or [None])[0]
+            try:
+                limit = max(1, min(200, int((query.get("limit") or ["50"])[0])))
+            except ValueError:
+                limit = 50
+            try:
+                offset = max(0, int((query.get("offset") or ["0"])[0]))
+            except ValueError:
+                offset = 0
+            try:
+                payload = fetch_browsable_entity(
+                    entity_key,
+                    filters=filters,
+                    search=search,
+                    limit=limit,
+                    offset=offset,
+                    database_path=REFERENCE_DB_PATH,
+                )
+            except KeyError:
+                self._send_api_error(404, "Reference entity not found.")
+                return
+            except FileNotFoundError:
+                self._send_api_error(404, "Normalized reference data not found. Run the update command first.")
+                return
+            self._send_json(payload)
+            return
+
         match = re.fullmatch(r"/api/reference/([a-z_]+)/([^/]+)", request_path)
         if match:
             entity_key = match.group(1)
             item_id = match.group(2)
             try:
-                payload = load_reference_entity(entity_key)
+                item = fetch_reference_item(entity_key, item_id, database_path=REFERENCE_DB_PATH)
             except FileNotFoundError:
                 self._send_api_error(404, "Reference entity not found.")
                 return
-            except ValueError:
-                self._send_api_error(500, "Reference entity payload is invalid.")
-                return
-
-            item = next((entry for entry in payload.get("items") or [] if str(entry.get("id")) == item_id), None)
             if item is None:
                 self._send_api_error(404, "Reference item not found.")
                 return

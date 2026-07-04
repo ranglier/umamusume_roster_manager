@@ -19,8 +19,13 @@ import unittest
 from . import _pathsetup  # noqa: F401  (must run before importing serve_reference)
 
 import serve_reference as sr
+from lib import gametora_reference as gt
+from lib import sqlite_reference as sqlite_sr
+from lib.sqlite_queries import ENTITY_TABLES
 
+from .test_gametora_reference import make_base_character, make_character_card, make_source_config, make_source_metadata
 from .test_http_handler import LiveServerTestCase
+from .test_sqlite_reference_build import build_minimal_normalized_reference
 
 
 def write_reference_entity(normalized_root, entity_key, items, *, generated_at="2026-01-01T00:00:00Z", source=None):
@@ -34,20 +39,35 @@ def write_reference_entity(normalized_root, entity_key, items, *, generated_at="
     return payload
 
 
+def write_reference_database(*, characters=None, database_path=None):
+    """Build a real temp SQLite reference DB (not JSON) for routes already swapped to SQL.
+
+    Reuses build_minimal_normalized_reference()'s full 12-entity fixture and
+    replaces the "characters" slot with real normalize_characters() output
+    for the given raw character cards, so the payload_json each route reads
+    back is byte-identical in shape to what the real pipeline would produce.
+    """
+    normalized = build_minimal_normalized_reference()
+    if characters is not None:
+        normalized["characters"] = gt.normalize_characters(
+            make_source_config("characters"), make_source_metadata(), [make_base_character()], characters, []
+        )
+    sqlite_sr.build_reference_database({}, normalized, None, target_path=database_path or sr.REFERENCE_DB_PATH)
+
+
 class ReferenceListingRouteTests(LiveServerTestCase):
     def test_reference_listing_is_a_404_before_any_import(self):
         self.request("GET", "/api/reference", expect_status=404)
 
-    def test_reference_listing_reports_entity_counts_and_skips_the_meta_file(self):
-        write_reference_entity(sr.NORMALIZED_ROOT, "characters", [{"id": "char_1"}, {"id": "char_2"}])
-        write_reference_entity(sr.NORMALIZED_ROOT, "skills", [{"id": "skill_1"}])
-        (sr.NORMALIZED_ROOT / "reference-meta.json").write_text(json.dumps({"generated_at": "x"}), encoding="utf-8")
+    def test_reference_listing_reports_entity_counts_for_every_entity(self):
+        write_reference_database(characters=[make_character_card(), make_character_card(card_id=100102, char_id=1002)])
 
         payload = self.request("GET", "/api/reference")
         by_entity = {entry["entity"]: entry for entry in payload["items"]}
-        self.assertEqual(set(by_entity), {"characters", "skills"})
+        self.assertEqual(set(by_entity), set(ENTITY_TABLES))
         self.assertEqual(by_entity["characters"]["count"], 2)
-        self.assertEqual(by_entity["skills"]["count"], 1)
+        self.assertEqual(by_entity["races"]["count"], 0)
+        self.assertIn("source", by_entity["characters"])
 
 
 class ReferenceEntityRouteTests(LiveServerTestCase):
@@ -65,10 +85,56 @@ class ReferenceEntityRouteTests(LiveServerTestCase):
         self.request("GET", "/api/reference/characters", expect_status=500)
 
     def test_known_item_id_is_returned_and_unknown_id_is_a_404(self):
-        write_reference_entity(sr.NORMALIZED_ROOT, "characters", [{"id": "char_1", "title": "Special Week"}])
-        item = self.request("GET", "/api/reference/characters/char_1")
-        self.assertEqual(item["title"], "Special Week")
+        write_reference_database(characters=[make_character_card()])
+        item = self.request("GET", "/api/reference/characters/100101")
+        self.assertEqual(item["name"], "Special Week")
         self.request("GET", "/api/reference/characters/char_999", expect_status=404)
+
+    def test_unknown_entity_key_on_the_item_route_is_also_a_404(self):
+        write_reference_database()
+        self.request("GET", "/api/reference/not_a_real_entity/100101", expect_status=404)
+
+
+class BrowseRouteTests(LiveServerTestCase):
+    def write_three_characters(self):
+        write_reference_database(
+            characters=[
+                make_character_card(card_id=100101, char_id=1001, name_en="Special Week", rarity=3),
+                make_character_card(card_id=100201, char_id=1002, name_en="Silence Suzuka", rarity=3),
+                make_character_card(card_id=100301, char_id=1003, name_en="Tokai Teio", rarity=2),
+            ]
+        )
+
+    def test_browse_is_a_404_before_any_import(self):
+        self.request("GET", "/api/reference/characters/browse", expect_status=404)
+
+    def test_unknown_entity_key_is_a_404(self):
+        write_reference_database()
+        self.request("GET", "/api/reference/not_a_real_entity/browse", expect_status=404)
+
+    def test_returns_every_item_paginated(self):
+        self.write_three_characters()
+        page = self.request("GET", "/api/reference/characters/browse?limit=2&offset=0")
+        self.assertEqual(page["total"], 3)
+        self.assertEqual(len(page["items"]), 2)
+        self.assertEqual(page["limit"], 2)
+
+    def test_filters_by_facet(self):
+        self.write_three_characters()
+        page = self.request("GET", "/api/reference/characters/browse?filter=rarity:3")
+        self.assertEqual(page["total"], 2)
+        self.assertEqual({item["id"] for item in page["items"]}, {"100101", "100201"})
+
+    def test_search_query_param_matches_search_text(self):
+        self.write_three_characters()
+        page = self.request("GET", "/api/reference/characters/browse?q=Suzuka")
+        self.assertEqual(page["total"], 1)
+        self.assertEqual(page["items"][0]["id"], "100201")
+
+    def test_limit_is_clamped_to_a_sane_maximum(self):
+        self.write_three_characters()
+        page = self.request("GET", "/api/reference/characters/browse?limit=99999")
+        self.assertEqual(page["limit"], 200)
 
 
 class BootstrapStatusRouteTests(LiveServerTestCase):
@@ -129,18 +195,16 @@ class RosterViewRouteTests(LiveServerTestCase):
 
     def test_roster_view_returns_derived_data_only_for_owned_items(self):
         profile_id = self.create_profile()["id"]
-        write_reference_entity(
-            sr.NORMALIZED_ROOT,
-            "characters",
-            [{"id": "char_1", "detail": {"rarity": 3}}, {"id": "char_2", "detail": {"rarity": 2}}],
+        write_reference_database(
+            characters=[make_character_card(), make_character_card(card_id=100102, char_id=1002, rarity=2)]
         )
         self.request(
             "PUT",
             f"/api/profiles/{profile_id}/roster",
             {
                 "characters": {
-                    "char_1": {"owned": True, "stars": 4, "awakening": 2, "unique_level": 3},
-                    "char_2": {"owned": False},
+                    "100101": {"owned": True, "stars": 4, "awakening": 2, "unique_level": 3},
+                    "100102": {"owned": False},
                 },
                 "supports": {},
             },
@@ -148,8 +212,8 @@ class RosterViewRouteTests(LiveServerTestCase):
 
         view = self.request("GET", f"/api/profiles/{profile_id}/roster-view/characters")
         self.assertEqual(view["entity"], "characters")
-        self.assertEqual(set(view["entries"]), {"char_1"})
-        self.assertEqual(view["entries"]["char_1"]["roster"]["stars"], 4)
+        self.assertEqual(set(view["entries"]), {"100101"})
+        self.assertEqual(view["entries"]["100101"]["roster"]["stars"], 4)
 
 
 if __name__ == "__main__":
