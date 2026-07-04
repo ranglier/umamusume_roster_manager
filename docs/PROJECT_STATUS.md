@@ -347,6 +347,38 @@ faute de `course_id` direct dans les donnees CM.
   matching par attributs), et liste vide quand aucun `course_id` ne
   correspond
 
+#### 11quinquies. Comparaison de decks (builds CM)
+
+"Deck" ici designe un `build` CM (`required_skills`/`optional_skills`,
+`builds.js`), pas le deck de supports d'entrainement (notion homonyme mais
+sans rapport, deja nommee ailleurs dans `builds.js` pour l'equilibrage de
+deck de training). Plutot qu'une nouvelle vue de comparaison dediee, ce
+chantier etend directement le multi-selection deja livre en 11ter: un
+`build` peut maintenant charger tous ses skills (`required_skills` +
+`optional_skills`, dedupes) d'un coup dans le picker existant, au lieu de
+les choisir un par un — deux builds peuvent ainsi etre charges l'un apres
+l'autre (dans la limite du plafond de 6) et se comparent directement,
+skill par skill, sur le meme SVG partage.
+
+- `getBuildPickerOptions()`/`getBuildSkillIds()` (`catalog.js`): la seconde
+  est pure et testee (`tests/js/test_catalog.mjs`); les builds sont deja
+  charges en memoire pour tout profil actif des qu'on est sur une page
+  "browse" (`loadBuildsForProfile`, appele a chaque changement de route),
+  donc aucune nouvelle plomberie de chargement de donnees n'etait
+  necessaire — `getEntityItems("builds")` fonctionnait deja tel quel
+- nouveau bloc "Or load every skill from a build draft at once" sur la
+  fiche `racetracks`: un `<select>` des builds du profil + un bouton qui
+  fusionne les skills du build choisi dans `selectedSkillIds`
+  (dedup, respect du plafond `MAX_VISUALIZER_SKILLS`, aucun message dedie
+  necessaire au plafond — le message "Max 6 skills selected" deja livre en
+  11ter se declenche automatiquement)
+- ids de skills inconnus dans un build (skill retire du referentiel depuis
+  la sauvegarde du draft) restent silencieusement ignores par le pipeline
+  de rendu deja existant, meme comportement qu'un id choisi manuellement
+- verifie en navigateur: creation d'un build de test cible sur Tokyo
+  #10611 (meme piste que la section 11quater), chargement de ses 2 skills
+  (1 required + 1 optional) en un clic, re-clic idempotent (pas de doublon)
+
 ## Choix techniques et justification
 
 ### Manifest + JSON versionnes plutot que scraping HTML
@@ -523,14 +555,16 @@ Apres clonage, un import local est donc necessaire pour regenerer les donnees et
 - decodage semantique fin des outcomes de `training_events`
 - brique `Meta / Insights`
 - `Visualizers`: `Race Skill Visualizer` livre sur `racetracks` (voir section
-  11 a 11quater) avec badges lisibles, affichage simultane de jusqu'a 6
-  skills, et acces depuis `races` (en plus de `cm_targets`). Reste ouvert,
-  aucune decision prise: comparaison de decks. L'ergonomie mobile/petit
-  ecran n'est **pas** une piste ouverte pour l'instant: l'application
-  entiere n'a aucun portage mobile a ce jour (UI locale pensee desktop de
-  bout en bout), donc une passe mobile isolee sur le seul SVG du visualizer
-  n'aurait pas de sens tant que ce portage plus large n'est pas lui-meme
-  priorise
+  11 a 11quinquies) avec badges lisibles, affichage simultane de jusqu'a 6
+  skills, acces depuis `races` (en plus de `cm_targets`), et chargement en
+  un clic de tous les skills d'un `build` CM pour comparer des decks entre
+  eux. Aucune piste ouverte identifiee pour l'instant sur ce chantier —
+  attend un retour d'usage reel avant d'en definir une nouvelle.
+  L'ergonomie mobile/petit ecran n'est **pas** une piste ouverte pour
+  l'instant: l'application entiere n'a aucun portage mobile a ce jour (UI
+  locale pensee desktop de bout en bout), donc une passe mobile isolee sur
+  le seul SVG du visualizer n'aurait pas de sens tant que ce portage plus
+  large n'est pas lui-meme priorise
 
 ## Sources externes preparees
 
@@ -609,11 +643,11 @@ Elle tourne aussi automatiquement sur chaque push / pull request via `.github/wo
 
 Ce filet couvre maintenant les fonctions pures les plus critiques (y compris les 13 `normalize_X` du pipeline d'import), l'orchestration `legacy`, le handler HTTP dans son integralite, les jobs d'admin/backups, et l'ecriture SQLite de bout en bout. Ce qui reste a couvrir en priorite: les fonctions de rendu HTML (`renderXxx`) et l'orchestration DOM/fetch cote JS (attendraient plutot des tests d'integration type Playwright), et, si la bascule des lectures vers SQLite demarre un jour, les requetes de lecture qui en decouleront.
 
-Cote frontend, une suite existe aussi dans `tests/js/` (stdlib `node:test` + `node:assert/strict`, zero dependance ajoutee, meme philosophie que le cote Python). `tests/js/_domshim.mjs` pose un `document`/`window` minimal pour que `src/ui/assets/js/core.js` (qui interroge des elements DOM au chargement du module) soit importable sous Node tout court — et par ricochet, tous les modules qui l'importent (directement ou via `../app.js`, dependance circulaire volontaire deja documentee plus haut). Couverture actuelle (109 tests / 233 assertions, un fichier de test par module source):
+Cote frontend, une suite existe aussi dans `tests/js/` (stdlib `node:test` + `node:assert/strict`, zero dependance ajoutee, meme philosophie que le cote Python). `tests/js/_domshim.mjs` pose un `document`/`window` minimal pour que `src/ui/assets/js/core.js` (qui interroge des elements DOM au chargement du module) soit importable sous Node tout court — et par ricochet, tous les modules qui l'importent (directement ou via `../app.js`, dependance circulaire volontaire deja documentee plus haut). Couverture actuelle (111 tests / 238 assertions, un fichier de test par module source):
 
 - `dom-utils.js`: `escapeHtml`, `hashText`, `badgePalette`, `clampRatio`, `clampNumber`, `parseRosterTokenList`, `tableFromRows`
 - `core.js`: `asArray`, `normalizeProfilesIndex`, `normalizeRosterDocument`, `normalizeBuildEntry`, `normalizeBuildsDocument`, `getSupportLevelCap`, `hasFilterOption`, `defaultEntityKeyForMode`, `allowedEntityKeys`, `currentRouteState`
-- `catalog.js`: `formatSupportEffectValue`, `formatTrainingEventChoiceLabel`
+- `catalog.js`: `formatSupportEffectValue`, `formatTrainingEventChoiceLabel`, `getBuildSkillIds`
 - `roster.js`: `getCharacterProgressSummary`, `getSupportProgressSummary`, `getDefaultRosterEntry`, `pruneRosterEntry`, `getRosterBadges`
 - `builds.js`: `getBuildEditorKey`, `getAptitudeTone`, `getAptitudeHint`, `getCharacterAptitudeForTarget`, `getBuildTargetProfile`, `getLegacySparkSummaryText`, `legacyMatchesBuildTarget`, `createEmptyBuildEntry`
 - `legacy.js`: `getCharacterBaseRarity`, `getCharacterRosterDefaults`, `getCharacterUniqueSkill`, `characterSupportsGreenSpark`, `getLegacyScenarioLabel`, `formatLegacyFactorLabel`, `deriveLegacyWhiteSparks`

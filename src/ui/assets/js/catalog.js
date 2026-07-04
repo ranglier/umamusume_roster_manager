@@ -1,5 +1,5 @@
 // Auto-split from app.js as part of docs/REFACTOR_PLAN.md.
-import { TRAINING_EVENT_EFFECT_LABELS, asArray, data, getEntityItems, getSkillReferences, getViewState, state } from "./core.js";
+import { TRAINING_EVENT_EFFECT_LABELS, asArray, data, getEntityItems, getSkillReferences, getViewState, renderSelectOptions, state } from "./core.js";
 import { escapeHtml, renderBadge, renderLinkedSkillList, renderReferenceList, renderSimpleList, tableFromRows } from "./dom-utils.js";
 import { getRosterEntry, renderCharacterRosterProjection, renderSupportCurrentEffects, renderSupportRosterProjection } from "./roster.js";
 import {
@@ -14,6 +14,20 @@ import { requestRenderPreservingScroll, requestRenderPreservingScrollAndFocus } 
 
 export function getSkillPickerOptions() {
   return getEntityItems("skills").map((item) => ({ value: String(item.id), label: item.title || String(item.id) }));
+}
+
+export function getBuildPickerOptions() {
+  return getEntityItems("builds").map((item) => ({ value: String(item.id), label: item.title || String(item.id) }));
+}
+
+// A build draft's required_skills + optional_skills, deduped. Unknown skill
+// ids (e.g. a skill removed from the reference since the draft was saved)
+// are left in the list - the existing per-skill lookup in renderRacetracks
+// already drops those silently, same as a manually-picked stale id would.
+export function getBuildSkillIds(buildItem) {
+  const entry = buildItem?.detail?.entry;
+  if (!entry) return [];
+  return [...new Set([...asArray(entry.required_skills), ...asArray(entry.optional_skills)].map(String))];
 }
 
 function renderConditionBadge(rawTerm) {
@@ -353,6 +367,7 @@ export function renderRacetracks(detail) {
     .filter(Boolean);
   const highlightGroups = skillVisuals.filter((visual) => visual.zones.length).map((visual) => ({ zones: visual.zones, className: visual.className }));
   const atSkillCap = visualizerState.selectedSkillIds.length >= MAX_VISUALIZER_SKILLS;
+  const buildOptions = getBuildPickerOptions();
 
   return `
     ${tableFromRows([
@@ -390,6 +405,17 @@ export function renderRacetracks(detail) {
       </div>
       ${picker.isLimited ? `<p class="source-note">Showing ${picker.visibleCount} of ${picker.totalCount} skills — type to search for more.</p>` : ""}
       ${atSkillCap ? `<p class="source-note">Max ${MAX_VISUALIZER_SKILLS} skills selected — remove one to add another.</p>` : ""}
+      <div class="build-load-row">
+        <p class="source-note">Or load every skill from a build draft at once, to compare decks:</p>
+        ${buildOptions.length
+          ? `
+            <div class="build-load-controls">
+              <select id="visualizerBuildPick" class="skill-picker-input">${renderSelectOptions(buildOptions, "", "Choose a build draft...")}</select>
+              <button type="button" id="visualizerBuildLoadBtn" class="build-load-btn">Add build's skills</button>
+            </div>
+          `
+          : `<p class="source-note">No build drafts yet — create one under My Roster &gt; Builds.</p>`}
+      </div>
       <div class="track-svg-wrap">${buildTrackSvg(detail, { highlightGroups })}</div>
       <div class="track-legend">
         <span class="legend-swatch track-zone-corner">Corner</span>
@@ -417,23 +443,6 @@ export function renderRacetracks(detail) {
         `,
         )
         .join("")}
-    </div>
-    <div class="detail-section">
-      <h3>Course Geometry</h3>
-      <pre class="code-block">${escapeHtml(
-        JSON.stringify(
-          {
-            phases: detail.phases,
-            corners: detail.corners,
-            straights: detail.straights,
-            slopes: detail.slopes,
-            spurt_start: detail.spurt_start,
-            stat_thresholds: detail.stat_thresholds,
-          },
-          null,
-          2,
-        ),
-      )}</pre>
     </div>
   `;
 }
@@ -658,4 +667,25 @@ export function attachRacetrackVisualizerListeners(course) {
       requestRenderPreservingScroll();
     });
   });
+
+  const buildLoadBtn = document.getElementById("visualizerBuildLoadBtn");
+  if (buildLoadBtn) {
+    buildLoadBtn.addEventListener("click", () => {
+      const buildId = document.getElementById("visualizerBuildPick")?.value;
+      if (!buildId) {
+        return;
+      }
+      const buildItem = getEntityItems("builds").find((item) => String(item.id) === buildId);
+      const ids = visualizerState.selectedSkillIds;
+      for (const skillId of getBuildSkillIds(buildItem)) {
+        if (ids.length >= MAX_VISUALIZER_SKILLS) {
+          break;
+        }
+        if (!ids.includes(skillId)) {
+          ids.push(skillId);
+        }
+      }
+      requestRenderPreservingScroll();
+    });
+  }
 }

@@ -2,7 +2,7 @@ import "./_domshim.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { formatSupportEffectValue, formatTrainingEventChoiceLabel } from "../../src/ui/assets/js/catalog.js";
+import { formatSupportEffectValue, formatTrainingEventChoiceLabel, getBuildSkillIds } from "../../src/ui/assets/js/catalog.js";
 
 test("formatSupportEffectValue returns 'Locked' for null, undefined, or empty string", () => {
   assert.equal(formatSupportEffectValue({}, null), "Locked");
@@ -40,4 +40,16 @@ test("formatTrainingEventChoiceLabel falls back to 'Choice ?' for a missing labe
 
 test("formatTrainingEventChoiceLabel returns the trimmed label when it isn't purely numeric", () => {
   assert.equal(formatTrainingEventChoiceLabel({ choice_label: "  Go all out  " }), "Go all out");
+});
+
+test("getBuildSkillIds merges required and optional skills, deduped and stringified", () => {
+  const buildItem = { detail: { entry: { required_skills: [1, 2], optional_skills: [2, 3] } } };
+  assert.deepEqual(getBuildSkillIds(buildItem), ["1", "2", "3"]);
+});
+
+test("getBuildSkillIds returns an empty list for a missing item or entry", () => {
+  assert.deepEqual(getBuildSkillIds(null), []);
+  assert.deepEqual(getBuildSkillIds(undefined), []);
+  assert.deepEqual(getBuildSkillIds({ detail: {} }), []);
+  assert.deepEqual(getBuildSkillIds({}), []);
 });
