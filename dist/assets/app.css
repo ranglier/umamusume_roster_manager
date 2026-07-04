@@ -3350,6 +3350,26 @@ body.roster-batch-mode .detail-column {
   border: 1px solid rgba(115, 160, 198, 0.2);
 }
 
+.condition-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px;
+  margin: 4px 6px 4px 0;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px dashed rgba(115, 160, 198, 0.2);
+}
+
+.condition-or {
+  display: inline-block;
+  margin: 0 4px;
+  font-size: 0.75rem;
+  font-style: italic;
+  color: var(--text-soft);
+}
+
 a {
   color: var(--accent);
 }

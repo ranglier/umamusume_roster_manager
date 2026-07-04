@@ -97,6 +97,61 @@ function resolveZoneForStaticTerm(term, course) {
   return null;
 }
 
+// Human-readable glosses for the most common non-position condition variables.
+// Deliberately NOT exhaustive: the real data has 130+ distinct variable names,
+// many of them enum-coded (running_style, distance_type, weather, season...)
+// whose value-to-label mapping isn't verifiable from this repo's data alone
+// (e.g. `season` takes at least 5 distinct values, not the 4 real-world
+// seasons one might assume - proof that guessing enum meanings here would be
+// exactly the kind of fabricated precision this project avoids elsewhere).
+// Only variables where the operator/value comparison is self-explanatory
+// without an external lookup table are covered; everything else keeps its
+// raw "variable==value" form.
+function pluralize(value, unit) {
+  if (Math.abs(value) === 1) return `${value} ${unit}`;
+  return `${value} ${unit === "body" ? "bodies" : `${unit}s`}`;
+}
+
+function booleanLabel(trueText, falseText) {
+  return (operator, value) => {
+    if (operator !== "==") return null;
+    if (value === 1) return trueText;
+    if (value === 0) return falseText;
+    return null;
+  };
+}
+
+const DYNAMIC_TERM_LABELS = {
+  order: (op, value) => `Rank ${op} ${value}`,
+  order_rate: (op, value) =>
+    op === "<=" ? `~ top ${value}% of the field by rank` : op === ">=" ? `~ back ${100 - value}% of the field by rank` : null,
+  distance_rate: (op, value) => (op === "<=" ? `In the first ${value}% of the race distance` : op === ">=" ? `Past the ${value}% mark of the race distance` : null),
+  is_overtake: booleanLabel("Currently overtaking another horse", "Not currently overtaking"),
+  is_lastspurt: booleanLabel("In the final spurt", "Not yet in the final spurt"),
+  is_badstart: booleanLabel("Had a bad start", "Did not have a bad start"),
+  is_move_lane: booleanLabel("Changing lanes", "Not changing lanes"),
+  is_behind_in: booleanLabel("Boxed in / blocked", "Not boxed in"),
+  always: booleanLabel("Always active", null),
+  bashin_diff_infront: (op, value) => `${op} ${pluralize(value, "body")} from the horse ahead`,
+  bashin_diff_behind: (op, value) => `${op} ${pluralize(value, "body")} from the horse behind`,
+  distance_diff_top: (op, value) => `${op} ${pluralize(value, "body")} behind the leader`,
+  accumulatetime: (op, value) => `${op} ${value}s elapsed in the race`,
+  corner: (op, value) => (op === "==" ? `On corner #${value}` : null),
+  popularity: (op, value) => `Betting popularity rank ${op} ${value}`,
+  motivation: (op, value) => `Motivation stat ${op} ${value}`,
+  post_number: (op, value) => `Starting gate ${op} ${value}`,
+  hp_per: (op, value) => `Stamina (HP) ${op} ${value}%`,
+};
+
+export function describeDynamicTermHuman(rawTerm) {
+  const match = String(rawTerm || "").trim().match(CONDITION_TERM_PATTERN);
+  if (!match) return null;
+  const [, variable, operator, value] = match;
+  const labelFn = DYNAMIC_TERM_LABELS[variable];
+  if (!labelFn) return null;
+  return labelFn(operator, Number(value)) || null;
+}
+
 export function resolveStaticZones(condition, precondition, course) {
   const zones = [];
   const unplacedDynamicOnly = [];

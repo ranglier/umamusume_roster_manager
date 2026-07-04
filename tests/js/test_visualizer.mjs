@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 
 import {
   buildTrackSvg,
+  describeDynamicTermHuman,
   getFilteredSkillPickerOptions,
   parseConditionString,
   resolveStaticZones,
@@ -157,6 +158,26 @@ test("buildTrackSvg overlays a highlight rect per skill zone, using the approxim
   });
   assert.equal((svg.match(/track-zone-skill-highlight"/g) || []).length, 1);
   assert.equal((svg.match(/track-zone-skill-highlight-approx/g) || []).length, 1);
+});
+
+test("describeDynamicTermHuman glosses known variables without discarding the operator/value", () => {
+  assert.equal(describeDynamicTermHuman("order<=5"), "Rank <= 5");
+  assert.equal(describeDynamicTermHuman("order_rate<=40"), "~ top 40% of the field by rank");
+  assert.equal(describeDynamicTermHuman("order_rate>=60"), "~ back 40% of the field by rank");
+  assert.equal(describeDynamicTermHuman("bashin_diff_infront<=1"), "<= 1 body from the horse ahead");
+  assert.equal(describeDynamicTermHuman("bashin_diff_behind<=2"), "<= 2 bodies from the horse behind");
+  assert.equal(describeDynamicTermHuman("is_overtake==1"), "Currently overtaking another horse");
+  assert.equal(describeDynamicTermHuman("is_overtake==0"), "Not currently overtaking");
+  assert.equal(describeDynamicTermHuman("always==1"), "Always active");
+});
+
+test("describeDynamicTermHuman returns null instead of guessing for enum-coded or unknown variables", () => {
+  assert.equal(describeDynamicTermHuman("running_style==2"), null);
+  assert.equal(describeDynamicTermHuman("season==1"), null);
+  assert.equal(describeDynamicTermHuman("weather==1"), null);
+  assert.equal(describeDynamicTermHuman("blocked_side_continuetime>=2"), null);
+  assert.equal(describeDynamicTermHuman("this is not a term"), null);
+  assert.equal(describeDynamicTermHuman(""), null);
 });
 
 function makeSkillOptions(count) {

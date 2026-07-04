@@ -2,11 +2,24 @@
 import { TRAINING_EVENT_EFFECT_LABELS, asArray, data, getEntityItems, getSkillReferences, getViewState, state } from "./core.js";
 import { escapeHtml, renderBadge, renderLinkedSkillList, renderReferenceList, renderSimpleList, tableFromRows } from "./dom-utils.js";
 import { getRosterEntry, renderCharacterRosterProjection, renderSupportCurrentEffects, renderSupportRosterProjection } from "./roster.js";
-import { buildTrackSvg, getFilteredSkillPickerOptions, resolveStaticZones } from "./visualizer.js";
+import { buildTrackSvg, describeDynamicTermHuman, getFilteredSkillPickerOptions, resolveStaticZones } from "./visualizer.js";
 import { requestRenderPreservingScroll, requestRenderPreservingScrollAndFocus } from "../app.js";
 
 export function getSkillPickerOptions() {
   return getEntityItems("skills").map((item) => ({ value: String(item.id), label: item.title || String(item.id) }));
+}
+
+function renderConditionBadge(rawTerm) {
+  const human = describeDynamicTermHuman(rawTerm);
+  const title = human ? ` title="${escapeHtml(rawTerm)}"` : "";
+  return `<span class="skill-dynamic-badge"${title}>${escapeHtml(human || rawTerm)}</span>`;
+}
+
+// Renders each AND-group of raw condition terms as its own chip, with an "OR"
+// connector between groups - so alternative conditions (from `@` in the
+// source data) read as alternatives instead of one flattened, ambiguous list.
+function renderConditionGroups(groups) {
+  return groups.map((terms) => `<div class="condition-group">${terms.map(renderConditionBadge).join("")}</div>`).join('<span class="condition-or">OR</span>');
 }
 
 export function getRacetrackVisualizerState(course) {
@@ -317,6 +330,11 @@ export function renderRacetracks(detail) {
   const allUnplaced = selectedSkillItem
     ? asArray(selectedSkillItem.detail?.condition_groups).flatMap((group) => resolveStaticZones(group.condition, group.precondition, detail).unplacedDynamicOnly)
     : [];
+  const seenBadgeGroups = new Set();
+  const badgeGroups = allZones
+    .map((zone) => zone.dynamicBadges)
+    .filter((badges) => badges.length && !seenBadgeGroups.has(badges) && seenBadgeGroups.add(badges));
+  const unplacedGroups = allUnplaced.map((entry) => entry.split(" & "));
 
   return `
     ${tableFromRows([
@@ -363,11 +381,13 @@ export function renderRacetracks(detail) {
         ? `
           <div class="detail-section">
             <h4>${escapeHtml(selectedSkillItem.title)}</h4>
-            ${allZones.length ? `<p class="source-note">${allZones.length} track zone(s) highlighted above.${allZones.some((zone) => zone.approximate) ? " Hatched zones are approximate (e.g. random-phase conditions)." : ""}</p>` : "<p class='source-note'>No track-position data for this skill's activation conditions.</p>"}
-            ${allZones.some((zone) => zone.dynamicBadges.length)
-              ? `<p class="source-note">Also requires:</p><div>${allZones.flatMap((zone) => zone.dynamicBadges).map((badge) => `<span class="skill-dynamic-badge">${escapeHtml(badge)}</span>`).join("")}</div>`
+            ${allZones.length
+              ? `<p class="source-note">${allZones.length} track zone(s) highlighted above.${allZones.some((zone) => zone.approximate) ? " Hatched zones are approximate (e.g. random-phase conditions)." : ""}</p>`
+              : `<p class="source-note">This skill's trigger isn't tied to a track position - it depends on race state:</p>`}
+            ${badgeGroups.length ? `<p class="source-note">Also requires:</p>${renderConditionGroups(badgeGroups)}` : ""}
+            ${allUnplaced.length
+              ? `${allZones.length ? `<p class="source-note">Not shown on track (depends on other horses/ranking):</p>` : ""}${renderConditionGroups(unplacedGroups)}`
               : ""}
-            ${allUnplaced.length ? `<p class="source-note">Not shown on track (depends on other horses/ranking): ${escapeHtml(allUnplaced.join("; "))}</p>` : ""}
           </div>
         `
         : ""}

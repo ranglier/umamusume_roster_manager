@@ -3,7 +3,7 @@
   "configurations": [
     {
       "name": "reference-server",
-      "runtimeExecutable": "python3",
+      "runtimeExecutable": "python",
       "runtimeArgs": ["./scripts/serve_reference.py", "--port", "8420"],
       "port": 8420
     }
