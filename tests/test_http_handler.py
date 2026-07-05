@@ -226,11 +226,12 @@ class BuildsRouteTests(LiveServerTestCase):
         created = self.request(
             "POST",
             f"/api/profiles/{profile_id}/builds",
-            {"mode": "champions_meeting", "name": "Draft build"},
+            {"mode": "champions_meeting", "name": "Draft build", "running_style": "leader"},
             expect_status=201,
         )
         build_id = created["entry"]["id"]
         self.assertEqual(created["entry"]["status"], "draft")
+        self.assertEqual(created["entry"]["running_style"], "leader")
 
         listed = self.request("GET", f"/api/profiles/{profile_id}/builds")
         self.assertEqual([entry["id"] for entry in listed["entries"]], [build_id])
@@ -238,9 +239,10 @@ class BuildsRouteTests(LiveServerTestCase):
         updated = self.request(
             "PATCH",
             f"/api/profiles/{profile_id}/builds/{build_id}",
-            {"status": "testing"},
+            {"status": "testing", "running_style": "chaser"},
         )
         self.assertEqual(updated["entry"]["status"], "testing")
+        self.assertEqual(updated["entry"]["running_style"], "chaser")
 
         self.request("DELETE", f"/api/profiles/{profile_id}/builds/{build_id}", expect_status=200)
         after_delete = self.request("GET", f"/api/profiles/{profile_id}/builds")
@@ -253,6 +255,15 @@ class BuildsRouteTests(LiveServerTestCase):
             f"/api/profiles/{profile_id}/builds/build_999",
             {"status": "testing"},
             expect_status=404,
+        )
+
+    def test_build_running_style_rejects_unknown_values(self):
+        profile_id = self.create_profile()["id"]
+        self.request(
+            "POST",
+            f"/api/profiles/{profile_id}/builds",
+            {"mode": "champions_meeting", "name": "Draft build", "running_style": "oonige"},
+            expect_status=400,
         )
 
 

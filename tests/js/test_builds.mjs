@@ -8,7 +8,9 @@ import {
   getAptitudeTone,
   getAptitudeHint,
   getCharacterAptitudeForTarget,
+  getCharacterAptitudeFit,
   getBuildTargetProfile,
+  getBuildTargetRacetrack,
   getLegacySparkSummaryText,
   legacyMatchesBuildTarget,
   createEmptyBuildEntry,
@@ -54,6 +56,37 @@ test("getCharacterAptitudeForTarget is useful when both surface and distance are
   const result = getCharacterAptitudeForTarget(item, { surfaceKey: "turf", distanceKey: "mile" });
   assert.equal(result.useful, true);
   assert.equal(result.workable, true);
+});
+
+test("getCharacterAptitudeFit compares the character's current grade against the build's planned target grade", () => {
+  const item = { detail: { aptitudes: { surface: { turf: "B" }, distance: { mile: "A" }, style: { leader: "S" } } } };
+  const targetProfile = { surfaceKey: "turf", distanceKey: "mile", surface: "Turf", distanceCategory: "Mile" };
+  const entry = { target_aptitudes: { surface: "S", distance: "A", style: "A" }, running_style: "leader" };
+  const fit = getCharacterAptitudeFit(item, targetProfile, entry);
+  assert.equal(fit.surfaceAccel.currentGrade, "B");
+  assert.equal(fit.surfaceAccel.current, 0.9);
+  assert.equal(fit.surfaceAccel.target, 1.05);
+  assert.equal(fit.distanceAccel.current, 1.0);
+  assert.equal(fit.style.currentGrade, "S");
+  assert.equal(fit.style.gain, -0.1);
+});
+
+test("getCharacterAptitudeFit omits the style fit entirely when no running style is chosen", () => {
+  const item = { detail: { aptitudes: { surface: {}, distance: {}, style: {} } } };
+  const fit = getCharacterAptitudeFit(item, { surfaceKey: "turf", distanceKey: "mile" }, { target_aptitudes: {}, running_style: "" });
+  assert.equal(fit.style, null);
+});
+
+test("getBuildTargetRacetrack resolves only when the cm_target has exactly one related racetrack", () => {
+  data.entities.racetracks.items = [{ id: "10611", title: "Tokyo #10611" }];
+  const unique = getBuildTargetRacetrack({ detail: { related_racetracks: [{ id: "10611" }] } });
+  assert.equal(unique?.id, "10611");
+
+  const ambiguous = getBuildTargetRacetrack({ detail: { related_racetracks: [{ id: "10611" }, { id: "10612" }] } });
+  assert.equal(ambiguous, null);
+
+  const none = getBuildTargetRacetrack({ detail: { related_racetracks: [] } });
+  assert.equal(none, null);
 });
 
 test("getBuildTargetProfile falls back to empty strings when the target id doesn't resolve", () => {
@@ -128,4 +161,5 @@ test("createEmptyBuildEntry seeds defaults from the first available reference op
   assert.equal(entry.character_id, "char_001");
   assert.deepEqual(entry.legacy_pair, { parent_a: "legacy_001", parent_b: "legacy_002" });
   assert.equal(entry.status, "draft");
+  assert.equal(entry.running_style, "");
 });

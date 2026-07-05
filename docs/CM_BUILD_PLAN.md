@@ -841,6 +841,32 @@ et laisser la simulation multi-agents (Option D ci-dessus, territoire de
 l'umalator) comme horizon. Cela correspond a l'Option A enrichie de faits
 verifies, plutot qu'a un score composite a poids arbitraires.
 
+## Palier 1 livre
+
+Le premier palier deterministe (formules directes, zero simulation) est en
+place dans `src/ui/assets/js/build_scoring.js` (module pur, teste dans
+`tests/js/test_build_scoring.mjs`), branche sur l'editeur de build existant:
+
+- fit d'aptitude reel: remplace le bucket binaire S/A de
+  `getCharacterAptitudeForTarget` par les 4 coefficients exacts (surface/
+  distance x2/style) compares entre le grade actuel du personnage et le
+  grade planifie post-heritage (`entry.target_aptitudes`)
+- panneau "Feasibility": HP max (formule exacte), reperes de stamina requise
+  les plus proches (table empirique, jamais interpolee), bonus de seuil de
+  stat de la piste (uniquement si `cm_target` resout une unique racetrack —
+  sinon annonce explicitement l'ambiguite plutot que deviner), % d'activation
+  de skill et % de rushed depuis le Wiz cible, seuil de bascule Guts/Stamina
+  selon la distance
+- nouveau champ `running_style` sur le `build` (absent avant ce chantier —
+  presque toutes les formules Palier 1 en dependent) — valide cote serveur
+  (`scripts/serve_reference.py::normalize_build_entry`) et cote client
+  (`normalizeBuildEntry`)
+
+Palier 2 (projection du last spurt croisee avec le Skill Visualizer) et
+Palier 3 (simulation multi-agents) restent a faire — voir
+`docs/RACE_MECHANICS_REFERENCE.md` section "Application au moteur du
+projet".
+
 ## Sources utiles
 
 Sources GameTora consultees pour ce cadrage:

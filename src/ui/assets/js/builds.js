@@ -1,9 +1,20 @@
 // Auto-split from app.js as part of docs/REFACTOR_PLAN.md.
-import { BUILD_APTITUDE_FIELDS, BUILD_APTITUDE_GRADES, BUILD_MODE_OPTIONS, BUILD_STATUS_OPTIONS, BUILD_STAT_FIELDS, BUILD_SUPPORT_TYPES, asArray, data, getActiveProfile, getBuildReferenceLabel, getBuildTargetOptions, getEntityItems, getOwnedCharacterOptions, getOwnedSupportOptions, getRosterViewEntry, normalizeBuildEntry, renderSelectOptions, state } from "./core.js";
+import { BUILD_APTITUDE_FIELDS, BUILD_APTITUDE_GRADES, BUILD_MODE_OPTIONS, BUILD_RUNNING_STYLE_OPTIONS, BUILD_STATUS_OPTIONS, BUILD_STAT_FIELDS, BUILD_SUPPORT_TYPES, asArray, data, getActiveProfile, getBuildReferenceLabel, getBuildTargetOptions, getEntityItems, getOwnedCharacterOptions, getOwnedSupportOptions, getRosterViewEntry, normalizeBuildEntry, renderSelectOptions, state } from "./core.js";
 import { clampNumber, escapeHtml, parseRosterTokenList, renderBadge, tableFromRows } from "./dom-utils.js";
 import { getRosterEntry } from "./roster.js";
 import { deleteBuild, formatLegacyFactorLabel, getCharacterReferenceItem, saveBuildForm } from "./legacy.js";
 import { requestRenderPreservingScroll, requestRenderPreservingScrollAndFocus } from "../app.js";
+import {
+  compareAptitudeModifiers,
+  computeMaxHp,
+  computeRushedChance,
+  computeSkillActivationChance,
+  computeStatThresholdBonus,
+  getGutsStaminaCrossoverThreshold,
+  getNearestStaminaReferences,
+} from "./build_scoring.js";
+
+const RUNNING_STYLE_LABELS = { runner: "Front Runner", leader: "Pace Chaser", betweener: "Late Surger", chaser: "End Closer" };
 
 
 export function getBuildEditorKey(isCreateMode, buildId) {
@@ -45,6 +56,19 @@ export function getBuildTargetProfile(entry) {
   };
 }
 
+// cm_targets.related_racetracks is a fuzzy match (terrain/distance
+// category/direction, no exact course_id - see docs/PROJECT_STATUS.md
+// section 11quater vs the races case). Only return a racetrack when the
+// match is unambiguous; a stat-threshold bonus computed from the wrong one
+// of 2-3 candidates would be worse than not showing one at all.
+export function getBuildTargetRacetrack(targetItem) {
+  const candidates = asArray(targetItem?.detail?.related_racetracks);
+  if (candidates.length !== 1) {
+    return null;
+  }
+  return getEntityItems("racetracks").find((item) => String(item.id) === String(candidates[0].id)) || null;
+}
+
 export function renderBuildHint(label, tone = "neutral") {
   return `<span class="build-hint build-hint-${escapeHtml(tone)}">${escapeHtml(label)}</span>`;
 }
@@ -77,6 +101,53 @@ export function getCharacterAptitudeForTarget(item, targetProfile) {
     useful: ["S", "A"].includes(String(surfaceGrade || "").toUpperCase()) && ["S", "A"].includes(String(distanceGrade || "").toUpperCase()),
     workable: ["S", "A", "B", "C"].includes(String(surfaceGrade || "").toUpperCase()) && ["S", "A", "B", "C"].includes(String(distanceGrade || "").toUpperCase()),
   };
+}
+
+// Real game coefficients (docs/RACE_MECHANICS_REFERENCE.md), comparing the
+// character's current aptitude grade against the build's planned
+// (post-inheritance) target grade - replaces the old S/A-vs-rest binary
+// bucket with the actual multiplier and the gain inheritance would buy.
+export function getCharacterAptitudeFit(item, targetProfile, entry) {
+  const aptitudes = item?.detail?.aptitudes || {};
+  const targetAptitudes = entry?.target_aptitudes || {};
+  const styleKey = entry?.running_style || "";
+
+  const surfaceCurrentGrade = targetProfile.surfaceKey ? aptitudes.surface?.[targetProfile.surfaceKey] : "";
+  const distanceCurrentGrade = targetProfile.distanceKey ? aptitudes.distance?.[targetProfile.distanceKey] : "";
+  const styleCurrentGrade = styleKey ? aptitudes.style?.[styleKey] : "";
+
+  const withGrades = (kind, currentGrade, targetGrade) => ({
+    ...compareAptitudeModifiers(kind, currentGrade, targetGrade),
+    currentGrade: currentGrade || "",
+    targetGrade: targetGrade || "",
+  });
+
+  return {
+    surfaceAccel: withGrades("surfaceAccel", surfaceCurrentGrade, targetAptitudes.surface),
+    distanceSpeed: withGrades("distanceSpeed", distanceCurrentGrade, targetAptitudes.distance),
+    distanceAccel: withGrades("distanceAccel", distanceCurrentGrade, targetAptitudes.distance),
+    style: styleKey ? withGrades("styleWiz", styleCurrentGrade, targetAptitudes.style) : null,
+  };
+}
+
+function formatModifier(value) {
+  return value != null ? `${value.toFixed(2)}x` : "-";
+}
+
+function renderAptitudeFitRow(label, fit) {
+  if (!fit) {
+    return "";
+  }
+  const currentText = fit.currentGrade ? `${fit.currentGrade} (${formatModifier(fit.current)})` : `Unknown (${formatModifier(fit.current)})`;
+  const targetText = fit.targetGrade ? `${fit.targetGrade} (${formatModifier(fit.target)})` : "no target set";
+  const gainText = fit.gain == null ? "" : fit.gain === 0 ? " · no change planned" : ` · ${fit.gain > 0 ? "+" : ""}${fit.gain.toFixed(2)}x planned`;
+  return `
+    <div>
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(currentText)}</strong>
+      <small>${escapeHtml(`-> ${targetText}${gainText}`)}</small>
+    </div>
+  `;
 }
 
 export function getBuildCharacterOptions(entry) {
@@ -284,6 +355,7 @@ export function createEmptyBuildEntry() {
     target_id: getBuildTargetOptions("cm_targets")[0]?.value || "",
     character_id: getOwnedCharacterOptions()[0]?.value || "",
     scenario_id: getBuildTargetOptions("scenarios")[0]?.value || "",
+    running_style: "",
     support_deck: [],
     legacy_pair: {
       parent_a: state.legacyView.items[0]?.id || "",
@@ -427,6 +499,7 @@ export function renderBuildCharacterPanel(entry) {
     `;
   }
   const analysis = getCharacterAptitudeForTarget(item, target);
+  const fit = getCharacterAptitudeFit(item, target, entry);
   return `
     <section class="build-panel">
       <div class="build-panel-head">
@@ -434,11 +507,14 @@ export function renderBuildCharacterPanel(entry) {
         ${renderBuildHint(analysis.useful ? "Matches target" : analysis.workable ? "Needs inheritance" : "Off target", analysis.useful ? "ok" : analysis.workable ? "warn" : "bad")}
       </div>
       <div class="build-metric-grid">
-        <div><span>${escapeHtml(target.surface || "Surface")}</span><strong>${escapeHtml(analysis.surfaceGrade || "-")}</strong>${renderBuildHint(analysis.surfaceHint.label, analysis.surfaceHint.tone)}</div>
-        <div><span>${escapeHtml(target.distanceCategory || "Distance")}</span><strong>${escapeHtml(analysis.distanceGrade || "-")}</strong>${renderBuildHint(analysis.distanceHint.label, analysis.distanceHint.tone)}</div>
         <div><span>Variant</span><strong>${escapeHtml(item.subtitle || "-")}</strong></div>
         <div><span>Rarity</span><strong>${escapeHtml(item.detail?.rarity || "-")}</strong></div>
+        ${renderAptitudeFitRow(`${target.surface || "Surface"} (accel)`, fit.surfaceAccel)}
+        ${renderAptitudeFitRow(`${target.distanceCategory || "Distance"} (speed)`, fit.distanceSpeed)}
+        ${renderAptitudeFitRow(`${target.distanceCategory || "Distance"} (accel)`, fit.distanceAccel)}
+        ${fit.style ? renderAptitudeFitRow(`${RUNNING_STYLE_LABELS[entry.running_style] || "Style"} (Wiz)`, fit.style) : ""}
       </div>
+      ${!entry.running_style ? "<p class='source-note'>Choose a running style below to also see the Style/Wiz aptitude fit.</p>" : ""}
     </section>
   `;
 }
@@ -563,11 +639,109 @@ export function renderBuildSkillPanel(entry) {
   `;
 }
 
+// Tier 1 deterministic feasibility (docs/CM_BUILD_PLAN.md phase 3D): pure
+// game formulas from docs/RACE_MECHANICS_REFERENCE.md applied to the build's
+// own target_stats/running_style - no opponent or position simulation.
+export function renderBuildFeasibilityPanel(entry) {
+  const target = getBuildTargetProfile(entry);
+  if (!target.item) {
+    return `
+      <section class="build-panel">
+        <div class="build-panel-head">
+          <h4>Feasibility</h4>
+          ${renderBuildHint("No target", "neutral")}
+        </div>
+        <p class="source-note">Select a CM target and a running style to compute HP, stat thresholds and skill activation odds.</p>
+      </section>
+    `;
+  }
+  if (!entry.running_style) {
+    return `
+      <section class="build-panel">
+        <div class="build-panel-head">
+          <h4>Feasibility</h4>
+          ${renderBuildHint("No running style", "warn")}
+        </div>
+        <p class="source-note">Choose a running style below - HP and stat-threshold formulas both depend on it.</p>
+      </section>
+    `;
+  }
+
+  const stats = entry.target_stats || {};
+  const stamina = Number(stats.stamina);
+  const guts = Number(stats.guts);
+  const wit = Number(stats.wit);
+  const maxHp = Number.isFinite(stamina) ? computeMaxHp(stamina, target.distance, entry.running_style) : null;
+  const nearestStamina = getNearestStaminaReferences(target.distance, 2);
+  const racetrack = getBuildTargetRacetrack(target.item);
+  const thresholdIndices = asArray(racetrack?.detail?.stat_thresholds);
+  const thresholdBonus = thresholdIndices.length ? computeStatThresholdBonus(stats, thresholdIndices) : null;
+  const activationChance = Number.isFinite(wit) ? computeSkillActivationChance(wit) : null;
+  const rushedChance = Number.isFinite(wit) ? computeRushedChance(wit) : null;
+  const gutsThreshold = getGutsStaminaCrossoverThreshold(target.distanceKey, target.distance, target.surfaceKey);
+
+  return `
+    <section class="build-panel">
+      <div class="build-panel-head">
+        <h4>Feasibility</h4>
+        ${renderBuildHint("Tier 1 - formulas only", "ok")}
+      </div>
+      <div class="build-metric-grid">
+        <div>
+          <span>Max HP (${escapeHtml(RUNNING_STYLE_LABELS[entry.running_style])})</span>
+          <strong>${maxHp != null ? escapeHtml(Math.round(maxHp).toString()) : "-"}</strong>
+          <small>${escapeHtml(stamina ? `${target.distance}m + 0.8 x style coef x ${stamina} Stamina` : "Set a target Stamina to compute")}</small>
+        </div>
+        <div>
+          <span>Nearest Stamina reference points</span>
+          <strong>${nearestStamina.length ? escapeHtml(nearestStamina.map((row) => `${row[entry.running_style]}`).join(" / ")) : "-"}</strong>
+          <small>${escapeHtml(nearestStamina.length ? nearestStamina.map((row) => `${row.distanceM}m + ${row.recoveries} gold(s)`).join(" | ") : "No umalator reference this close to this distance")}</small>
+        </div>
+        <div>
+          <span>Stat threshold bonus</span>
+          <strong>${thresholdBonus != null ? `+${(thresholdBonus * 100).toFixed(1)}%` : "-"}</strong>
+          <small>${escapeHtml(
+            thresholdIndices.length
+              ? `Speed bonus on this track's threshold stat(s), from target_stats`
+              : racetrack
+                ? "This track has no secret stat threshold"
+                : "Track not uniquely determined from this CM target - not shown"
+          )}</small>
+        </div>
+        <div>
+          <span>Skill activation chance</span>
+          <strong>${activationChance != null ? `${activationChance.toFixed(1)}%` : "-"}</strong>
+          <small>${escapeHtml(wit ? `From ${wit} base Wisdom (pre-race check, same for greens)` : "Set a target Wisdom to compute")}</small>
+        </div>
+        <div>
+          <span>Rushed (Kakari) chance</span>
+          <strong>${rushedChance != null ? `${rushedChance.toFixed(1)}%` : "-"}</strong>
+          <small>${escapeHtml("Also rolled from Wisdom, before the race")}</small>
+        </div>
+        <div>
+          <span>Guts/Stamina crossover</span>
+          <strong>${gutsThreshold != null ? `${gutsThreshold} Guts` : "-"}</strong>
+          <small>${escapeHtml(
+            gutsThreshold == null
+              ? "No documented threshold for this distance"
+              : Number.isFinite(guts)
+                ? guts >= gutsThreshold
+                  ? `${guts} Guts is above it - extra Stamina matters more now`
+                  : `${guts} Guts is below it - extra Guts still outvalues Stamina`
+                : "Set a target Guts to compare"
+          )}</small>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
 export function renderBuildInsightPanels(entry) {
   return `
     <div class="build-panel-grid">
       ${renderBuildTargetPanel(entry)}
       ${renderBuildCharacterPanel(entry)}
+      ${renderBuildFeasibilityPanel(entry)}
       ${renderBuildSupportPanel(entry)}
       ${renderBuildParentPanel(entry)}
       ${renderBuildSkillPanel(entry)}
@@ -662,7 +836,7 @@ export function renderBuildEditor(entry, isCreateMode, labels = {}) {
   return `
     <div class="detail-section roster-section">
       <h3>${isCreateMode ? "New Build Draft" : "Build Draft"}</h3>
-      <p class="source-note">Manual planner v2 for <strong>${escapeHtml(getActiveProfile()?.name || "selected profile")}</strong>. Hints are informative only; no scoring is applied yet.</p>
+      <p class="source-note">Manual planner v2 for <strong>${escapeHtml(getActiveProfile()?.name || "selected profile")}</strong>. The Feasibility panel below applies Tier 1 deterministic formulas (aptitude, HP, stat thresholds, skill activation) - no opponent or position simulation yet.</p>
       ${renderBuildInsightPanels(entry)}
       <form id="buildForm" class="roster-form" data-build-id="${escapeHtml(entry.id || "")}" data-build-mode="${isCreateMode ? "create" : "edit"}">
         <label class="field-stack field-stack-full">
@@ -699,6 +873,12 @@ export function renderBuildEditor(entry, isCreateMode, labels = {}) {
           <label class="field-stack field-stack-full">
             <span>Main Character</span>
             ${renderBuildCharacterSelect(entry)}
+          </label>
+          <label class="field-stack">
+            <span>Running Style</span>
+            <select name="running_style">
+              ${BUILD_RUNNING_STYLE_OPTIONS.map((option) => `<option value="${escapeHtml(option.value)}" ${(entry.running_style || "") === option.value ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
+            </select>
           </label>
         </div>
         <div class="build-form-section">
@@ -781,6 +961,7 @@ export function collectBuildPayload(formData) {
     target_id: String(formData.get("target_id") || "").trim(),
     character_id: String(formData.get("character_id") || "").trim(),
     scenario_id: String(formData.get("scenario_id") || "").trim(),
+    running_style: String(formData.get("running_style") || "").trim(),
     support_deck: asArray(formData.getAll("support_deck")).map((value) => String(value || "").trim()).filter(Boolean).slice(0, 6),
     legacy_pair: {
       parent_a: parentA,
@@ -837,7 +1018,7 @@ export function attachBuildFormListeners(isCreateMode, buildId) {
     });
   });
 
-  ["target_id", "character_id", "scenario_id", "parent_a", "parent_b", "mode", "status"].forEach((name) => {
+  ["target_id", "character_id", "scenario_id", "running_style", "parent_a", "parent_b", "mode", "status"].forEach((name) => {
     const control = buildForm.querySelector(`[name="${name}"]`);
     if (control) {
       control.addEventListener("change", () => {

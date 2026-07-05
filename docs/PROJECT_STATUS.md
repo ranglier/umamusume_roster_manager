@@ -412,6 +412,44 @@ au pipeline pour combler des lacunes identifiees:
   supposait) — ce qui manque reellement est la table de correspondance
   `type` -> signification, jamais publiee par GameTora
 
+### 12. Moteur de build CM — Palier 1 (formules deterministes)
+
+Premier palier du moteur de scoring de `docs/CM_BUILD_PLAN.md` (phase 3D),
+livre sur la base de l'etude en section 11sexies. Module pur
+`src/ui/assets/js/build_scoring.js` (teste dans
+`tests/js/test_build_scoring.mjs`, 15 tests), branche sur l'editeur de build
+existant dans `builds.js` — aucune simulation, uniquement les formules
+verifiees de `docs/RACE_MECHANICS_REFERENCE.md`:
+
+- fit d'aptitude reel (`getCharacterAptitudeFit`): remplace le bucket binaire
+  S/A de `getCharacterAptitudeForTarget` par les 4 coefficients exacts du
+  jeu (surface/distance vitesse/distance acceleration/style), compares entre
+  le grade actuel du personnage possede et le grade planifie post-heritage
+  (`entry.target_aptitudes`, deja existant mais jusque-la jamais exploite
+  numeriquement)
+- nouveau panneau "Feasibility" dans l'editeur: HP max, reperes de stamina
+  requise les plus proches (table empirique [REF-GL], jamais interpolee —
+  seul un match exact distance+recoveries est affiche comme tel), bonus de
+  seuil de stat de la piste (`getBuildTargetRacetrack` — n'affiche le bonus
+  que si le `cm_target` resout une unique racetrack candidate, sinon le dit
+  explicitement plutot que de deviner laquelle des 2-3 candidates utiliser),
+  % d'activation de skill et % de rushed depuis le Wiz cible, seuil de
+  bascule Guts/Stamina selon la distance
+- nouveau champ `running_style` sur le `build`: absent du modele jusqu'ici
+  alors que presque toutes les formules Palier 1 (HP, seuils Guts/Stamina,
+  coefficients de stat) en dependent. Valide cote serveur
+  (`normalize_build_entry` dans `serve_reference.py`, 4 valeurs autorisees)
+  et cote client (`normalizeBuildEntry`)
+- verifie en navigateur sur le build de test existant (Aquarius Cup Tokyo,
+  Mile, 1600m): HP/seuil Guts/activation skill/rushed calcules avec les
+  memes chiffres que les exemples documentes (ex. 600 Wiz -> 85.0%
+  d'activation, exactement la table de `docs/RACE_MECHANICS_REFERENCE.md`)
+
+Reste a faire: Palier 2 (projection du point de depart du dernier sprint
+croisee avec les zones du Skill Visualizer) et Palier 3 (simulation
+multi-agents, hors perimetre volontaire — voir `docs/CM_BUILD_PLAN.md`
+Option D).
+
 ## Choix techniques et justification
 
 ### Manifest + JSON versionnes plutot que scraping HTML
@@ -581,8 +619,9 @@ Apres clonage, un import local est donc necessaire pour regenerer les donnees et
 
 ## Ce qui n'a pas encore ete traite
 
-- comparaison / scoring
-- logique de builds
+- moteur de build: Palier 1 (formules deterministes aptitude/HP/seuils, voir
+  section 12) livre; Palier 2 (projection du last spurt x Skill Visualizer)
+  et Palier 3 (simulation multi-agents) restent a faire
 - parents personnels
 - heuristiques Champions Meeting
 - decodage semantique fin des outcomes de `training_events`

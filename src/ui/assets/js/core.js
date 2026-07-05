@@ -216,6 +216,13 @@ export const BUILD_APTITUDE_FIELDS = [
   { key: "style", label: "Style" },
 ];
 export const BUILD_APTITUDE_GRADES = ["", "S", "A", "B", "C", "D", "E", "F", "G"];
+export const BUILD_RUNNING_STYLE_OPTIONS = [
+  { value: "", label: "Not chosen" },
+  { value: "runner", label: "Front Runner" },
+  { value: "leader", label: "Pace Chaser" },
+  { value: "betweener", label: "Late Surger" },
+  { value: "chaser", label: "End Closer" },
+];
 export const BUILD_SUPPORT_TYPES = [
   { value: "", label: "All support types" },
   { value: "speed", label: "Speed" },
@@ -491,6 +498,7 @@ export function normalizeBuildEntry(rawEntry) {
     target_id: String(entry.target_id || ""),
     character_id: String(entry.character_id || ""),
     scenario_id: String(entry.scenario_id || ""),
+    running_style: String(entry.running_style || ""),
     support_deck: asArray(entry.support_deck).map((item) => String(item || "").trim()).filter(Boolean).slice(0, 6),
     legacy_pair: entry.legacy_pair && typeof entry.legacy_pair === "object" ? {
       parent_a: String(entry.legacy_pair.parent_a || ""),

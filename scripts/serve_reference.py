@@ -999,6 +999,10 @@ def normalize_build_entry(raw_entry: object, profile_id: str, *, existing_id: st
     if len(notes) > 4000:
         raise ValueError("build.notes is too long.")
 
+    running_style = str(raw_entry.get("running_style") or "").strip()
+    if running_style and running_style not in {"runner", "leader", "betweener", "chaser"}:
+        raise ValueError("build.running_style is invalid.")
+
     entry = {
         "id": build_id,
         "mode": mode,
@@ -1006,6 +1010,7 @@ def normalize_build_entry(raw_entry: object, profile_id: str, *, existing_id: st
         "target_id": str(raw_entry.get("target_id") or "").strip(),
         "character_id": str(raw_entry.get("character_id") or "").strip(),
         "scenario_id": str(raw_entry.get("scenario_id") or "").strip(),
+        "running_style": running_style,
         "support_deck": normalize_build_id_list(raw_entry.get("support_deck"), field_name="build.support_deck", max_items=6),
         "legacy_pair": normalize_build_legacy_pair(raw_entry.get("legacy_pair")),
         "target_stats": normalize_build_stats(raw_entry.get("target_stats")),

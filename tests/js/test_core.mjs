@@ -55,6 +55,12 @@ test("normalizeBuildEntry fills defaults for a bare object", () => {
   assert.equal(entry.status, "draft");
   assert.deepEqual(entry.support_deck, []);
   assert.deepEqual(entry.legacy_pair, {});
+  assert.equal(entry.running_style, "");
+});
+
+test("normalizeBuildEntry preserves a chosen running_style", () => {
+  const entry = normalizeBuildEntry({ running_style: "chaser" });
+  assert.equal(entry.running_style, "chaser");
 });
 
 test("normalizeBuildEntry caps support_deck at 6 entries", () => {
