@@ -46,7 +46,7 @@ def build_minimal_normalized_reference():
         "character_progression": gt.normalize_character_progression(make_source_config("character_progression"), metadata, [character_card], [], []),
         "supports": gt.normalize_supports(make_source_config("supports"), metadata, [support_card], [], []),
         "support_progression": gt.normalize_support_progression(make_source_config("support_progression"), metadata, [], [support_card]),
-        "skills": gt.normalize_skills(make_source_config("skills"), metadata, [], [], []),
+        "skills": gt.normalize_skills(make_source_config("skills"), metadata, [], [], [], []),
         "races": gt.normalize_races(make_source_config("races"), metadata, [], []),
         "racetracks": gt.normalize_racetracks(make_source_config("racetracks"), metadata, []),
         "g1_factors": gt.normalize_g1_factors(make_source_config("g1_factors"), metadata, {"race": []}, [], []),

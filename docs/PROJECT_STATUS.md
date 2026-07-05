@@ -379,6 +379,39 @@ skill par skill, sur le meme SVG partage.
   #10611 (meme piste que la section 11quater), chargement de ses 2 skills
   (1 required + 1 optional) en un clic, re-clic idempotent (pas de doublon)
 
+#### 11sexies. Etude du moteur de build et comblement de lacunes de reference
+
+Etude prealable au futur moteur de scoring CM (Phase 3D de
+`docs/CM_BUILD_PLAN.md`), menee en croisant trois documents communautaires
+(formules moteur + deux guides de strategie/meta). Resultat consolide et
+verifie par recoupement dans `docs/RACE_MECHANICS_REFERENCE.md` — voir ce
+document pour le detail (tables d'aptitude exactes, formule du last spurt,
+HP/stamina, valeur mesuree des familles de skills, base de regles CM par
+style, chances d'heritage).
+
+Suite a cette etude, deux datasets GameTora jamais importes ont ete ajoutes
+au pipeline pour combler des lacunes identifiees:
+
+- `static/skill_conditions` (141 entrees, descriptions officielles de
+  chaque variable de condition de skill): cable dans `normalize_skills()`
+  (`references.condition_descriptions`) et exploite immediatement dans
+  `visualizer.js` — `describeDynamicTermHuman` glose maintenant les
+  variables enum (`season`, `weather`, `running_style`, `distance_type`,
+  `ground_type`, `ground_condition`) avec les vraies valeurs GameTora au
+  lieu de les laisser en texte brut faute de source fiable (confirme au
+  passage que `season` a bien 5 valeurs — 4 saisons + "cherry blossom" —
+  comme deja repere en 11bis, mais cette fois avec la source officielle)
+- `db-files/single_mode_rank` (298 paliers de points -> rang, importe pour
+  reference future): ne resout que la moitie du besoin — donne les bornes
+  par rang mais pas la formule qui transforme stats+skills en points; cette
+  formule n'a pas de source officielle GameTora, seulement des
+  calculateurs communautaires tiers non recoupes ici
+- confirmation que les effets chiffres des skills (`condition_groups[].
+  effects[].{type, value}`, `base_time`) etaient deja presents tels quels
+  dans notre `skills` normalise (contrairement a ce que l'etude initiale
+  supposait) — ce qui manque reellement est la table de correspondance
+  `type` -> signification, jamais publiee par GameTora
+
 ## Choix techniques et justification
 
 ### Manifest + JSON versionnes plutot que scraping HTML

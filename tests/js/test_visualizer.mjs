@@ -195,10 +195,19 @@ test("describeDynamicTermHuman glosses known variables without discarding the op
   assert.equal(describeDynamicTermHuman("always==1"), "Always active");
 });
 
-test("describeDynamicTermHuman returns null instead of guessing for enum-coded or unknown variables", () => {
-  assert.equal(describeDynamicTermHuman("running_style==2"), null);
-  assert.equal(describeDynamicTermHuman("season==1"), null);
-  assert.equal(describeDynamicTermHuman("weather==1"), null);
+test("describeDynamicTermHuman glosses enum-coded variables confirmed by GameTora's own static/skill_conditions dataset", () => {
+  assert.equal(describeDynamicTermHuman("running_style==2"), "Pace Chaser");
+  assert.equal(describeDynamicTermHuman("season==1"), "Spring");
+  assert.equal(describeDynamicTermHuman("season==5"), "Cherry blossom season");
+  assert.equal(describeDynamicTermHuman("weather==4"), "Snowy");
+  assert.equal(describeDynamicTermHuman("distance_type==4"), "Long race");
+  assert.equal(describeDynamicTermHuman("ground_type==2"), "Dirt track");
+  assert.equal(describeDynamicTermHuman("ground_condition==1"), "Track condition: good");
+});
+
+test("describeDynamicTermHuman returns null instead of guessing for out-of-range enum values or unknown variables", () => {
+  assert.equal(describeDynamicTermHuman("running_style==9"), null);
+  assert.equal(describeDynamicTermHuman("season==9"), null);
   assert.equal(describeDynamicTermHuman("blocked_side_continuetime>=2"), null);
   assert.equal(describeDynamicTermHuman("this is not a term"), null);
   assert.equal(describeDynamicTermHuman(""), null);

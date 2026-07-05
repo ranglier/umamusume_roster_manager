@@ -1,4 +1,4 @@
-// Auto-split from app.js as part of docs/REFACTOR_PLAN.md.
+﻿// Auto-split from app.js as part of docs/REFACTOR_PLAN.md.
 import { TRAINING_EVENT_EFFECT_LABELS, asArray, data, getEntityItems, getSkillReferences, getViewState, renderSelectOptions, state } from "./core.js";
 import { escapeHtml, renderBadge, renderLinkedSkillList, renderReferenceList, renderSimpleList, tableFromRows } from "./dom-utils.js";
 import { getRosterEntry, renderCharacterRosterProjection, renderSupportCurrentEffects, renderSupportRosterProjection } from "./roster.js";

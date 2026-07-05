@@ -229,7 +229,7 @@ class BuildLegacyReferenceCatalogsFromSqliteTests(LegacyIntegrationTestCase):
             [],
         )
         normalized["skills"] = gt.normalize_skills(
-            make_source_config("skills"), make_source_metadata(), [{"id": 200452, "rarity": 1, "name_en": "Corner Recovery"}], [], []
+            make_source_config("skills"), make_source_metadata(), [{"id": 200452, "rarity": 1, "name_en": "Corner Recovery"}], [], [], []
         )
         normalized["compatibility"] = gt.normalize_compatibility(
             make_source_config("compatibility"),

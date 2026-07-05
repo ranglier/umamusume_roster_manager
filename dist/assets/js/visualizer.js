@@ -98,15 +98,15 @@ function resolveZoneForStaticTerm(term, course) {
 }
 
 // Human-readable glosses for the most common non-position condition variables.
-// Deliberately NOT exhaustive: the real data has 130+ distinct variable names,
-// many of them enum-coded (running_style, distance_type, weather, season...)
-// whose value-to-label mapping isn't verifiable from this repo's data alone
-// (e.g. `season` takes at least 5 distinct values, not the 4 real-world
-// seasons one might assume - proof that guessing enum meanings here would be
-// exactly the kind of fabricated precision this project avoids elsewhere).
-// Only variables where the operator/value comparison is self-explanatory
-// without an external lookup table are covered; everything else keeps its
-// raw "variable==value" form.
+// Deliberately NOT exhaustive: the real data has 130+ distinct variable names.
+// The enum-coded ones (running_style, distance_type, weather, season,
+// ground_type, ground_condition) are now covered too, sourced from GameTora's
+// own `static/skill_conditions` dataset (imported into
+// skills.references.condition_descriptions) rather than guessed - this is
+// the same dataset that confirmed `season` genuinely has 5 values (spring,
+// summer, fall, winter, and a separate "cherry blossom" sub-season), not the
+// 4 one might assume by guessing. Everything else without an official
+// lookup keeps its raw "variable==value" form rather than a fabricated one.
 function pluralize(value, unit) {
   if (Math.abs(value) === 1) return `${value} ${unit}`;
   return `${value} ${unit === "body" ? "bodies" : `${unit}s`}`;
@@ -119,6 +119,10 @@ function booleanLabel(trueText, falseText) {
     if (value === 0) return falseText;
     return null;
   };
+}
+
+function enumLabel(labels) {
+  return (operator, value) => (operator === "==" ? labels[value] || null : null);
 }
 
 const DYNAMIC_TERM_LABELS = {
@@ -141,6 +145,12 @@ const DYNAMIC_TERM_LABELS = {
   motivation: (op, value) => `Motivation stat ${op} ${value}`,
   post_number: (op, value) => `Starting gate ${op} ${value}`,
   hp_per: (op, value) => `Stamina (HP) ${op} ${value}%`,
+  season: enumLabel({ 1: "Spring", 2: "Summer", 3: "Fall", 4: "Winter", 5: "Cherry blossom season" }),
+  weather: enumLabel({ 1: "Sunny", 2: "Cloudy", 3: "Rainy", 4: "Snowy" }),
+  running_style: enumLabel({ 1: "Front Runner", 2: "Pace Chaser", 3: "Late Surger", 4: "End Closer" }),
+  distance_type: enumLabel({ 1: "Sprint race", 2: "Mile race", 3: "Medium race", 4: "Long race" }),
+  ground_type: enumLabel({ 1: "Turf track", 2: "Dirt track" }),
+  ground_condition: enumLabel({ 1: "Track condition: good", 2: "Track condition: slightly heavy", 3: "Track condition: heavy", 4: "Track condition: bad" }),
 };
 
 export function describeDynamicTermHuman(rawTerm) {

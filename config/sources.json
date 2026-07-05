@@ -64,6 +64,14 @@
       "pageUrl": "https://gametora.com/umamusume/skills"
     },
     {
+      "key": "static/skill_conditions",
+      "pageUrl": "https://gametora.com/umamusume/skills"
+    },
+    {
+      "key": "db-files/single_mode_rank",
+      "pageUrl": "https://gametora.com/umamusume"
+    },
+    {
       "key": "races",
       "pageUrl": "https://gametora.com/umamusume/races"
     },
@@ -178,7 +186,8 @@
       "datasetKeys": [
         "skills",
         "static/skill_effect_values",
-        "static/skill_condition_values"
+        "static/skill_condition_values",
+        "static/skill_conditions"
       ]
     },
     {

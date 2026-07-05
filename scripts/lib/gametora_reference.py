@@ -1383,6 +1383,7 @@ def normalize_skills(
     skills: Any,
     skill_effect_values: Any,
     skill_condition_values: Any,
+    skill_conditions: Any,
 ) -> dict[str, Any]:
     items: list[dict[str, Any]] = []
     for skill in as_array(skills):
@@ -1487,6 +1488,7 @@ def normalize_skills(
                     [
                         ("effect_values", skill_effect_values),
                         ("condition_values", skill_condition_values),
+                        ("condition_descriptions", as_array(skill_conditions)),
                     ]
                 ),
             ),
@@ -2329,6 +2331,7 @@ def build_normalized_reference(config: dict[str, Any], metadata: dict[str, Any])
             ("skills", load_raw_dataset_by_key(metadata, "skills")),
             ("skill_effect_values", load_raw_dataset_by_key(metadata, "static/skill_effect_values")),
             ("skill_condition_values", load_raw_dataset_by_key(metadata, "static/skill_condition_values")),
+            ("skill_conditions", load_raw_dataset_by_key(metadata, "static/skill_conditions")),
             ("races", load_raw_dataset_by_key(metadata, "races")),
             ("racetracks", load_raw_dataset_by_key(metadata, "racetracks")),
             ("factors", load_raw_dataset_by_key(metadata, "factors")),
@@ -2375,7 +2378,7 @@ def build_normalized_reference(config: dict[str, Any], metadata: dict[str, Any])
                     raw["support_cards"],
                 ),
             ),
-            ("skills", normalize_skills(config, metadata, raw["skills"], raw["skill_effect_values"], raw["skill_condition_values"])),
+            ("skills", normalize_skills(config, metadata, raw["skills"], raw["skill_effect_values"], raw["skill_condition_values"], raw["skill_conditions"])),
             ("races", normalize_races(config, metadata, raw["races"], raw["racetracks"])),
             ("racetracks", normalize_racetracks(config, metadata, raw["racetracks"])),
             ("g1_factors", normalize_g1_factors(config, metadata, raw["factors"], raw["races"], raw["skills"])),

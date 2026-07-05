@@ -334,7 +334,7 @@ def make_skill(**overrides):
 class NormalizeSkillsTests(unittest.TestCase):
     def test_basic_item_shape_and_name_fallback_chain(self):
         skill = make_skill(name_en=None, enname="Corner Recovery EN", jpname="fallback")
-        result = gt.normalize_skills(make_source_config("skills"), make_source_metadata(), [skill], [], [])
+        result = gt.normalize_skills(make_source_config("skills"), make_source_metadata(), [skill], [], [], [])
         item = result["items"][0]
         self.assertEqual(item["id"], "200452")
         self.assertEqual(item["skill_id"], 200452)
@@ -343,12 +343,12 @@ class NormalizeSkillsTests(unittest.TestCase):
 
     def test_cost_falls_back_to_gene_version_cost_when_missing(self):
         skill = make_skill(cost=None, gene_version={"cost": 120})
-        result = gt.normalize_skills(make_source_config("skills"), make_source_metadata(), [skill], [], [])
+        result = gt.normalize_skills(make_source_config("skills"), make_source_metadata(), [skill], [], [], [])
         self.assertEqual(result["items"][0]["cost"], 120)
 
     def test_gene_version_is_none_when_absent(self):
         skill = make_skill(gene_version=None)
-        result = gt.normalize_skills(make_source_config("skills"), make_source_metadata(), [skill], [], [])
+        result = gt.normalize_skills(make_source_config("skills"), make_source_metadata(), [skill], [], [], [])
         self.assertIsNone(result["items"][0]["gene_version"])
 
     def test_gene_version_is_expanded_when_present(self):
@@ -362,7 +362,7 @@ class NormalizeSkillsTests(unittest.TestCase):
                 "parent_skills": [200452],
             }
         )
-        result = gt.normalize_skills(make_source_config("skills"), make_source_metadata(), [skill], [], [])
+        result = gt.normalize_skills(make_source_config("skills"), make_source_metadata(), [skill], [], [], [])
         gene_version = result["items"][0]["gene_version"]
         self.assertEqual(gene_version["name"], "Corner Recovery (Inherited)")
         self.assertEqual(gene_version["parent_skill_ids"], [200452])
@@ -375,15 +375,16 @@ class NormalizeSkillsTests(unittest.TestCase):
         }
         with_icon = make_skill(iconid=99)
         without_icon = make_skill(id=200453, iconid=None)
-        result = gt.normalize_skills(config, make_source_metadata(), [with_icon, without_icon], [], [])
+        result = gt.normalize_skills(config, make_source_metadata(), [with_icon, without_icon], [], [], [])
         self.assertIsNotNone(result["items"][0]["assets"]["icon"])
         self.assertEqual(result["items"][0]["assets"]["icon"]["relative_path"], "skills/99.png")
         self.assertIsNone(result["items"][1]["assets"]["icon"])
 
     def test_effect_and_condition_reference_values_pass_through_at_top_level(self):
-        result = gt.normalize_skills(make_source_config("skills"), make_source_metadata(), [make_skill()], {"a": 1}, {"b": 2})
+        result = gt.normalize_skills(make_source_config("skills"), make_source_metadata(), [make_skill()], {"a": 1}, {"b": 2}, [{"name": "season"}])
         self.assertEqual(result["references"]["effect_values"], {"a": 1})
         self.assertEqual(result["references"]["condition_values"], {"b": 2})
+        self.assertEqual(result["references"]["condition_descriptions"], [{"name": "season"}])
 
 
 def make_race(**overrides):

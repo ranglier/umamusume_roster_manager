@@ -823,6 +823,24 @@ Sortie attendue:
 
 Une fois ces briques posees, on pourra commencer l'etude implementation par implementation du moteur de scoring, puis de l'auto-generation.
 
+## Etude prealable du moteur (faite)
+
+L'etude des mecaniques de course necessaires au moteur de scoring (Phase 3D)
+a ete menee en croisant trois documents communautaires de reference (le doc
+de formules de KuromiAK issu de reverse engineering, et les deux Reference
+Documents Global/JP d'Erzzy pour la strategie CM). Le resultat consolide —
+formules exactes, tables verifiees par recoupement, base de regles CM par
+style, application par palier au moteur du projet — est dans:
+
+- `docs/RACE_MECHANICS_REFERENCE.md`
+
+Conclusion structurante de l'etude: le moteur v1 doit viser deux paliers
+purement deterministes (formules directes aptitude/HP/seuils, puis projection
+du point de depart du last spurt croisee avec les zones du Skill Visualizer),
+et laisser la simulation multi-agents (Option D ci-dessus, territoire de
+l'umalator) comme horizon. Cela correspond a l'Option A enrichie de faits
+verifies, plutot qu'a un score composite a poids arbitraires.
+
 ## Sources utiles
 
 Sources GameTora consultees pour ce cadrage:
