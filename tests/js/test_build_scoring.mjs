@@ -3,12 +3,16 @@ import assert from "node:assert/strict";
 
 import {
   compareAptitudeModifiers,
+  computeBaseSpeed,
+  computeLastSpurtSpeedMax,
   computeMaxHp,
   computeRushedChance,
   computeSkillActivationChance,
   computeStatThresholdBonus,
+  findTrackZoneAtDistance,
   getAptitudeModifier,
   getGutsStaminaCrossoverThreshold,
+  getLastSpurtStartDistance,
   getNearestStaminaReferences,
   getRequiredStaminaEstimate,
 } from "../../src/ui/assets/js/build_scoring.js";
@@ -107,4 +111,42 @@ test("getGutsStaminaCrossoverThreshold looks up by distance category, with a Lon
 test("getGutsStaminaCrossoverThreshold returns null for an unknown category or a Long distance without a value", () => {
   assert.equal(getGutsStaminaCrossoverThreshold("unknown", 2000, "turf"), null);
   assert.equal(getGutsStaminaCrossoverThreshold("long", NaN, "turf"), null);
+});
+
+test("computeBaseSpeed matches the documented examples", () => {
+  assert.equal(computeBaseSpeed(2000), 20.0);
+  assert.ok(Math.abs(computeBaseSpeed(1200) - 20.8) < 1e-9);
+  assert.ok(Math.abs(computeBaseSpeed(2500) - 19.5) < 1e-9);
+});
+
+test("computeLastSpurtSpeedMax matches a hand-checked reference value", () => {
+  const result = computeLastSpurtSpeedMax({ distanceM: 2000, speedStat: 1200, distanceProficiency: 1.0, gutsStat: 600, styleKey: "leader" });
+  assert.ok(Math.abs(result - 22.408986391170362) < 1e-9);
+});
+
+test("computeLastSpurtSpeedMax returns null for an unknown style or non-finite stats", () => {
+  assert.equal(computeLastSpurtSpeedMax({ distanceM: 2000, speedStat: 1200, distanceProficiency: 1.0, gutsStat: 600, styleKey: "oonige" }), null);
+  assert.equal(computeLastSpurtSpeedMax({ distanceM: 2000, speedStat: NaN, distanceProficiency: 1.0, gutsStat: 600, styleKey: "leader" }), null);
+});
+
+test("getLastSpurtStartDistance places the spurt start at 16/24 of the course (phase 2 entry)", () => {
+  assert.equal(getLastSpurtStartDistance(2400), 1600);
+  assert.equal(getLastSpurtStartDistance(1200), 800);
+  assert.equal(getLastSpurtStartDistance(NaN), null);
+});
+
+test("findTrackZoneAtDistance locates the corner/straight/slope/phase containing a given distance", () => {
+  const course = {
+    corners: [{ start: 1100, end: 1350, number: 4 }],
+    straights: [{ start: 1350, end: 1500 }],
+    slopes: [{ start: 700, end: 900, slope: 15 }],
+    phases: [{ start: 1000, end: 1500, id: 2 }],
+  };
+  assert.deepEqual(findTrackZoneAtDistance(course, 1200), { phaseId: 2, cornerNumber: 4, onStraight: false, slope: null });
+  assert.deepEqual(findTrackZoneAtDistance(course, 1400), { phaseId: 2, cornerNumber: null, onStraight: true, slope: null });
+  assert.deepEqual(findTrackZoneAtDistance(course, 800), { phaseId: null, cornerNumber: null, onStraight: false, slope: "uphill" });
+});
+
+test("findTrackZoneAtDistance returns null for a non-finite distance", () => {
+  assert.equal(findTrackZoneAtDistance({}, NaN), null);
 });

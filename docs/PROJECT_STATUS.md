@@ -445,10 +445,27 @@ verifiees de `docs/RACE_MECHANICS_REFERENCE.md`:
   memes chiffres que les exemples documentes (ex. 600 Wiz -> 85.0%
   d'activation, exactement la table de `docs/RACE_MECHANICS_REFERENCE.md`)
 
-Reste a faire: Palier 2 (projection du point de depart du dernier sprint
-croisee avec les zones du Skill Visualizer) et Palier 3 (simulation
-multi-agents, hors perimetre volontaire — voir `docs/CM_BUILD_PLAN.md`
-Option D).
+### 13. Moteur de build CM — Palier 2 (projection du last spurt)
+
+Projection deterministe (toujours zero simulation) du point de depart du
+dernier sprint, ajoutee a `build_scoring.js` (`tests/js/
+test_build_scoring.mjs`, 21 tests au total pour ce module):
+
+- `computeLastSpurtSpeedMax` (formule exacte) et `getLastSpurtStartDistance`
+  (16/24 de la distance = entree en phase 2, cas "HP suffisant" — le cas
+  "HP insuffisant" ou le spurt demarre plus tard n'est pas modelise,
+  assume explicitement dans l'UI plutot que fabrique)
+- `findTrackZoneAtDistance`: localise cette position sur les memes tableaux
+  `corners`/`straights`/`slopes`/`phases` que le Skill Visualizer (section
+  11) exploite deja — reutilisation directe plutot que nouvelle logique
+- nouveau panneau "Last Spurt Projection" dans l'editeur de build, meme
+  garde-fou d'ambiguite de piste que le panneau Feasibility
+- verifie en navigateur sur Chukyo #10701 (Capricorn Cup, 1200m): 800m
+  (66.7%), "Straight + Downhill", 23.78 m/s — recalcule a la main et
+  confirme au chiffre pres
+
+Reste a faire: Palier 3 (simulation multi-agents, hors perimetre volontaire
+— voir `docs/CM_BUILD_PLAN.md` Option D).
 
 ## Choix techniques et justification
 
@@ -619,9 +636,9 @@ Apres clonage, un import local est donc necessaire pour regenerer les donnees et
 
 ## Ce qui n'a pas encore ete traite
 
-- moteur de build: Palier 1 (formules deterministes aptitude/HP/seuils, voir
-  section 12) livre; Palier 2 (projection du last spurt x Skill Visualizer)
-  et Palier 3 (simulation multi-agents) restent a faire
+- moteur de build: Palier 1 (aptitude/HP/seuils, section 12) et Palier 2
+  (projection du last spurt x Skill Visualizer, section 13) livres; Palier 3
+  (simulation multi-agents) reste a faire
 - parents personnels
 - heuristiques Champions Meeting
 - decodage semantique fin des outcomes de `training_events`

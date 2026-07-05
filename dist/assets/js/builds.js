@@ -6,11 +6,15 @@ import { deleteBuild, formatLegacyFactorLabel, getCharacterReferenceItem, saveBu
 import { requestRenderPreservingScroll, requestRenderPreservingScrollAndFocus } from "../app.js";
 import {
   compareAptitudeModifiers,
+  computeLastSpurtSpeedMax,
   computeMaxHp,
   computeRushedChance,
   computeSkillActivationChance,
   computeStatThresholdBonus,
+  findTrackZoneAtDistance,
+  getAptitudeModifier,
   getGutsStaminaCrossoverThreshold,
+  getLastSpurtStartDistance,
   getNearestStaminaReferences,
 } from "./build_scoring.js";
 
@@ -736,12 +740,101 @@ export function renderBuildFeasibilityPanel(entry) {
   `;
 }
 
+// Tier 2 (docs/CM_BUILD_PLAN.md phase 3D): projects where the last spurt
+// starts, assuming Stamina covers the remainder (the HP-sufficient case -
+// see getLastSpurtStartDistance), then reads that position against the
+// same corner/straight/slope zones the racetrack's Skill Visualizer draws.
+// Still no opponents or position simulation.
+export function renderBuildSpurtPanel(entry) {
+  const target = getBuildTargetProfile(entry);
+  if (!target.item) {
+    return `
+      <section class="build-panel">
+        <div class="build-panel-head">
+          <h4>Last Spurt Projection</h4>
+          ${renderBuildHint("No target", "neutral")}
+        </div>
+        <p class="source-note">Select a CM target to project where the last spurt starts.</p>
+      </section>
+    `;
+  }
+  if (!entry.running_style) {
+    return `
+      <section class="build-panel">
+        <div class="build-panel-head">
+          <h4>Last Spurt Projection</h4>
+          ${renderBuildHint("No running style", "warn")}
+        </div>
+        <p class="source-note">Choose a running style below to project the spurt start.</p>
+      </section>
+    `;
+  }
+  const racetrack = getBuildTargetRacetrack(target.item);
+  if (!racetrack) {
+    return `
+      <section class="build-panel">
+        <div class="build-panel-head">
+          <h4>Last Spurt Projection</h4>
+          ${renderBuildHint("Track ambiguous", "warn")}
+        </div>
+        <p class="source-note">This CM target doesn't resolve to a single racetrack (same limit as the stat-threshold bonus above) - the projection needs exact course geometry, so it isn't shown.</p>
+      </section>
+    `;
+  }
+
+  const stats = entry.target_stats || {};
+  const speed = Number(stats.speed);
+  const guts = Number(stats.guts);
+  const distanceProficiency = getAptitudeModifier("distanceSpeed", entry.target_aptitudes?.distance);
+  const spurtSpeed =
+    Number.isFinite(speed) && Number.isFinite(guts) && distanceProficiency != null
+      ? computeLastSpurtSpeedMax({ distanceM: target.distance, speedStat: speed, distanceProficiency, gutsStat: guts, styleKey: entry.running_style })
+      : null;
+  const spurtStartDistance = getLastSpurtStartDistance(target.distance);
+  const zone = spurtStartDistance != null ? findTrackZoneAtDistance(racetrack.detail, spurtStartDistance) : null;
+  const zoneParts = [];
+  if (zone?.cornerNumber != null) zoneParts.push(`Corner #${zone.cornerNumber}`);
+  if (zone?.onStraight) zoneParts.push("Straight");
+  if (zone?.slope) zoneParts.push(zone.slope === "uphill" ? "Uphill" : "Downhill");
+
+  return `
+    <section class="build-panel">
+      <div class="build-panel-head">
+        <h4>Last Spurt Projection</h4>
+        ${renderBuildHint("Tier 2 - HP-sufficient case", "ok")}
+      </div>
+      <div class="build-metric-grid">
+        <div>
+          <span>Projected spurt start</span>
+          <strong>${spurtStartDistance != null ? escapeHtml(`${Math.round(spurtStartDistance)}m`) : "-"}</strong>
+          <small>${escapeHtml(
+            spurtStartDistance != null
+              ? `${((spurtStartDistance / target.distance) * 100).toFixed(1)}% of the course - assumes Stamina covers the rest, see Feasibility`
+              : "Missing course distance"
+          )}</small>
+        </div>
+        <div>
+          <span>Track element there</span>
+          <strong>${escapeHtml(zoneParts.length ? zoneParts.join(" + ") : "Between marked zones")}</strong>
+          <small>Cross-check with this racetrack's Skill Visualizer for skills covering this zone</small>
+        </div>
+        <div>
+          <span>Max spurt speed</span>
+          <strong>${spurtSpeed != null ? `${spurtSpeed.toFixed(2)} m/s` : "-"}</strong>
+          <small>${escapeHtml(spurtSpeed != null ? "Formula from docs/RACE_MECHANICS_REFERENCE.md" : "Set target Speed/Guts and a Distance aptitude target to compute")}</small>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
 export function renderBuildInsightPanels(entry) {
   return `
     <div class="build-panel-grid">
       ${renderBuildTargetPanel(entry)}
       ${renderBuildCharacterPanel(entry)}
       ${renderBuildFeasibilityPanel(entry)}
+      ${renderBuildSpurtPanel(entry)}
       ${renderBuildSupportPanel(entry)}
       ${renderBuildParentPanel(entry)}
       ${renderBuildSkillPanel(entry)}

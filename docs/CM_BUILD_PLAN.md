@@ -862,8 +862,32 @@ place dans `src/ui/assets/js/build_scoring.js` (module pur, teste dans
   (`scripts/serve_reference.py::normalize_build_entry`) et cote client
   (`normalizeBuildEntry`)
 
-Palier 2 (projection du last spurt croisee avec le Skill Visualizer) et
-Palier 3 (simulation multi-agents) restent a faire — voir
+Palier 3 (simulation multi-agents) reste a faire — voir
+`docs/RACE_MECHANICS_REFERENCE.md` section "Application au moteur du
+projet".
+
+## Palier 2 livre
+
+Projection deterministe du point de depart du dernier sprint, croisee avec
+la geometrie de la piste (meme donnee que le Skill Visualizer), ajoutee a
+`build_scoring.js`/`tests/js/test_build_scoring.mjs`:
+
+- `computeLastSpurtSpeedMax` (formule exacte de
+  `docs/RACE_MECHANICS_REFERENCE.md`) et `getLastSpurtStartDistance` (16/24
+  de la distance de course = entree en phase 2 — le cas "HP suffisant";
+  le cas "HP insuffisant" ou le spurt demarre plus tard dans la phase 2
+  n'est pas modelise, assume explicitement dans l'UI)
+- `findTrackZoneAtDistance`: localise cette position sur les memes tableaux
+  `corners`/`straights`/`slopes`/`phases` que `racetracks` expose deja
+- nouveau panneau "Last Spurt Projection" dans l'editeur de build: position
+  et % du parcours, element de piste a cet endroit (ex. "Straight +
+  Downhill"), vitesse max de sprint — memes limites d'ambiguite de piste
+  que le panneau Feasibility (`getBuildTargetRacetrack`)
+- verifie en navigateur sur Chukyo #10701 (Capricorn Cup, 1200m): spurt
+  projete a 800m (66.7%), "Straight + Downhill", 23.78 m/s — recalcule a la
+  main et confirme au chiffre pres
+
+Palier 3 (simulation multi-agents) reste hors perimetre — voir
 `docs/RACE_MECHANICS_REFERENCE.md` section "Application au moteur du
 projet".
 

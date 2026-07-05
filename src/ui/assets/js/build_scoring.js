@@ -117,3 +117,66 @@ export function getGutsStaminaCrossoverThreshold(distanceCategoryKey, distanceM,
       return null;
   }
 }
+
+// --- Tier 2: deterministic last-spurt projection. Still no opponents or
+// position simulation - only the build's own stats and the target track's
+// own geometry, per docs/RACE_MECHANICS_REFERENCE.md "Last spurt". ---
+
+const STRATEGY_PHASE_SPEED_COEF = { runner: 0.962, leader: 0.975, betweener: 0.994, chaser: 1.0 };
+
+export function computeBaseSpeed(courseDistanceM) {
+  if (!Number.isFinite(courseDistanceM)) return null;
+  return 20.0 - (courseDistanceM - 2000) / 1000;
+}
+
+// GutsStat and speedStat are the build's target stats; distanceProficiency
+// is the "distanceSpeed" aptitude modifier for the planned target grade
+// (getAptitudeModifier("distanceSpeed", grade)) - callers already compute
+// this for the Tier 1 aptitude fit, so it isn't re-derived here.
+export function computeLastSpurtSpeedMax({ distanceM, speedStat, distanceProficiency, gutsStat, styleKey }) {
+  const baseSpeed = computeBaseSpeed(distanceM);
+  const phaseCoef = STRATEGY_PHASE_SPEED_COEF[styleKey];
+  if (
+    baseSpeed == null ||
+    phaseCoef == null ||
+    !Number.isFinite(speedStat) ||
+    !Number.isFinite(gutsStat) ||
+    !Number.isFinite(distanceProficiency)
+  ) {
+    return null;
+  }
+  const basePhase2Speed = baseSpeed * phaseCoef;
+  const speedTerm = Math.sqrt(500 * speedStat) * distanceProficiency * 0.002;
+  const gutsTerm = (450 * gutsStat) ** 0.597 * 0.0001;
+  return (basePhase2Speed + 0.01 * baseSpeed) * 1.05 + speedTerm + gutsTerm;
+}
+
+// Section 17 (phase 2 / late-race entry) is 16/24 of the course. If HP is
+// sufficient to run the remainder at computeLastSpurtSpeedMax(), the spurt
+// starts exactly here. When HP falls short, the real start creeps later
+// into phase 2 (up to the phase 3 boundary at 20/24) at a reduced speed -
+// that HP-limited search isn't modeled here. This is the HP-sufficient
+// projection; pair it with the Feasibility panel's own HP verdict rather
+// than treating it as exact regardless of stamina.
+export function getLastSpurtStartDistance(courseDistanceM) {
+  return Number.isFinite(courseDistanceM) ? (courseDistanceM * 16) / 24 : null;
+}
+
+// Finds which corner/straight/slope/phase (if any) contains a given course
+// position, so a computed spurt-start distance can be read against the same
+// zones the Skill Visualizer already draws (racetracks.corners/straights/
+// slopes/phases, each a {start, end, ...} range in meters).
+export function findTrackZoneAtDistance(course, distanceM) {
+  if (!Number.isFinite(distanceM)) return null;
+  const inRange = (zone) => distanceM >= zone.start && distanceM <= zone.end;
+  const corner = (course?.corners || []).find(inRange) || null;
+  const straight = (course?.straights || []).find(inRange) || null;
+  const slope = (course?.slopes || []).find(inRange) || null;
+  const phase = (course?.phases || []).find(inRange) || null;
+  return {
+    phaseId: phase ? phase.id : null,
+    cornerNumber: corner ? corner.number : null,
+    onStraight: Boolean(straight),
+    slope: slope ? (slope.slope > 0 ? "uphill" : "downhill") : null,
+  };
+}
