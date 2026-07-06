@@ -10,8 +10,8 @@ import {
   resolveStaticZones,
   SKILL_HIGHLIGHT_CLASSES,
 } from "./visualizer.js";
-import { recommendBuildForTarget, recommendSupportDeck, targetProfileFromCmDetail } from "./build_recommender.js";
-import { getSupportOwnedSummary } from "./builds.js";
+import { recommendBuildForTarget, recommendSkillsForBuild, recommendSupportDeck, targetProfileFromCmDetail } from "./build_recommender.js";
+import { getSkillReferenceItem, getSupportOwnedSummary } from "./builds.js";
 import { getOwnedSupportOptions } from "./core.js";
 import { requestRenderPreservingScroll, requestRenderPreservingScrollAndFocus } from "../app.js";
 
@@ -24,11 +24,54 @@ function getOwnedCharacterItems() {
   return getEntityItems("characters").filter((item) => ownedIds.has(String(item.id)));
 }
 
+// A character's castable kit: unique/innate/awakening/event skills plus the
+// evolved form of each evolution entry.
+function getCharacterKitSkillIds(characterItem) {
+  const links = characterItem?.detail?.skill_links || {};
+  const ids = [];
+  for (const key of ["unique", "innate", "awakening", "event"]) {
+    for (const skill of asArray(links[key])) {
+      if (skill?.id != null) ids.push(String(skill.id));
+    }
+  }
+  for (const evo of asArray(links.evolution)) {
+    if (evo?.to?.id != null) ids.push(String(evo.to.id));
+  }
+  return ids;
+}
+
+// Skills the chosen support deck can grant (hints + event skills).
+function getDeckSkillIds(deckSupportIds) {
+  const ids = [];
+  for (const supportId of deckSupportIds) {
+    const support = getEntityItems("supports").find((item) => String(item.id) === String(supportId));
+    for (const key of ["hint_skills", "event_skills"]) {
+      for (const skill of asArray(support?.detail?.[key])) {
+        if (skill?.id != null) ids.push(String(skill.id));
+      }
+    }
+  }
+  return ids;
+}
+
+function getCandidateSkillReco(characterId, deckIds, profile) {
+  const characterItem = getEntityItems("characters").find((item) => String(item.id) === String(characterId));
+  const poolIds = [...getCharacterKitSkillIds(characterItem), ...getDeckSkillIds(deckIds)];
+  const pool = poolIds.map((id) => getSkillReferenceItem(id)).filter(Boolean);
+  return recommendSkillsForBuild(pool, profile);
+}
+
 // Recomputed by both the renderer and the click handler so no per-candidate
-// stat payload has to be serialized into the DOM - buttons only carry a
-// character id, matched back to the recommendation here.
+// payload has to be serialized into the DOM - buttons only carry a character
+// id, matched back to the recommendation here. Each candidate is enriched with
+// a skill shortlist built from its own kit plus the shared suggested deck.
 function getCmTargetRecommendations(detail) {
-  return recommendBuildForTarget(targetProfileFromCmDetail(detail), getOwnedCharacterItems(), { limit: 5 });
+  const profile = targetProfileFromCmDetail(detail);
+  const deckIds = getCmTargetDeck(detail).result.deck;
+  return recommendBuildForTarget(profile, getOwnedCharacterItems(), { limit: 5 }).map((reco) => ({
+    ...reco,
+    skillReco: getCandidateSkillReco(reco.characterId, deckIds, profile),
+  }));
 }
 
 // Owned supports reduced to the fields the deck heuristic reads, plus a title
@@ -576,12 +619,14 @@ function renderRecommendationCard(reco) {
   const verdict = RECO_VERDICT[reco.verdict] || RECO_VERDICT["off-target"];
   const stats = reco.proposal.stats;
   const statLine = `SPD ${stats.speed} · STA ${stats.stamina} · POW ${stats.power} · GUT ${stats.guts} · WIT ${stats.wit}`;
+  const skill = reco.skillReco || { required: [], optional: [] };
   return `
     <article class="build-mini-card">
       <strong>${escapeHtml(reco.title)}</strong>
       <span class="build-hint build-hint-${verdict.tone}">${escapeHtml(verdict.label)}</span>
       <span>${escapeHtml(`${RECO_STYLE_LABELS[reco.bestStyle] || "-"} | Surface ${reco.surfaceGrade || "-"} / Distance ${reco.distanceGrade || "-"} / Style ${reco.styleGrade || "-"}`)}</span>
       <small>${escapeHtml(`Proposed stats: ${statLine}`)}</small>
+      <small>${escapeHtml(`Recommended skills: ${skill.required.length} required / ${skill.optional.length} optional (from kit + deck, by effect category)`)}</small>
       <button type="button" class="button-secondary" data-cm-reco-character="${escapeHtml(reco.characterId)}">Create build from this</button>
     </article>
   `;
@@ -794,12 +839,15 @@ export function attachCmTargetRecommendationListeners(detail) {
       if (!reco) {
         return;
       }
+      const skill = reco.skillReco || { required: [], optional: [] };
       state.pendingBuildSeed = {
         target_id: String(detail.id),
         character_id: reco.characterId,
         running_style: reco.bestStyle,
         target_stats: { ...reco.proposal.stats },
         support_deck: [...deck],
+        required_skills: [...skill.required],
+        optional_skills: [...skill.optional],
         name: `${detail.name} — ${reco.title}`,
       };
       setBrowseHash("roster", "builds", "__new__");

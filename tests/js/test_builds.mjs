@@ -175,6 +175,8 @@ test("createEmptyBuildEntry consumes a pending build seed and clears it", () => 
     running_style: "chaser",
     target_stats: { speed: 1150, stamina: 1030 },
     support_deck: ["s1", "s2", "s3", "s4", "s5", "s6", "s7"],
+    required_skills: ["sk1", "sk2"],
+    optional_skills: ["sk3"],
     name: "Capricorn — Seeded",
   };
 
@@ -184,6 +186,8 @@ test("createEmptyBuildEntry consumes a pending build seed and clears it", () => 
   assert.equal(entry.running_style, "chaser");
   assert.deepEqual(entry.target_stats, { speed: 1150, stamina: 1030 });
   assert.deepEqual(entry.support_deck, ["s1", "s2", "s3", "s4", "s5", "s6"]); // capped at 6
+  assert.deepEqual(entry.required_skills, ["sk1", "sk2"]);
+  assert.deepEqual(entry.optional_skills, ["sk3"]);
   assert.equal(entry.name, "Capricorn — Seeded");
   // The seed is one-shot: a second call falls back to defaults.
   assert.equal(state.pendingBuildSeed, null);

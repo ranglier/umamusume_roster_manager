@@ -494,8 +494,19 @@ support deck" sur la fiche `cm_targets` avec avertissement explicite, deck
 seede dans le draft. Verifie en navigateur (2 Speed / 2 Wit / 1 Stamina /
 1 Power, 6/6 seede).
 
-Phases suivantes: Phase 2b = skills par categorie (`type_tags`) x zone
-d'activation; Phase 3 = refonte ergonomique de l'editeur; Phase 4 =
+Phase 2b livree: recommandation de skills par **categorie d'effet**. Decouverte
+en cours de route: les `type_tags` encodent la position/distance/style, pas la
+categorie; celle-ci vient de `effects[].type` via un mapping **infere** (croise
+contre des skills connus: 31=accel, 27/22=speed, 9=recovery, 8/13/21=debuff).
+`categorizeSkillEffect` + `recommendSkillsForBuild` (pool = kit du perso + deck,
+priorite accel>speed>recovery, debuffs exclus). La zone d'activation n'est
+volontairement pas auto-scoree (exige une piste non ambigue; le Skill
+Visualizer la montre deja par racetrack — eviter la fausse precision). Skills
+seedes dans le draft. Verifie en navigateur (4 required / 6 optional, 10
+selected).
+
+L'auto-build est complet: uma+style+stats+deck+skills pre-remplis en un clic.
+Phases suivantes: Phase 3 = refonte ergonomique de l'editeur; Phase 4 =
 reorientation de la navigation.
 
 ## Choix techniques et justification

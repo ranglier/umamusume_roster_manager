@@ -203,3 +203,94 @@ export function recommendSupportDeck(distanceCategoryKey, ownedSupportSummaries,
     filled: picked.length,
   };
 }
+
+// --- Phase 2b: skill recommendation by effect category. The category comes
+// from the skill's effect `type` id, mapped below. That mapping is INFERRED,
+// not published by GameTora: each entry was cross-checked against several
+// well-known skills of that type (e.g. type 31 = Feel the Burn!/Groundwork =
+// acceleration; type 27/22 = Certain Victory/Shooting Star = speed; type 9 =
+// Clear Heart = recovery; type 8/13/21 = Smoke Screen/Hesitant = debuff). Only
+// the high-frequency, high-confidence categories are mapped; everything else
+// stays "other". Precise per-track zone fit (does an accel fire at the spurt
+// start?) is deliberately NOT auto-scored here - it needs an unambiguous track
+// (same limit as the stat-threshold/last-spurt panels), and the Skill
+// Visualizer already shows it exactly per racetrack. ---
+
+const EFFECT_TYPE_CATEGORY = {
+  31: "accel",
+  22: "speed",
+  27: "speed",
+  9: "recovery",
+  8: "debuff",
+  13: "debuff",
+  21: "debuff",
+};
+
+const CATEGORY_PRIORITY = { accel: 4, speed: 3, recovery: 2, debuff: 1, other: 0 };
+
+// Highest-priority category among all of a skill's effect types.
+export function categorizeSkillEffect(skillItem) {
+  const groups = skillItem?.detail?.condition_groups || [];
+  let best = "other";
+  for (const group of groups) {
+    for (const effect of group.effects || []) {
+      const category = EFFECT_TYPE_CATEGORY[effect.type] || "other";
+      if (CATEGORY_PRIORITY[category] > CATEGORY_PRIORITY[best]) {
+        best = category;
+      }
+    }
+  }
+  return best;
+}
+
+// Weight per category for a self-win build. Acceleration dominates
+// ([REF-GL] "How to Win"); debuffs help other umas, not this one, so they are
+// excluded from a self-build's own kit.
+function categoryWeight(category, targetProfile) {
+  const base = { accel: 100, speed: 60, recovery: 40, other: 10, debuff: -1 };
+  let weight = base[category] ?? 0;
+  // Recovery matters much more on long distances (stamina-tight).
+  if (category === "recovery" && targetProfile?.distanceKey === "long") weight = 60;
+  return weight;
+}
+
+// poolSkillItems: resolved reference skill items (with detail.condition_groups
+// and detail.rarity), deduped by the caller or here. Returns a required/optional
+// shortlist plus a per-category count.
+export function recommendSkillsForBuild(poolSkillItems, targetProfile, { requiredLimit = 4, optionalLimit = 6 } = {}) {
+  const seen = new Set();
+  const scored = [];
+  for (const item of poolSkillItems || []) {
+    const id = String(item?.id || item?.detail?.skill_id || "");
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    const category = categorizeSkillEffect(item);
+    const weight = categoryWeight(category, targetProfile);
+    if (weight < 0) continue; // drop debuffs from a self-build
+    const rarity = Number(item?.detail?.rarity) || 0;
+    scored.push({ id, title: item.title || id, category, score: weight + rarity * 3 });
+  }
+  scored.sort((a, b) => b.score - a.score);
+
+  const required = [];
+  const optional = [];
+  for (const entry of scored) {
+    if ((entry.category === "accel" || entry.category === "speed") && required.length < requiredLimit) {
+      required.push(entry);
+    } else if (optional.length < optionalLimit) {
+      optional.push(entry);
+    }
+  }
+
+  const byCategory = {};
+  for (const entry of [...required, ...optional]) {
+    byCategory[entry.category] = (byCategory[entry.category] || 0) + 1;
+  }
+
+  return {
+    required: required.map((entry) => entry.id),
+    optional: optional.map((entry) => entry.id),
+    byCategory,
+    poolSize: scored.length,
+  };
+}

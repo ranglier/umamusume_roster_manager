@@ -2,10 +2,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  categorizeSkillEffect,
   getRecommendedTypeDistribution,
   proposeTargetStats,
   rankOwnedCharactersForTarget,
   recommendBuildForTarget,
+  recommendSkillsForBuild,
   recommendSupportDeck,
   scoreCharacterForTarget,
   scoreSupportSummary,
@@ -150,4 +152,46 @@ test("recommendSupportDeck flags a shortfall and fills what it can when the rost
   assert.equal(result.deck.length, 2);
   assert.equal(result.shortfall, true);
   assert.equal(result.filled, 2);
+});
+
+// --- Phase 2b: skill recommendation by effect category ---
+
+function makeSkill(id, effectTypes, rarity = 1, title = id) {
+  return { id, title, detail: { rarity, condition_groups: [{ effects: effectTypes.map((t) => ({ type: t, value: 1 })) }] } };
+}
+
+test("categorizeSkillEffect maps effect type ids to categories, taking the highest-priority one present", () => {
+  assert.equal(categorizeSkillEffect(makeSkill("a", [31])), "accel");
+  assert.equal(categorizeSkillEffect(makeSkill("s", [27])), "speed");
+  assert.equal(categorizeSkillEffect(makeSkill("s2", [22])), "speed");
+  assert.equal(categorizeSkillEffect(makeSkill("r", [9])), "recovery");
+  assert.equal(categorizeSkillEffect(makeSkill("d", [21])), "debuff");
+  assert.equal(categorizeSkillEffect(makeSkill("x", [999])), "other");
+  // accel outranks speed when a skill has both.
+  assert.equal(categorizeSkillEffect(makeSkill("both", [27, 31])), "accel");
+});
+
+test("recommendSkillsForBuild puts accel/speed in required, drops debuffs, dedupes", () => {
+  const pool = [
+    makeSkill("accel1", [31], 3),
+    makeSkill("speed1", [27], 3),
+    makeSkill("recov1", [9], 2),
+    makeSkill("debuff1", [21], 3),
+    makeSkill("accel1", [31], 3), // duplicate id
+  ];
+  const result = recommendSkillsForBuild(pool, MEDIUM_TURF, { requiredLimit: 4, optionalLimit: 6 });
+  assert.ok(result.required.includes("accel1"));
+  assert.ok(result.required.includes("speed1"));
+  assert.ok(result.optional.includes("recov1"));
+  assert.ok(!result.required.includes("debuff1") && !result.optional.includes("debuff1"));
+  // accel1 appears once despite the duplicate.
+  assert.equal(result.required.filter((id) => id === "accel1").length, 1);
+});
+
+test("recommendSkillsForBuild ranks acceleration above speed above recovery", () => {
+  const pool = [makeSkill("r", [9], 3), makeSkill("s", [27], 1), makeSkill("a", [31], 1)];
+  const result = recommendSkillsForBuild(pool, MEDIUM_TURF, { requiredLimit: 4, optionalLimit: 6 });
+  // accel and speed are required (in that priority order); recovery is optional.
+  assert.deepEqual(result.required, ["a", "s"]);
+  assert.deepEqual(result.optional, ["r"]);
 });

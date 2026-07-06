@@ -934,9 +934,34 @@ Phase 2a livree (deck heuristique):
 - verifie en navigateur (cm_001, 11 supports possedes): deck 2 Speed / 2 Wit /
   1 Stamina / 1 Power, seede a 6/6 dans l'editeur, zero erreur console
 
-Reste: Phase 2b = skills par categorie (`type_tags`) x zone d'activation
-(auto-build complet); Phase 3 = refonte ergonomique de l'editeur (formulaire
-de 10000px -> vue menee par la proposition); Phase 4 = reorientation nav.
+Phase 2b livree (skills par categorie d'effet):
+
+- decouverte en implementant: les `type_tags` encodent le ou/quand/pour-qui
+  (position, distance, style), **pas** la categorie d'effet. La categorie
+  vient de `condition_groups[].effects[].type`. Le mapping type->categorie est
+  **infere** (pas publie par GameTora), croise contre plusieurs skills connus
+  par type: 31=accel (Feel the Burn/Groundwork), 27/22=speed (Certain
+  Victory/Shooting Star), 9=recovery (Clear Heart), 8/13/21=debuff (Smoke
+  Screen/Hesitant). Seules les categories a haute frequence/confiance sont
+  mappees; le reste = "other"
+- `categorizeSkillEffect` + `recommendSkillsForBuild` dans `build_recommender.js`
+  (tests couvrant le mapping, la priorite accel>speed>recovery, l'exclusion
+  des debuffs d'un build self-win, le dedup): pool = kit du perso
+  (unique/innate/awakening/event/evolution) + skills du deck (hint+event),
+  classe par categorie (+ rarete), split required/optional
+- **zone d'activation volontairement non auto-scoree**: elle exige une piste
+  non ambigue (meme limite que les seuils/spurt), et le Skill Visualizer la
+  montre deja exactement par racetrack. Auto-scorer la zone sur les cibles CM
+  ambigues (majorite) serait de la fausse precision
+- section reco: ligne "Recommended skills: N required / M optional" par
+  candidat; le clic seede aussi `required_skills`/`optional_skills`
+- verifie en navigateur (cm_001): 4 required / 6 optional seedes (dont
+  l'unique Shooting Star en required), panneau Skills "10 selected", zero
+  erreur console
+
+L'auto-build est donc complet (uma+style+stats+deck+skills pre-remplis en un
+clic). Reste: Phase 3 = refonte ergonomique de l'editeur (formulaire de
+10000px -> vue menee par la proposition); Phase 4 = reorientation nav.
 
 ## Sources utiles
 
