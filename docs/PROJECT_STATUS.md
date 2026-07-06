@@ -486,8 +486,16 @@ cible CM — programme multi-phases, Phase 1 = squelette de bout en bout.
 - verifie en navigateur (cm_001 Tokyo 2400m, 3 persos possedes): classement,
   styles et stats coherents, draft pre-rempli, zero erreur console
 
-Phases suivantes (plan de session): Phase 2 = deck heuristique + skills par
-categorie/zone; Phase 3 = refonte ergonomique de l'editeur; Phase 4 =
+Phase 2a livree: `recommendSupportDeck` (+ `getRecommendedTypeDistribution`,
+`scoreSupportSummary`) propose un deck de supports **heuristique assume** (pas
+de courbes de stats dans nos donnees -> pas de formule de valeur verifiee;
+classe sur rarete + limit break, mix de types par distance). Section "Suggested
+support deck" sur la fiche `cm_targets` avec avertissement explicite, deck
+seede dans le draft. Verifie en navigateur (2 Speed / 2 Wit / 1 Stamina /
+1 Power, 6/6 seede).
+
+Phases suivantes: Phase 2b = skills par categorie (`type_tags`) x zone
+d'activation; Phase 3 = refonte ergonomique de l'editeur; Phase 4 =
 reorientation de la navigation.
 
 ## Choix techniques et justification

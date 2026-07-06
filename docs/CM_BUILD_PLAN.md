@@ -918,10 +918,25 @@ Livre (Phase 1):
   correct (Suzuka Front Runner, Special Week Pace Chaser), STA proposee
   variant par style (1010 vs 1030), draft pre-rempli, zero erreur console
 
-Reste des phases (esquissees dans le plan de session): Phase 2 = deck
-heuristique + skills par categorie/zone (auto-build complet); Phase 3 =
-refonte ergonomique de l'editeur (le formulaire de 10000px devient une vue
-menee par la proposition); Phase 4 = reorientation de la navigation.
+Phase 2a livree (deck heuristique):
+
+- `recommendSupportDeck` + `getRecommendedTypeDistribution` + `scoreSupportSummary`
+  dans `build_recommender.js` (tests couvrant mix par distance, tri
+  rarete/limit break, remplissage + shortfall). **Heuristique assumee**: nos
+  donnees supports n'ont pas de courbes de stats par niveau, donc aucune
+  formule de valeur verifiee — on classe sur ce qu'on lit honnetement (rarete,
+  limit break) et on remplit un mix de types par distance ([REF-GL]). Le slug
+  du type Wit dans les donnees est `intelligence`
+- section "Suggested support deck" sur la fiche `cm_targets`, avec avertissement
+  heuristique explicite + note de shortfall si le roster ne remplit pas 6
+- le deck est seede dans le draft au clic (`support_deck`), consomme par
+  `createEmptyBuildEntry`
+- verifie en navigateur (cm_001, 11 supports possedes): deck 2 Speed / 2 Wit /
+  1 Stamina / 1 Power, seede a 6/6 dans l'editeur, zero erreur console
+
+Reste: Phase 2b = skills par categorie (`type_tags`) x zone d'activation
+(auto-build complet); Phase 3 = refonte ergonomique de l'editeur (formulaire
+de 10000px -> vue menee par la proposition); Phase 4 = reorientation nav.
 
 ## Sources utiles
 

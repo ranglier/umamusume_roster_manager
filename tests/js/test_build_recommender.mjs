@@ -2,10 +2,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  getRecommendedTypeDistribution,
   proposeTargetStats,
   rankOwnedCharactersForTarget,
   recommendBuildForTarget,
+  recommendSupportDeck,
   scoreCharacterForTarget,
+  scoreSupportSummary,
   targetProfileFromCmDetail,
 } from "../../src/ui/assets/js/build_recommender.js";
 
@@ -102,4 +105,49 @@ test("recommendBuildForTarget returns ranked candidates each with a stat proposa
   assert.equal(recos.length, 1);
   assert.equal(recos[0].characterId, "100101");
   assert.ok(recos[0].proposal.stats.stamina > 0);
+});
+
+// --- Phase 2a: support deck heuristic ---
+
+test("getRecommendedTypeDistribution is speed/wit heavy, with more stamina for longer distances", () => {
+  assert.deepEqual(getRecommendedTypeDistribution("mile"), { speed: 3, intelligence: 2, power: 1 });
+  assert.deepEqual(getRecommendedTypeDistribution("long"), { speed: 2, intelligence: 1, stamina: 2, power: 1 });
+  // unknown category falls back to medium.
+  assert.deepEqual(getRecommendedTypeDistribution("???"), getRecommendedTypeDistribution("medium"));
+});
+
+test("scoreSupportSummary ranks rarity first, limit break as a tiebreaker", () => {
+  assert.ok(scoreSupportSummary({ rarity: 3, limitBreak: 0 }) > scoreSupportSummary({ rarity: 2, limitBreak: 4 }));
+  assert.ok(scoreSupportSummary({ rarity: 3, limitBreak: 4 }) > scoreSupportSummary({ rarity: 3, limitBreak: 0 }));
+});
+
+function makeSupport(id, type, rarity, limitBreak = 0) {
+  return { id, type, rarity, limitBreak };
+}
+
+test("recommendSupportDeck honors the type mix then fills the best remaining, deduped to 6", () => {
+  const owned = [
+    makeSupport("s1", "speed", 3, 4), makeSupport("s2", "speed", 3, 2), makeSupport("s3", "speed", 2, 0),
+    makeSupport("w1", "intelligence", 3, 4), makeSupport("w2", "intelligence", 3, 0),
+    makeSupport("p1", "power", 3, 4), makeSupport("p2", "power", 2, 0),
+    makeSupport("st1", "stamina", 3, 4),
+  ];
+  const result = recommendSupportDeck("medium", owned); // target: speed2 int2 stamina1 power1
+  assert.equal(result.deck.length, 6);
+  assert.equal(new Set(result.deck).size, 6);
+  // best two speed by score are s1 (rarity3 lb4) and s2 (rarity3 lb2).
+  assert.ok(result.deck.includes("s1") && result.deck.includes("s2"));
+  assert.ok(result.deck.includes("w1") && result.deck.includes("w2"));
+  assert.ok(result.deck.includes("st1"));
+  assert.ok(result.deck.includes("p1"));
+  assert.equal(result.shortfall, false);
+  assert.equal(result.actual.speed, 2);
+});
+
+test("recommendSupportDeck flags a shortfall and fills what it can when the roster is too small", () => {
+  const owned = [makeSupport("s1", "speed", 3, 0), makeSupport("w1", "intelligence", 2, 0)];
+  const result = recommendSupportDeck("mile", owned);
+  assert.equal(result.deck.length, 2);
+  assert.equal(result.shortfall, true);
+  assert.equal(result.filled, 2);
 });

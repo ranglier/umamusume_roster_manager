@@ -365,7 +365,7 @@ export function createEmptyBuildEntry() {
     character_id: seed?.character_id || getOwnedCharacterOptions()[0]?.value || "",
     scenario_id: getBuildTargetOptions("scenarios")[0]?.value || "",
     running_style: seed?.running_style || "",
-    support_deck: [],
+    support_deck: asArray(seed?.support_deck).slice(0, 6),
     legacy_pair: {
       parent_a: state.legacyView.items[0]?.id || "",
       parent_b: state.legacyView.items[1]?.id || "",

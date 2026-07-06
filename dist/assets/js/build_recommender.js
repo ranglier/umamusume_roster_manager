@@ -123,3 +123,83 @@ export function recommendBuildForTarget(targetProfile, ownedCharItems, { limit =
     proposal: proposeTargetStats(targetProfile, candidate.bestStyle),
   }));
 }
+
+// --- Phase 2a: heuristic support-deck suggestion. Deliberately a heuristic,
+// not a scored optimum: our normalized data has no per-level stat curves, so
+// there is no verified "support value" formula (docs/RACE_MECHANICS_REFERENCE.md
+// only describes stat-stick passives qualitatively). We rank by what we can
+// honestly read - rarity and limit break - and fill a type mix that follows
+// the community deckbuilding guidance by distance ([REF-GL]). Note: the data's
+// Wit type slug is "intelligence". ---
+
+const DECK_SIZE = 6;
+
+// Target type mix for a 6-card deck by distance category. Speed/Wit-heavy per
+// [REF-GL] "Deckbuilding"; Stamina weight grows with distance.
+const DECK_TYPE_DISTRIBUTION = {
+  short: { speed: 3, intelligence: 2, power: 1 },
+  mile: { speed: 3, intelligence: 2, power: 1 },
+  medium: { speed: 2, intelligence: 2, stamina: 1, power: 1 },
+  long: { speed: 2, intelligence: 1, stamina: 2, power: 1 },
+};
+
+export function getRecommendedTypeDistribution(distanceCategoryKey) {
+  return DECK_TYPE_DISTRIBUTION[distanceCategoryKey] || DECK_TYPE_DISTRIBUTION.medium;
+}
+
+// Honest, explainable support score from the only fields we can read reliably:
+// rarity dominates, limit break refines. No stat-curve guessing.
+export function scoreSupportSummary(summary) {
+  const rarity = Number(summary?.rarity) || 0;
+  const limitBreak = Number(summary?.limitBreak) || 0;
+  return rarity * 10 + limitBreak * 2;
+}
+
+// ownedSupportSummaries: [{ id, type, rarity, limitBreak }]. Returns the
+// suggested deck plus the target vs actual type mix and a shortfall flag so
+// the UI can be honest when the roster can't fill the recommended mix.
+export function recommendSupportDeck(distanceCategoryKey, ownedSupportSummaries, { size = DECK_SIZE } = {}) {
+  const target = getRecommendedTypeDistribution(distanceCategoryKey);
+  const byType = new Map();
+  for (const summary of ownedSupportSummaries || []) {
+    const type = String(summary?.type || "").toLowerCase();
+    if (!byType.has(type)) byType.set(type, []);
+    byType.get(type).push(summary);
+  }
+  for (const list of byType.values()) {
+    list.sort((a, b) => scoreSupportSummary(b) - scoreSupportSummary(a));
+  }
+
+  const picked = [];
+  const pickedIds = new Set();
+  const take = (summary) => {
+    if (summary && !pickedIds.has(summary.id) && picked.length < size) {
+      picked.push(summary);
+      pickedIds.add(summary.id);
+    }
+  };
+
+  // First pass: honor the target mix.
+  for (const [type, count] of Object.entries(target)) {
+    (byType.get(type) || []).slice(0, count).forEach(take);
+  }
+  // Second pass: fill any remaining slots with the best remaining, any type.
+  const remaining = (ownedSupportSummaries || [])
+    .filter((summary) => !pickedIds.has(summary.id))
+    .sort((a, b) => scoreSupportSummary(b) - scoreSupportSummary(a));
+  remaining.forEach(take);
+
+  const actual = {};
+  for (const summary of picked) {
+    const type = String(summary.type || "").toLowerCase();
+    actual[type] = (actual[type] || 0) + 1;
+  }
+
+  return {
+    deck: picked.map((summary) => String(summary.id)),
+    target,
+    actual,
+    shortfall: picked.length < size,
+    filled: picked.length,
+  };
+}

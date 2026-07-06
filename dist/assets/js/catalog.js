@@ -10,11 +10,14 @@ import {
   resolveStaticZones,
   SKILL_HIGHLIGHT_CLASSES,
 } from "./visualizer.js";
-import { recommendBuildForTarget, targetProfileFromCmDetail } from "./build_recommender.js";
+import { recommendBuildForTarget, recommendSupportDeck, targetProfileFromCmDetail } from "./build_recommender.js";
+import { getSupportOwnedSummary } from "./builds.js";
+import { getOwnedSupportOptions } from "./core.js";
 import { requestRenderPreservingScroll, requestRenderPreservingScrollAndFocus } from "../app.js";
 
 const RECO_STYLE_LABELS = { runner: "Front Runner", leader: "Pace Chaser", betweener: "Late Surger", chaser: "End Closer" };
 const RECO_VERDICT = { useful: { tone: "ok", label: "Strong fit" }, workable: { tone: "warn", label: "Workable" }, "off-target": { tone: "bad", label: "Off target" } };
+const RECO_TYPE_LABELS = { speed: "Speed", stamina: "Stamina", power: "Power", guts: "Guts", intelligence: "Wisdom", friend: "Friend", group: "Group" };
 
 function getOwnedCharacterItems() {
   const ownedIds = new Set(getOwnedCharacterOptions().map((option) => String(option.value)));
@@ -26,6 +29,30 @@ function getOwnedCharacterItems() {
 // character id, matched back to the recommendation here.
 function getCmTargetRecommendations(detail) {
   return recommendBuildForTarget(targetProfileFromCmDetail(detail), getOwnedCharacterItems(), { limit: 5 });
+}
+
+// Owned supports reduced to the fields the deck heuristic reads, plus a title
+// for display. limit_break lives on the roster entry (0..4).
+function getOwnedSupportSummariesForDeck() {
+  return getOwnedSupportOptions().map((option) => {
+    const summary = getSupportOwnedSummary(option.value);
+    return {
+      id: String(option.value),
+      title: summary.item?.title || String(option.value),
+      type: summary.type,
+      rarity: summary.rarity,
+      limitBreak: Number(summary.entry?.limit_break) || 0,
+    };
+  });
+}
+
+// Same recompute-in-both-places pattern as the character recos: the handler
+// re-derives the deck rather than reading it out of the DOM.
+function getCmTargetDeck(detail) {
+  const profile = targetProfileFromCmDetail(detail);
+  const summaries = getOwnedSupportSummariesForDeck();
+  const titleById = new Map(summaries.map((summary) => [summary.id, summary]));
+  return { result: recommendSupportDeck(profile.distanceKey, summaries), titleById };
 }
 
 export function getSkillPickerOptions() {
@@ -514,8 +541,9 @@ export function renderCmTargets(detail) {
   `;
 }
 
-// CM-first auto-build entry (docs/CM_BUILD_PLAN.md phase 1): rank the owned
-// roster for this race and let one click seed a pre-filled build draft.
+// CM-first auto-build entry (docs/CM_BUILD_PLAN.md phase 1-2): rank the owned
+// roster for this race and let one click seed a pre-filled build draft
+// (character + style + stats + a heuristic support deck).
 export function renderCmTargetRecommendations(detail) {
   const recos = getCmTargetRecommendations(detail);
   return `
@@ -525,7 +553,22 @@ export function renderCmTargetRecommendations(detail) {
       ${!recos.length
         ? "<p class='source-note'>No owned character yet — add the umas you own from the Catalog to see recommendations.</p>"
         : `<div class="build-card-list">${recos.map(renderRecommendationCard).join("")}</div>`}
+      ${recos.length ? renderSuggestedDeck(detail) : ""}
     </div>
+  `;
+}
+
+function renderSuggestedDeck(detail) {
+  const { result, titleById } = getCmTargetDeck(detail);
+  const targetMix = Object.entries(result.target).map(([type, n]) => `${n} ${RECO_TYPE_LABELS[type] || type}`).join(" / ");
+  const cards = result.deck.map((id) => {
+    const summary = titleById.get(id);
+    return `<span class="skill-dynamic-badge" title="${escapeHtml(`${RECO_TYPE_LABELS[summary?.type] || summary?.type || "?"} | R${summary?.rarity || "-"} | LB ${summary?.limitBreak ?? 0}`)}">${escapeHtml(summary?.title || id)}</span>`;
+  }).join("");
+  return `
+    <h4>Suggested support deck</h4>
+    <p class="source-note">Heuristic only — no verified support-value formula in our data (no stat curves). Target mix for this distance: <strong>${escapeHtml(targetMix)}</strong>; ranked by rarity then limit break.${result.shortfall ? ` Your roster only fills ${result.filled}/6 — add more owned supports.` : ""}</p>
+    ${result.deck.length ? `<div>${cards}</div>` : "<p class='source-note'>No owned support yet — add the supports you own from the Catalog.</p>"}
   `;
 }
 
@@ -743,6 +786,7 @@ export function attachCmTargetRecommendationListeners(detail) {
     return;
   }
   const recos = getCmTargetRecommendations(detail);
+  const deck = getCmTargetDeck(detail).result.deck;
   buttons.forEach((button) => {
     button.addEventListener("click", () => {
       const characterId = String(button.dataset.cmRecoCharacter || "");
@@ -755,6 +799,7 @@ export function attachCmTargetRecommendationListeners(detail) {
         character_id: reco.characterId,
         running_style: reco.bestStyle,
         target_stats: { ...reco.proposal.stats },
+        support_deck: [...deck],
         name: `${detail.name} — ${reco.title}`,
       };
       setBrowseHash("roster", "builds", "__new__");
