@@ -353,6 +353,10 @@ export const state = {
   buildsDocument: normalizeBuildsDocument(null, null),
   buildsProfileId: null,
   buildsStatus: { kind: "idle", message: "" },
+  // One-shot seed for a pre-filled build draft, set by the CM-target
+  // recommendation flow (build_recommender) before routing to "__new__".
+  // createEmptyBuildEntry() consumes and clears it.
+  pendingBuildSeed: null,
   buildEditor: {
     targetKey: null,
     draft: null,

@@ -352,20 +352,25 @@ export function getBuildSkillSourceLabels(entry, skillId) {
 }
 
 export function createEmptyBuildEntry() {
+  // A CM-target recommendation may have seeded a pre-filled draft (character,
+  // style, target stats). Consume it once; fall back to the first available
+  // options otherwise. The seed's fields override the arbitrary defaults.
+  const seed = state.pendingBuildSeed;
+  state.pendingBuildSeed = null;
   return {
     id: "",
     mode: "champions_meeting",
-    name: "",
-    target_id: getBuildTargetOptions("cm_targets")[0]?.value || "",
-    character_id: getOwnedCharacterOptions()[0]?.value || "",
+    name: seed?.name || "",
+    target_id: seed?.target_id || getBuildTargetOptions("cm_targets")[0]?.value || "",
+    character_id: seed?.character_id || getOwnedCharacterOptions()[0]?.value || "",
     scenario_id: getBuildTargetOptions("scenarios")[0]?.value || "",
-    running_style: "",
+    running_style: seed?.running_style || "",
     support_deck: [],
     legacy_pair: {
       parent_a: state.legacyView.items[0]?.id || "",
       parent_b: state.legacyView.items[1]?.id || "",
     },
-    target_stats: {},
+    target_stats: seed?.target_stats || {},
     target_aptitudes: {},
     required_skills: [],
     optional_skills: [],

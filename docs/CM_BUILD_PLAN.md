@@ -891,6 +891,38 @@ Palier 3 (simulation multi-agents) reste hors perimetre — voir
 `docs/RACE_MECHANICS_REFERENCE.md` section "Application au moteur du
 projet".
 
+## Refonte CM-first + auto-build — Phase 1 livree
+
+Debut de la refonte de l'app autour de son but produit (proposer le meilleur
+build pour une course, depuis le roster possede) plutot qu'un formulaire
+manuel. Decisions cadrees avec l'utilisateur: refonte complete de l'app,
+auto-build complet (uma+style+stats+deck+skills), entree par la cible CM.
+C'est un programme multi-phases; la Phase 1 pose le squelette de bout en bout.
+
+Livre (Phase 1):
+
+- nouveau module pur `src/ui/assets/js/build_recommender.js`
+  (`tests/js/test_build_recommender.mjs`, 8 tests): classe les umas possedees
+  par fit d'aptitude **exact** (produit des 4 coefficients verifies), choisit
+  le meilleur style de course, et propose une cible de stats **heuristique
+  bornee** (Stamina depuis le repere umalator le plus proche +marge CM, Guts
+  juste au-dessus du seuil de bascule) — etiquetee heuristique, pas optimum
+- section "Recommended builds from my roster" sur la fiche `cm_targets`
+  (`catalog.js` `renderCmTargets`): classement des candidats avec grades,
+  style, verdict, stats proposees; un bouton par candidat
+- draft pre-rempli en un clic: `state.pendingBuildSeed` (pose par le handler,
+  consomme+nettoye par `createEmptyBuildEntry`) — l'editeur s'ouvre deja
+  positionne sur la bonne uma/style/stats, et les panneaux Feasibility/Last
+  Spurt s'allument immediatement
+- verifie en navigateur (cm_001 Tokyo 2400m, 3 persos possedes): classement
+  correct (Suzuka Front Runner, Special Week Pace Chaser), STA proposee
+  variant par style (1010 vs 1030), draft pre-rempli, zero erreur console
+
+Reste des phases (esquissees dans le plan de session): Phase 2 = deck
+heuristique + skills par categorie/zone (auto-build complet); Phase 3 =
+refonte ergonomique de l'editeur (le formulaire de 10000px devient une vue
+menee par la proposition); Phase 4 = reorientation de la navigation.
+
 ## Sources utiles
 
 Sources GameTora consultees pour ce cadrage:

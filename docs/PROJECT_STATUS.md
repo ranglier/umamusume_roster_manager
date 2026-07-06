@@ -467,6 +467,29 @@ test_build_scoring.mjs`, 21 tests au total pour ce module):
 Reste a faire: Palier 3 (simulation multi-agents, hors perimetre volontaire
 — voir `docs/CM_BUILD_PLAN.md` Option D).
 
+### 14. Refonte CM-first + auto-build — Phase 1
+
+Debut de la refonte de l'app autour de son but produit (proposer le meilleur
+build pour une course depuis le roster possede) au lieu d'un formulaire manuel
+de ~10000px. Cadrage: refonte complete, auto-build complet, entree par la
+cible CM — programme multi-phases, Phase 1 = squelette de bout en bout.
+
+- nouveau module pur `src/ui/assets/js/build_recommender.js`
+  (`tests/js/test_build_recommender.mjs`, 8 tests): `rankOwnedCharactersForTarget`
+  classe les umas possedees par fit d'aptitude **exact**, `scoreCharacterForTarget`
+  choisit le meilleur style, `proposeTargetStats` propose une cible de stats
+  **heuristique bornee** (etiquetee comme telle). Reutilise `build_scoring.js`
+- section "Recommended builds from my roster" sur la fiche `cm_targets`
+  (`catalog.js`), et draft pre-rempli en un clic via `state.pendingBuildSeed`
+  (consomme+nettoye par `createEmptyBuildEntry`) — l'editeur s'ouvre positionne
+  et les panneaux Feasibility/Last Spurt s'allument aussitot
+- verifie en navigateur (cm_001 Tokyo 2400m, 3 persos possedes): classement,
+  styles et stats coherents, draft pre-rempli, zero erreur console
+
+Phases suivantes (plan de session): Phase 2 = deck heuristique + skills par
+categorie/zone; Phase 3 = refonte ergonomique de l'editeur; Phase 4 =
+reorientation de la navigation.
+
 ## Choix techniques et justification
 
 ### Manifest + JSON versionnes plutot que scraping HTML

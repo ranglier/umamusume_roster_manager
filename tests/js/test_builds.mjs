@@ -155,6 +155,7 @@ test("createEmptyBuildEntry seeds defaults from the first available reference op
   state.rosterDocument = { ...state.rosterDocument, characters: { char_001: { owned: true } } };
   state.legacyView = { ...state.legacyView, items: [{ id: "legacy_001" }, { id: "legacy_002" }] };
 
+  state.pendingBuildSeed = null;
   const entry = createEmptyBuildEntry();
   assert.equal(entry.target_id, "cmt_001");
   assert.equal(entry.scenario_id, "scn_001");
@@ -162,4 +163,27 @@ test("createEmptyBuildEntry seeds defaults from the first available reference op
   assert.deepEqual(entry.legacy_pair, { parent_a: "legacy_001", parent_b: "legacy_002" });
   assert.equal(entry.status, "draft");
   assert.equal(entry.running_style, "");
+});
+
+test("createEmptyBuildEntry consumes a pending build seed and clears it", () => {
+  data.entities.cm_targets.items = [{ id: "cmt_001", title: "Target One" }];
+  data.entities.characters.items = [{ id: "char_001", title: "Character One" }];
+  state.rosterDocument = { ...state.rosterDocument, characters: { char_001: { owned: true } } };
+  state.pendingBuildSeed = {
+    target_id: "cmt_009",
+    character_id: "char_seeded",
+    running_style: "chaser",
+    target_stats: { speed: 1150, stamina: 1030 },
+    name: "Capricorn — Seeded",
+  };
+
+  const entry = createEmptyBuildEntry();
+  assert.equal(entry.target_id, "cmt_009");
+  assert.equal(entry.character_id, "char_seeded");
+  assert.equal(entry.running_style, "chaser");
+  assert.deepEqual(entry.target_stats, { speed: 1150, stamina: 1030 });
+  assert.equal(entry.name, "Capricorn — Seeded");
+  // The seed is one-shot: a second call falls back to defaults.
+  assert.equal(state.pendingBuildSeed, null);
+  assert.equal(createEmptyBuildEntry().character_id, "char_001");
 });

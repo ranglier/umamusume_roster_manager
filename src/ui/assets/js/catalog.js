@@ -1,5 +1,5 @@
 // Auto-split from app.js as part of docs/REFACTOR_PLAN.md.
-import { TRAINING_EVENT_EFFECT_LABELS, asArray, data, getEntityItems, getSkillReferences, getViewState, renderSelectOptions, state } from "./core.js";
+import { TRAINING_EVENT_EFFECT_LABELS, asArray, data, getEntityItems, getOwnedCharacterOptions, getSkillReferences, getViewState, renderSelectOptions, setBrowseHash, state } from "./core.js";
 import { escapeHtml, renderBadge, renderLinkedSkillList, renderReferenceList, renderSimpleList, tableFromRows } from "./dom-utils.js";
 import { getRosterEntry, renderCharacterRosterProjection, renderSupportCurrentEffects, renderSupportRosterProjection } from "./roster.js";
 import {
@@ -10,7 +10,23 @@ import {
   resolveStaticZones,
   SKILL_HIGHLIGHT_CLASSES,
 } from "./visualizer.js";
+import { recommendBuildForTarget, targetProfileFromCmDetail } from "./build_recommender.js";
 import { requestRenderPreservingScroll, requestRenderPreservingScrollAndFocus } from "../app.js";
+
+const RECO_STYLE_LABELS = { runner: "Front Runner", leader: "Pace Chaser", betweener: "Late Surger", chaser: "End Closer" };
+const RECO_VERDICT = { useful: { tone: "ok", label: "Strong fit" }, workable: { tone: "warn", label: "Workable" }, "off-target": { tone: "bad", label: "Off target" } };
+
+function getOwnedCharacterItems() {
+  const ownedIds = new Set(getOwnedCharacterOptions().map((option) => String(option.value)));
+  return getEntityItems("characters").filter((item) => ownedIds.has(String(item.id)));
+}
+
+// Recomputed by both the renderer and the click handler so no per-candidate
+// stat payload has to be serialized into the DOM - buttons only carry a
+// character id, matched back to the recommendation here.
+function getCmTargetRecommendations(detail) {
+  return recommendBuildForTarget(targetProfileFromCmDetail(detail), getOwnedCharacterItems(), { limit: 5 });
+}
 
 export function getSkillPickerOptions() {
   return getEntityItems("skills").map((item) => ({ value: String(item.id), label: item.title || String(item.id) }));
@@ -494,6 +510,37 @@ export function renderCmTargets(detail) {
       <h3>Related Racetracks</h3>
       ${renderReferenceList(detail.related_racetracks)}
     </div>
+    ${renderCmTargetRecommendations(detail)}
+  `;
+}
+
+// CM-first auto-build entry (docs/CM_BUILD_PLAN.md phase 1): rank the owned
+// roster for this race and let one click seed a pre-filled build draft.
+export function renderCmTargetRecommendations(detail) {
+  const recos = getCmTargetRecommendations(detail);
+  return `
+    <div class="detail-section" data-cm-reco-target="${escapeHtml(detail.id)}">
+      <h3>Recommended builds from my roster</h3>
+      <p class="source-note">Ranked by exact aptitude fit for this race. Stat targets are a heuristic starting point (Stamina from the nearest umalator reference, Guts past the crossover), not an optimum.</p>
+      ${!recos.length
+        ? "<p class='source-note'>No owned character yet — add the umas you own from the Catalog to see recommendations.</p>"
+        : `<div class="build-card-list">${recos.map(renderRecommendationCard).join("")}</div>`}
+    </div>
+  `;
+}
+
+function renderRecommendationCard(reco) {
+  const verdict = RECO_VERDICT[reco.verdict] || RECO_VERDICT["off-target"];
+  const stats = reco.proposal.stats;
+  const statLine = `SPD ${stats.speed} · STA ${stats.stamina} · POW ${stats.power} · GUT ${stats.guts} · WIT ${stats.wit}`;
+  return `
+    <article class="build-mini-card">
+      <strong>${escapeHtml(reco.title)}</strong>
+      <span class="build-hint build-hint-${verdict.tone}">${escapeHtml(verdict.label)}</span>
+      <span>${escapeHtml(`${RECO_STYLE_LABELS[reco.bestStyle] || "-"} | Surface ${reco.surfaceGrade || "-"} / Distance ${reco.distanceGrade || "-"} / Style ${reco.styleGrade || "-"}`)}</span>
+      <small>${escapeHtml(`Proposed stats: ${statLine}`)}</small>
+      <button type="button" class="button-secondary" data-cm-reco-character="${escapeHtml(reco.characterId)}">Create build from this</button>
+    </article>
   `;
 }
 
@@ -688,4 +735,29 @@ export function attachRacetrackVisualizerListeners(course) {
       requestRenderPreservingScroll();
     });
   }
+}
+
+export function attachCmTargetRecommendationListeners(detail) {
+  const buttons = document.querySelectorAll("[data-cm-reco-character]");
+  if (!buttons.length) {
+    return;
+  }
+  const recos = getCmTargetRecommendations(detail);
+  buttons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const characterId = String(button.dataset.cmRecoCharacter || "");
+      const reco = recos.find((candidate) => candidate.characterId === characterId);
+      if (!reco) {
+        return;
+      }
+      state.pendingBuildSeed = {
+        target_id: String(detail.id),
+        character_id: reco.characterId,
+        running_style: reco.bestStyle,
+        target_stats: { ...reco.proposal.stats },
+        name: `${detail.name} — ${reco.title}`,
+      };
+      setBrowseHash("roster", "builds", "__new__");
+    });
+  });
 }
