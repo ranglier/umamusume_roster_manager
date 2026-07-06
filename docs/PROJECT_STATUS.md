@@ -506,8 +506,20 @@ seedes dans le draft. Verifie en navigateur (4 required / 6 optional, 10
 selected).
 
 L'auto-build est complet: uma+style+stats+deck+skills pre-remplis en un clic.
-Phases suivantes: Phase 3 = refonte ergonomique de l'editeur; Phase 4 =
-reorientation de la navigation.
+
+Phase 3 livree (refonte ergonomique de l'editeur): le formulaire de ~10000px
+devient une vue menee par la proposition, a divulgation progressive. Le readout
+deterministe mene; le formulaire (66 controles) est decoupe en onglets (Setup /
+Support Deck / Stats & Aptitudes / Skills / Parents / Notes & Tags), un seul
+visible a la fois (hauteur ~10000px -> ~4400px). Tous les champs restent dans le
+DOM (show/hide CSS) donc la capture FormData / le re-render live / le focus sont
+inchanges; `activeFormTab` persiste l'onglet. Correctif au passage: le seed de
+reco etait perdu sur double-render async — `startSeededBuildDraft` le stocke
+desormais dans `buildEditor.draft` (persistant), et "New build" le nettoie pour
+un formulaire vierge. Verifie en navigateur.
+
+Reste: Phase 4 = reorientation de la navigation (preparation CM en entree
+principale).
 
 ## Choix techniques et justification
 

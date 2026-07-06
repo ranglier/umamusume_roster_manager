@@ -365,6 +365,9 @@ export const state = {
     showAllSupports: false,
     showAllCharacters: false,
     showAllParents: false,
+    // Which refinement tab of the build editor form is visible. All fields
+    // stay in the DOM (CSS show/hide) so FormData capture is unaffected.
+    activeFormTab: "setup",
   },
   rosterStatus: { kind: "idle", message: "" },
   profilesApiStatus: { kind: "idle", message: "" },

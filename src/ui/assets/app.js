@@ -279,6 +279,11 @@ export function renderBrowseActions(route, filteredItems) {
     if (newBuildButton) {
       newBuildButton.addEventListener("click", () => {
         state.buildsStatus = { kind: "idle", message: "" };
+        // Start a genuinely fresh draft: drop any persisted create-draft
+        // (e.g. a previous CM recommendation seed) so the form isn't stale.
+        if (state.buildEditor.targetKey === "__new__") {
+          state.buildEditor.draft = null;
+        }
         setBrowseHash(route.mode, route.entityKey, "__new__");
       });
     }

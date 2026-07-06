@@ -1,4 +1,4 @@
-﻿:root {
+:root {
   --bg: #110d0a;
   --panel: rgba(24, 18, 15, 0.84);
   --panel-strong: rgba(29, 22, 17, 0.94);
@@ -1315,6 +1315,39 @@ body.route-wizard .profile-gate::after {
 .build-form-section {
   margin: 0;
   padding-top: 12px;
+}
+
+.build-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0 14px;
+  border-bottom: 1px solid rgba(115, 160, 198, 0.16);
+  padding-bottom: 8px;
+}
+
+.build-tab {
+  padding: 7px 13px;
+  border-radius: 10px;
+  border: 1px solid rgba(115, 160, 198, 0.16);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--text-soft);
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.build-tab.active {
+  border-color: var(--accent);
+  background: rgba(244, 187, 98, 0.1);
+  color: var(--accent);
+}
+
+.build-tab-panel {
+  display: none;
+}
+
+.build-tab-panel.active {
+  display: block;
 }
 
 .build-panel-grid {

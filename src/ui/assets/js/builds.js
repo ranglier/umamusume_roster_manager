@@ -382,6 +382,17 @@ export function createEmptyBuildEntry() {
   };
 }
 
+// Seeds a pre-filled create draft and stores it as the persistent editor draft
+// so it survives the async render loop (renderDetail may call
+// createEmptyBuildEntry more than once; the one-shot seed alone would be
+// consumed by the first pass and lost). Callers navigate to "__new__" after.
+export function startSeededBuildDraft(seed) {
+  state.pendingBuildSeed = seed;
+  state.buildEditor.targetKey = "__new__";
+  state.buildEditor.draft = createEmptyBuildEntry();
+  state.buildEditor.activeFormTab = "setup";
+}
+
 export function renderBuildSupportPicker(selectedSupportIds) {
   const selected = new Set(asArray(selectedSupportIds).map(String));
   const selectedCount = selected.size;
@@ -924,6 +935,20 @@ export function renderBuildReferenceSummary(entry, labels) {
   `;
 }
 
+export const BUILD_EDITOR_TABS = [
+  { key: "setup", label: "Setup" },
+  { key: "deck", label: "Support Deck" },
+  { key: "stats", label: "Stats & Aptitudes" },
+  { key: "skills", label: "Skills" },
+  { key: "legacy", label: "Parents" },
+  { key: "notes", label: "Notes & Tags" },
+];
+
+// Ergonomic rework (docs/CM_BUILD_PLAN.md phase 3): the proposal readout
+// (insight panels) leads; the heavy manual form is split into tabs so only one
+// refinement section shows at a time instead of a ~10000px scroll. Every field
+// stays in the DOM (panels are CSS show/hide) so FormData capture, live-draft
+// re-render and focus preservation all keep working unchanged.
 export function renderBuildEditor(entry, isCreateMode, labels = {}) {
   entry = getCurrentBuildFormEntry(entry, isCreateMode);
   const statusText = state.buildsStatus.message || "Build drafts are stored locally for the active profile.";
@@ -931,98 +956,112 @@ export function renderBuildEditor(entry, isCreateMode, labels = {}) {
   const scenarioOptions = getBuildTargetOptions("scenarios");
   const parentOptions = getBuildParentOptions(entry);
   const selectedSupports = asArray(entry.support_deck);
+  const activeTab = BUILD_EDITOR_TABS.some((tab) => tab.key === state.buildEditor.activeFormTab) ? state.buildEditor.activeFormTab : "setup";
+
+  const tabBodies = {
+    setup: `
+      <label class="field-stack field-stack-full">
+        <span>Name</span>
+        <input name="name" type="text" maxlength="120" value="${escapeHtml(entry.name || "")}" placeholder="Champions Meeting draft">
+      </label>
+      <div class="roster-field-grid">
+        <label class="field-stack">
+          <span>Mode</span>
+          <select name="mode">
+            ${BUILD_MODE_OPTIONS.map((option) => `<option value="${escapeHtml(option.value)}" ${entry.mode === option.value ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
+          </select>
+        </label>
+        <label class="field-stack">
+          <span>Status</span>
+          <select name="status">
+            ${BUILD_STATUS_OPTIONS.map((option) => `<option value="${escapeHtml(option.value)}" ${entry.status === option.value ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
+          </select>
+        </label>
+      </div>
+      <div class="roster-field-grid">
+        <label class="field-stack">
+          <span>CM Target</span>
+          <select name="target_id">
+            ${renderSelectOptions(targetOptions, entry.target_id, "No CM target")}
+          </select>
+        </label>
+        <label class="field-stack">
+          <span>Scenario</span>
+          <select name="scenario_id">
+            ${renderSelectOptions(scenarioOptions, entry.scenario_id, "No scenario")}
+          </select>
+        </label>
+        <label class="field-stack field-stack-full">
+          <span>Main Character</span>
+          ${renderBuildCharacterSelect(entry)}
+        </label>
+        <label class="field-stack">
+          <span>Running Style</span>
+          <select name="running_style">
+            ${BUILD_RUNNING_STYLE_OPTIONS.map((option) => `<option value="${escapeHtml(option.value)}" ${(entry.running_style || "") === option.value ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
+          </select>
+        </label>
+      </div>
+    `,
+    deck: `${renderBuildSupportPicker(selectedSupports)}`,
+    stats: `
+      <div class="build-form-section">
+        <h4>Target Stats</h4>
+        ${renderBuildStatsFields(entry)}
+      </div>
+      <div class="build-form-section">
+        <h4>Target Aptitudes</h4>
+        ${renderBuildAptitudeFields(entry)}
+      </div>
+    `,
+    skills: renderBuildSkillEditor(entry),
+    legacy: `
+      <div class="roster-field-grid">
+        <label class="field-stack">
+          <span>Parent A</span>
+          <select name="parent_a">
+            ${renderSelectOptions(parentOptions.visible.map((option) => ({
+              value: option.value,
+              label: `${option.label}${option.sparkText ? ` - ${option.sparkText}` : ""}`,
+            })), entry.legacy_pair?.parent_a, "No parent")}
+          </select>
+        </label>
+        <label class="field-stack">
+          <span>Parent B</span>
+          <select name="parent_b">
+            ${renderSelectOptions(parentOptions.visible.map((option) => ({
+              value: option.value,
+              label: `${option.label}${option.sparkText ? ` - ${option.sparkText}` : ""}`,
+            })), entry.legacy_pair?.parent_b, "No parent")}
+          </select>
+        </label>
+      </div>
+      ${parentOptions.hiddenCount ? `<p class='source-note'>${escapeHtml(`${parentOptions.hiddenCount} parents hidden because their pink spark does not match the target.`)}</p>` : ""}
+      <label class="build-inline-toggle"><input type="checkbox" id="buildShowAllParents" ${state.buildEditor.showAllParents ? "checked" : ""}> Show all saved parents</label>
+      ${state.legacyView.items.length ? "" : "<p class='source-note'>No saved parent yet. Add parents in the Legacy tab when you want to test inheritance planning.</p>"}
+    `,
+    notes: `
+      <label class="field-stack field-stack-full">
+        <span>Tags</span>
+        <input name="custom_tags" type="text" value="${escapeHtml(asArray(entry.custom_tags).join(", "))}" placeholder="mile, test, safe">
+      </label>
+      <label class="field-stack field-stack-full">
+        <span>Notes</span>
+        <textarea name="notes" rows="5" placeholder="Training assumptions, substitutes, run notes">${escapeHtml(entry.notes || "")}</textarea>
+      </label>
+    `,
+  };
+
   return `
     <div class="detail-section roster-section">
       <h3>${isCreateMode ? "New Build Draft" : "Build Draft"}</h3>
-      <p class="source-note">Manual planner v2 for <strong>${escapeHtml(getActiveProfile()?.name || "selected profile")}</strong>. The Feasibility panel below applies Tier 1 deterministic formulas (aptitude, HP, stat thresholds, skill activation) - no opponent or position simulation yet.</p>
+      <p class="source-note">Planner for <strong>${escapeHtml(getActiveProfile()?.name || "selected profile")}</strong>. The panels below are the deterministic proposal readout (aptitude, HP, stat thresholds, skill activation, last-spurt projection) — no opponent or position simulation. Refine the draft in the tabs.</p>
       ${renderBuildInsightPanels(entry)}
       <form id="buildForm" class="roster-form" data-build-id="${escapeHtml(entry.id || "")}" data-build-mode="${isCreateMode ? "create" : "edit"}">
-        <label class="field-stack field-stack-full">
-          <span>Name</span>
-          <input name="name" type="text" maxlength="120" value="${escapeHtml(entry.name || "")}" placeholder="Champions Meeting draft">
-        </label>
-        <div class="roster-field-grid">
-          <label class="field-stack">
-            <span>Mode</span>
-            <select name="mode">
-              ${BUILD_MODE_OPTIONS.map((option) => `<option value="${escapeHtml(option.value)}" ${entry.mode === option.value ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
-            </select>
-          </label>
-          <label class="field-stack">
-            <span>Status</span>
-            <select name="status">
-              ${BUILD_STATUS_OPTIONS.map((option) => `<option value="${escapeHtml(option.value)}" ${entry.status === option.value ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
-            </select>
-          </label>
+        <div class="build-tabs" role="tablist">
+          ${BUILD_EDITOR_TABS.map((tab) => `<button type="button" class="build-tab${tab.key === activeTab ? " active" : ""}" data-build-tab="${tab.key}">${escapeHtml(tab.label)}</button>`).join("")}
         </div>
-        <div class="roster-field-grid">
-          <label class="field-stack">
-            <span>CM Target</span>
-            <select name="target_id">
-              ${renderSelectOptions(targetOptions, entry.target_id, "No CM target")}
-            </select>
-          </label>
-          <label class="field-stack">
-            <span>Scenario</span>
-            <select name="scenario_id">
-              ${renderSelectOptions(scenarioOptions, entry.scenario_id, "No scenario")}
-            </select>
-          </label>
-          <label class="field-stack field-stack-full">
-            <span>Main Character</span>
-            ${renderBuildCharacterSelect(entry)}
-          </label>
-          <label class="field-stack">
-            <span>Running Style</span>
-            <select name="running_style">
-              ${BUILD_RUNNING_STYLE_OPTIONS.map((option) => `<option value="${escapeHtml(option.value)}" ${(entry.running_style || "") === option.value ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
-            </select>
-          </label>
-        </div>
-        <div class="build-form-section">
-          <h3>Support Deck</h3>
-          ${renderBuildSupportPicker(selectedSupports)}
-        </div>
-        <div class="roster-field-grid">
-          <label class="field-stack">
-            <span>Parent A</span>
-            <select name="parent_a">
-              ${renderSelectOptions(parentOptions.visible.map((option) => ({
-                value: option.value,
-                label: `${option.label}${option.sparkText ? ` - ${option.sparkText}` : ""}`,
-              })), entry.legacy_pair?.parent_a, "No parent")}
-            </select>
-          </label>
-          <label class="field-stack">
-            <span>Parent B</span>
-            <select name="parent_b">
-              ${renderSelectOptions(parentOptions.visible.map((option) => ({
-                value: option.value,
-                label: `${option.label}${option.sparkText ? ` - ${option.sparkText}` : ""}`,
-              })), entry.legacy_pair?.parent_b, "No parent")}
-            </select>
-          </label>
-        </div>
-        ${parentOptions.hiddenCount ? `<p class='source-note'>${escapeHtml(`${parentOptions.hiddenCount} parents hidden because their pink spark does not match the target.`)}</p>` : ""}
-        <label class="build-inline-toggle"><input type="checkbox" id="buildShowAllParents" ${state.buildEditor.showAllParents ? "checked" : ""}> Show all saved parents</label>
-        ${state.legacyView.items.length ? "" : "<p class='source-note'>No saved parent yet. Add parents in the Legacy tab when you want to test inheritance planning.</p>"}
-        <div class="build-form-section">
-          <h3>Target Stats</h3>
-          ${renderBuildStatsFields(entry)}
-        </div>
-        <div class="build-form-section">
-          <h3>Target Aptitudes</h3>
-          ${renderBuildAptitudeFields(entry)}
-        </div>
-        ${renderBuildSkillEditor(entry)}
-        <label class="field-stack field-stack-full">
-          <span>Tags</span>
-          <input name="custom_tags" type="text" value="${escapeHtml(asArray(entry.custom_tags).join(", "))}" placeholder="mile, test, safe">
-        </label>
-        <label class="field-stack field-stack-full">
-          <span>Notes</span>
-          <textarea name="notes" rows="5" placeholder="Training assumptions, substitutes, run notes">${escapeHtml(entry.notes || "")}</textarea>
-        </label>
+        ${BUILD_EDITOR_TABS.map((tab) => `<div class="build-tab-panel${tab.key === activeTab ? " active" : ""}" data-build-tab-panel="${tab.key}">${tabBodies[tab.key]}</div>`).join("")}
         <div class="roster-actions">
           <button type="submit" class="button-strong">Save build</button>
           ${isCreateMode ? "" : `<button type="button" class="button-danger" id="deleteBuildButton">Delete build</button>`}
@@ -1101,6 +1140,16 @@ export function attachBuildFormListeners(isCreateMode, buildId) {
     return;
   }
   state.buildEditor.targetKey = getBuildEditorKey(isCreateMode, buildId);
+
+  // Tab switch: capture the current form state first (all fields are in the
+  // DOM regardless of the visible tab), then re-render with the new active tab.
+  buildForm.querySelectorAll("[data-build-tab]").forEach((button) => {
+    button.addEventListener("click", () => {
+      captureBuildFormDraft(isCreateMode, buildId);
+      state.buildEditor.activeFormTab = button.dataset.buildTab;
+      requestRenderPreservingScroll();
+    });
+  });
 
   buildForm.querySelectorAll('input[name="support_deck"]').forEach((input) => {
     input.addEventListener("change", () => {

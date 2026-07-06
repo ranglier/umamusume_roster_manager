@@ -11,7 +11,7 @@ import {
   SKILL_HIGHLIGHT_CLASSES,
 } from "./visualizer.js";
 import { recommendBuildForTarget, recommendSkillsForBuild, recommendSupportDeck, targetProfileFromCmDetail } from "./build_recommender.js";
-import { getSkillReferenceItem, getSupportOwnedSummary } from "./builds.js";
+import { getSkillReferenceItem, getSupportOwnedSummary, startSeededBuildDraft } from "./builds.js";
 import { getOwnedSupportOptions } from "./core.js";
 import { requestRenderPreservingScroll, requestRenderPreservingScrollAndFocus } from "../app.js";
 
@@ -840,7 +840,7 @@ export function attachCmTargetRecommendationListeners(detail) {
         return;
       }
       const skill = reco.skillReco || { required: [], optional: [] };
-      state.pendingBuildSeed = {
+      startSeededBuildDraft({
         target_id: String(detail.id),
         character_id: reco.characterId,
         running_style: reco.bestStyle,
@@ -849,7 +849,7 @@ export function attachCmTargetRecommendationListeners(detail) {
         required_skills: [...skill.required],
         optional_skills: [...skill.optional],
         name: `${detail.name} — ${reco.title}`,
-      };
+      });
       setBrowseHash("roster", "builds", "__new__");
     });
   });

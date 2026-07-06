@@ -960,8 +960,32 @@ Phase 2b livree (skills par categorie d'effet):
   erreur console
 
 L'auto-build est donc complet (uma+style+stats+deck+skills pre-remplis en un
-clic). Reste: Phase 3 = refonte ergonomique de l'editeur (formulaire de
-10000px -> vue menee par la proposition); Phase 4 = reorientation nav.
+clic).
+
+## Phase 3 livree (refonte ergonomique de l'editeur)
+
+Le formulaire manuel de ~10000px devient une vue menee par la proposition, a
+divulgation progressive:
+
+- le readout deterministe (panneaux Feasibility/Last Spurt/aptitude...) mene;
+  le formulaire lourd (66 controles) est decoupe en **onglets** (Setup /
+  Support Deck / Stats & Aptitudes / Skills / Parents / Notes & Tags) — un
+  seul onglet visible a la fois. Hauteur de page ~10000px -> ~4400px
+- tous les champs restent dans le DOM (onglets = show/hide CSS), donc la
+  capture `FormData`, le re-render live du draft et la preservation du focus
+  fonctionnent inchanges. `state.buildEditor.activeFormTab` persiste l'onglet
+  actif a travers les re-renders
+- correctif au passage: le seed de reco etait perdu si `render()` (async)
+  appelait `createEmptyBuildEntry` deux fois (seed one-shot consomme au 1er
+  passage). Nouveau `startSeededBuildDraft` stocke l'entree seedee dans
+  `state.buildEditor.draft` (persistant) — plus de course. Le bouton "New
+  build" nettoie ce draft pour un formulaire vraiment vierge
+- verifie en navigateur: draft pre-rempli correct (uma/style/stats/deck/
+  skills), navigation entre onglets preservant tout (Skills 10 chips, Deck
+  6 coches, Setup intact), zero erreur console
+
+Reste: Phase 4 = reorientation de la navigation (la preparation CM comme
+entree principale de l'app).
 
 ## Sources utiles
 
