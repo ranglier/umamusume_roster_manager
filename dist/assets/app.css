@@ -127,8 +127,8 @@ body.route-wizard::after {
 
 .page-shell {
   width: 100%;
-  max-width: none;
-  margin: 0;
+  max-width: 1880px;
+  margin-inline: auto;
   position: relative;
   z-index: 1;
   display: flex;
@@ -4326,6 +4326,14 @@ code {
 
    compact (1100) is wired to compactLayoutQuery in core.js — keep in sync.
    ========================================================================== */
+
+/* Ultrawide: one more card column before the shell's 1880px cap centers the
+   content (extra space becomes side gutters). */
+@media (min-width: 1900px) {
+  .result-list {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
 
 @media (max-width: 1440px) {
   .result-list {
