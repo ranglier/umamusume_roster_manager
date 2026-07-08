@@ -1,6 +1,6 @@
-# Umamusume Roster Manager
+# Umanager
 
-Umamusume Roster Manager is a local companion app for `Umamusume Pretty Derby`.
+Umanager (formerly Umamusume Roster Manager) is a local companion app for `Umamusume Pretty Derby`.
 
 The project is built to help you:
 

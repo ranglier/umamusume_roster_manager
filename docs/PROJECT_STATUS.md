@@ -565,7 +565,7 @@ Ajouts recents:
 
 - wizard modalise pour le premier demarrage
 - page d'administration locale
-- favicon `URM`
+- favicon `URM` (remplace depuis par le monogramme "U" en degrade, app renommee "Umanager")
 - progression d'update rendue plus explicite pour les longues operations
 - nouveaux datasets visibles immediatement dans la navbar:
   - `CM Targets`
