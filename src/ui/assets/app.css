@@ -302,7 +302,7 @@ body.legacy-detail-expanded.legacy-create-active .app-layout {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  max-width: 1080px;
+  max-width: 1200px;
 }
 
 .home-eyebrow {
@@ -375,8 +375,34 @@ body.legacy-detail-expanded.legacy-create-active .app-layout {
 
 .home-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: 1.5fr 1fr;
+  grid-template-areas:
+    "builds collection"
+    "builds references";
   gap: 12px;
+  align-items: start;
+}
+
+.home-grid > .home-card:nth-child(1) {
+  grid-area: builds;
+}
+
+.home-grid > .home-card:nth-child(2) {
+  grid-area: collection;
+}
+
+.home-grid > .home-card:nth-child(3) {
+  grid-area: references;
+}
+
+@media (max-width: 1024px) {
+  .home-grid {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "builds"
+      "collection"
+      "references";
+  }
 }
 
 .home-card {
@@ -507,7 +533,7 @@ body.legacy-detail-expanded.legacy-create-active .app-layout {
   text-decoration: underline;
 }
 
-/* Phase 3 "Prépa CM" hub (roster/builds list view). */
+/* Phase 3 "CM Prep" hub (roster/builds list view). */
 .prepa-hub {
   display: flex;
   flex-direction: column;
@@ -897,6 +923,18 @@ body.route-roster .meta-block::before {
 
 .meta-block:last-child::before {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='8' fill='%23d37a2c'/%3E%3Cpath d='M6 8h12M6 12h5m-5 4h8' stroke='white' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+
+/* Icons keyed by id so a block that is both first- and last-child (each meta
+   block now stands alone: Last Build in the header, Active Profile in the
+   sidebar footer) still gets its own on-theme teal icon instead of inheriting
+   the generic last-child one. */
+#lastBuildBlock::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='8' fill='%230f6e82'/%3E%3Cpath d='M12 6v6l4 2' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3Ccircle cx='12' cy='12' r='6.5' stroke='white' stroke-width='2' fill='none'/%3E%3C/svg%3E");
+}
+
+#activeProfileBlock::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='8' fill='%230f6e82'/%3E%3Ccircle cx='12' cy='9' r='3' fill='white'/%3E%3Cpath d='M6 18c0-3 2.7-4.6 6-4.6s6 1.6 6 4.6' fill='white'/%3E%3C/svg%3E");
 }
 
 .meta-label {
@@ -1398,7 +1436,7 @@ body.route-wizard .profile-gate {
   border-radius: 30px;
   border-color: rgba(110, 209, 255, 0.28);
   background:
-    linear-gradient(145deg, rgba(28, 20, 16, 0.8), rgba(11, 10, 12, 0.88)),
+    linear-gradient(145deg, rgba(16, 24, 20, 0.82), rgba(9, 12, 11, 0.9)),
     linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent);
   box-shadow:
     0 28px 60px rgba(1, 6, 12, 0.52),

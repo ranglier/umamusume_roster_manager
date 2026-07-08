@@ -230,45 +230,45 @@ export function renderHomePage() {
           `;
         })
         .join("")
-    : `<p class="home-empty">Aucun build encore. Lance une prépa CM pour commencer.</p>`;
+    : `<p class="home-empty">No build yet. Start a CM prep to begin.</p>`;
 
   profileGateEl.innerHTML = `
     <div class="home-dashboard">
       <div class="home-hero">
-        <p class="home-eyebrow">Profil · ${escapeHtml(profileName)}</p>
-        <h1 class="home-title">Bienvenue</h1>
-        <p class="home-sub">Prépare tes builds de Champions Meeting à partir de ton roster.</p>
+        <p class="home-eyebrow">Profile · ${escapeHtml(profileName)}</p>
+        <h1 class="home-title">Welcome</h1>
+        <p class="home-sub">Plan your Champions Meeting builds from your roster.</p>
       </div>
 
       <button type="button" class="home-cta" id="homeStartBuild">
         <span class="home-cta-copy">
-          <strong>Préparer une Champions Meeting</strong>
-          <span>Cible → uma de ton roster → deck → skills</span>
+          <strong>Prepare a Champions Meeting</strong>
+          <span>Target → uma from your roster → deck → skills</span>
         </span>
         <span class="home-cta-arrow" aria-hidden="true">→</span>
       </button>
 
       <div class="home-grid">
         <section class="home-card">
-          <h2 class="home-card-title">Reprendre un build</h2>
+          <h2 class="home-card-title">Resume a build</h2>
           <div class="home-build-list">${buildsMarkup}</div>
-          <button type="button" class="home-card-link" data-home-nav="builds">Tous les builds →</button>
+          <button type="button" class="home-card-link" data-home-nav="builds">All builds →</button>
         </section>
 
         <section class="home-card">
-          <h2 class="home-card-title">Ma collection</h2>
+          <h2 class="home-card-title">My Collection</h2>
           <div class="home-stat-row">
-            <div class="home-stat"><strong>${ownedCharacters}</strong><span>persos</span></div>
+            <div class="home-stat"><strong>${ownedCharacters}</strong><span>characters</span></div>
             <div class="home-stat"><strong>${ownedSupports}</strong><span>supports</span></div>
             <div class="home-stat"><strong>${savedParents}</strong><span>parents</span></div>
           </div>
-          <button type="button" class="home-card-link" data-home-nav="collection">Gérer ma collection →</button>
+          <button type="button" class="home-card-link" data-home-nav="collection">Manage my collection →</button>
         </section>
 
-        <section class="home-card home-card-wide">
-          <h2 class="home-card-title">Références</h2>
-          <p class="home-card-note">Skills · Courses · Circuits · Scénarios · Compatibilités</p>
-          <button type="button" class="home-card-link" data-home-nav="reference">Ouvrir les références →</button>
+        <section class="home-card">
+          <h2 class="home-card-title">References</h2>
+          <p class="home-card-note">Skills · Races · Tracks · Scenarios · Compatibility</p>
+          <button type="button" class="home-card-link" data-home-nav="reference">Open references →</button>
         </section>
       </div>
     </div>
@@ -613,11 +613,11 @@ export function renderList(mode, entityKey, filteredItems) {
 }
 
 
-// Phase 3 "Prépa CM" hub: replaces the flat build list with a status-grouped
+// Phase 3 "CM Prep" hub: replaces the flat build list with a status-grouped
 // board plus a launcher that brings the CM-target recommendation (previously only
 // reachable from the Catalog) next to the build editor. Selecting a CM target runs
 // the tested recommender engine (getCmTargetRecommendations) against the owned
-// roster; "Construire" seeds a draft and opens it in the detail editor.
+// roster; "Build" seeds a draft and opens it in the detail editor.
 export function renderBuildsHub(filteredItems, localState) {
   const cmTargetOptions = getBuildTargetOptions("cm_targets");
   const groups = BUILD_STATUS_OPTIONS
@@ -639,7 +639,7 @@ export function renderBuildsHub(filteredItems, localState) {
               ${group.items
                 .map((item) => {
                   const labels = item.detail?.labels || {};
-                  const subtitle = [labels.character, labels.target].filter(Boolean).join(" · ") || "Aucun perso";
+                  const subtitle = [labels.character, labels.target].filter(Boolean).join(" · ") || "No character";
                   return `
                     <button type="button" class="prepa-build-card ${item.id === localState.selectedId ? "active" : ""}" data-item-id="${escapeHtml(item.id)}">
                       <strong>${escapeHtml(item.title)}</strong>
@@ -653,19 +653,19 @@ export function renderBuildsHub(filteredItems, localState) {
           </section>
         `)
         .join("")
-    : `<p class="home-empty">Aucun build pour le moment. Choisis une cible CM ci-dessus, ou pars d'un build vierge.</p>`;
+    : `<p class="home-empty">No build yet. Pick a CM target above, or start from a blank build.</p>`;
 
   listEl.innerHTML = `
     <div class="prepa-hub">
       <section class="prepa-launcher">
         <div class="prepa-launcher-head">
-          <h3>Nouvelle prépa CM</h3>
-          <button type="button" class="button-secondary" id="prepaBlankBuild">Build vierge</button>
+          <h3>New CM prep</h3>
+          <button type="button" class="button-secondary" id="prepaBlankBuild">Blank build</button>
         </div>
         <label class="field-stack">
-          <span>Cible Champions Meeting</span>
+          <span>Champions Meeting target</span>
           <select id="prepaCmTargetSelect">
-            <option value="">Choisir une cible…</option>
+            <option value="">Choose a target…</option>
             ${cmTargetOptions.map((option) => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`).join("")}
           </select>
         </label>
@@ -707,7 +707,7 @@ export function renderBuildsHub(filteredItems, localState) {
 
 // Compact reco list for a chosen CM target, reusing the tested recommender. Each
 // row seeds a fresh build draft (same seed shape as the Catalog CM reco) and opens
-// the editor, so CM prep now lives entirely inside the Prépa CM section.
+// the editor, so CM prep now lives entirely inside the CM Prep section.
 function renderPrepaReco(targetId, panel) {
   if (!panel) {
     return;
@@ -720,21 +720,21 @@ function renderPrepaReco(targetId, panel) {
   const cmItem = getEntityItems("cm_targets").find((item) => String(item.id) === String(targetId));
   const detail = cmItem?.detail;
   if (!detail) {
-    panel.innerHTML = "<p class='source-note'>Cible introuvable.</p>";
+    panel.innerHTML = "<p class='source-note'>Target not found.</p>";
     return;
   }
 
   const recos = getCmTargetRecommendations(detail);
   const deck = getCmTargetDeck(detail).result.deck;
   if (!recos.length) {
-    panel.innerHTML = "<p class='source-note'>Aucun uma possédé à recommander pour cette cible. Ajoute des personnages à ta collection d'abord.</p>";
+    panel.innerHTML = "<p class='source-note'>No owned uma to recommend for this target. Add characters to your collection first.</p>";
     return;
   }
 
   const styleLabel = (key) => BUILD_RUNNING_STYLE_OPTIONS.find((option) => option.value === key)?.label || key || "-";
 
   panel.innerHTML = `
-    <p class="prepa-reco-title">Uma de ton roster recommandés</p>
+    <p class="prepa-reco-title">Recommended uma from your roster</p>
     <div class="prepa-reco-list">
       ${recos
         .map((reco) => `
@@ -744,7 +744,7 @@ function renderPrepaReco(targetId, panel) {
               <span>${escapeHtml(styleLabel(reco.bestStyle))} · fit ${reco.fitScore.toFixed(2)}</span>
             </span>
             <span class="prepa-reco-grades">${renderGradeBadge(reco.surfaceGrade)}${renderGradeBadge(reco.distanceGrade)}</span>
-            <button type="button" class="button-strong prepa-reco-build" data-reco-char="${escapeHtml(reco.characterId)}">Construire</button>
+            <button type="button" class="button-strong prepa-reco-build" data-reco-char="${escapeHtml(reco.characterId)}">Build</button>
           </div>
         `)
         .join("")}
@@ -1011,9 +1011,9 @@ export function syncHeader(route) {
 
   if (route.page === "home") {
     // The home dashboard renders its own hero; the top header stays hidden here.
-    pageTitleEl.textContent = "Accueil";
+    pageTitleEl.textContent = "Home";
     summaryText.textContent = "";
-    datasetHeadingEl.textContent = "Accueil";
+    datasetHeadingEl.textContent = "Home";
     return;
   }
 

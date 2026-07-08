@@ -949,11 +949,11 @@ export const BUILD_EDITOR_TABS = [
 // flow — they remain available once the draft is saved and reopens in edit mode's
 // full tab set. Reuses the exact same tab panel bodies, so nothing is duplicated.
 export const BUILD_ASSISTANT_STEPS = [
-  { key: "setup", label: "Cible & uma" },
+  { key: "setup", label: "Target & uma" },
   { key: "deck", label: "Deck" },
   { key: "stats", label: "Stats" },
   { key: "skills", label: "Skills" },
-  { key: "recap", label: "Récap" },
+  { key: "recap", label: "Recap" },
 ];
 
 // Ergonomic rework (docs/CM_BUILD_PLAN.md phase 3): the proposal readout
@@ -1081,7 +1081,7 @@ export function renderBuildEditor(entry, isCreateMode, labels = {}) {
       parents: [],
     };
     const recapBody = `
-      <p class="source-note">Vérifie la proposition (panneaux ci-dessus), puis crée le build. Les parents et notes se règlent ensuite dans l'éditeur complet.</p>
+      <p class="source-note">Review the proposal (panels above), then create the build. Parents and notes are set afterwards in the full editor.</p>
       ${renderBuildReferenceSummary(entry, recapLabels)}
     `;
     const stepBodies = { ...tabBodies, recap: recapBody };
@@ -1101,10 +1101,10 @@ export function renderBuildEditor(entry, isCreateMode, labels = {}) {
         </div>
         ${BUILD_ASSISTANT_STEPS.map((step) => `<div class="build-tab-panel${step.key === activeStep ? " active" : ""}" data-build-tab-panel="${step.key}">${stepBodies[step.key]}</div>`).join("")}
         <div class="roster-actions build-assistant-nav">
-          ${activeStep !== "setup" ? `<button type="button" class="button-secondary" data-assistant-nav="prev">Précédent</button>` : "<span></span>"}
+          ${activeStep !== "setup" ? `<button type="button" class="button-secondary" data-assistant-nav="prev">Back</button>` : "<span></span>"}
           ${activeStep !== "recap"
-            ? `<button type="button" class="button-strong" data-assistant-nav="next">Suivant</button>`
-            : `<button type="submit" class="button-strong">Créer le build</button>`}
+            ? `<button type="button" class="button-strong" data-assistant-nav="next">Next</button>`
+            : `<button type="submit" class="button-strong">Create build</button>`}
         </div>
         ${statusLine}
       </form>
@@ -1127,9 +1127,9 @@ export function renderBuildEditor(entry, isCreateMode, labels = {}) {
 
   return `
     <div class="detail-section roster-section">
-      <h3>${isCreateMode ? "Assistant Prépa CM" : "Build Draft"}</h3>
+      <h3>${isCreateMode ? "CM Prep Assistant" : "Build Draft"}</h3>
       <p class="source-note">${isCreateMode
-        ? `Parcours guidé pour <strong>${escapeHtml(getActiveProfile()?.name || "selected profile")}</strong>. Les panneaux ci-dessous sont la proposition déterministe (aptitude, HP, seuils de stats, activation des skills, projection du dernier sprint). Avance étape par étape.`
+        ? `Guided flow for <strong>${escapeHtml(getActiveProfile()?.name || "selected profile")}</strong>. The panels below are the deterministic proposal readout (aptitude, HP, stat thresholds, skill activation, last-spurt projection). Move through it step by step.`
         : `Planner for <strong>${escapeHtml(getActiveProfile()?.name || "selected profile")}</strong>. The panels below are the deterministic proposal readout (aptitude, HP, stat thresholds, skill activation, last-spurt projection) — no opponent or position simulation. Refine the draft in the tabs.`}</p>
       ${renderBuildInsightPanels(entry)}
       ${formMarkup}

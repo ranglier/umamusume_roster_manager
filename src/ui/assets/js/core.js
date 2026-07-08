@@ -86,7 +86,7 @@ export const referenceEntityKeys = Object.keys(data.entities);
 export const legacyEntityKey = "legacy";
 export const buildsEntityKey = "builds";
 export const rosterEntityKeys = ["characters", "supports", legacyEntityKey, buildsEntityKey];
-// Collection sub-nav = roster minus builds (builds now lives under the "Prépa CM"
+// Collection sub-nav = roster minus builds (builds now lives under the "CM Prep"
 // section). This is a view-layer grouping only; allowedEntityKeys("roster") keeps
 // returning the full tested list, so the route model / tests are untouched.
 export const collectionEntityKeys = ["characters", "supports", legacyEntityKey];
@@ -899,14 +899,12 @@ export function setBrowseHash(mode, entityKey, itemId) {
 
 // Task-oriented sidebar sections. Each is a pure view-layer projection over the
 // existing route grammar (setBrowseHash / setAdminHash), so no new routing scheme
-// is introduced. `target()` is deferred to click time. Later phases (Accueil
-// dashboard, Prépa CM hub) only re-point a `target` and add a branch below.
+// is introduced. `target()` is deferred to click time.
 export const SIDEBAR_SECTIONS = [
-  { id: "accueil", label: "Accueil", icon: "home", target: () => setHomeHash() },
-  // TODO(phase3): give Prépa CM its own hub screen (builds board + CM reco).
-  { id: "prepa_cm", label: "Prépa CM", icon: "target", target: () => setBrowseHash("roster", buildsEntityKey, null) },
-  { id: "collection", label: "Ma collection", icon: "collection", target: () => setBrowseHash("roster", "characters", null) },
-  { id: "reference", label: "Références", icon: "reference", target: () => setBrowseHash("reference", defaultEntityKeyForMode("reference"), null) },
+  { id: "accueil", label: "Home", icon: "home", target: () => setHomeHash() },
+  { id: "prepa_cm", label: "CM Prep", icon: "target", target: () => setBrowseHash("roster", buildsEntityKey, null) },
+  { id: "collection", label: "My Collection", icon: "collection", target: () => setBrowseHash("roster", "characters", null) },
+  { id: "reference", label: "References", icon: "reference", target: () => setBrowseHash("reference", defaultEntityKeyForMode("reference"), null) },
   { id: "admin", label: "Admin", icon: "admin", target: () => setAdminHash() },
 ];
 
