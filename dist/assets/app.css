@@ -302,18 +302,24 @@ body.legacy-detail-expanded.legacy-create-active .app-layout {
 .sidebar-toggle {
   display: none;
   position: fixed;
-  top: 10px;
-  left: 10px;
+  top: 15px;
+  left: 13px;
   z-index: 80;
-  width: 40px;
-  height: 40px;
+  width: 34px;
+  height: 34px;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(95, 212, 198, 0.3);
-  border-radius: 10px;
-  background: var(--panel-strong);
-  box-shadow: var(--shadow-soft);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel);
   cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.sidebar-toggle:hover,
+.sidebar-toggle:focus-visible {
+  background: var(--panel-strong);
+  border-color: rgba(95, 212, 198, 0.35);
 }
 
 .sidebar-toggle-bars,
@@ -4641,15 +4647,16 @@ code {
     pointer-events: auto;
   }
 
-  /* Make room for the fixed hamburger so it doesn't cover the content's
-     top-left (title / hero). Not on the gate, where the hamburger is hidden. */
-  .main-column {
-    padding-left: 44px;
+  /* Clear the fixed hamburger only on the top-left row of each screen (the
+     title row on browse, the hero on the home/admin gate) — not the whole
+     column, so no empty left gutter runs down the page. */
+  .toolbar-top {
+    padding-left: 46px;
   }
 
-  body.route-profiles .main-column,
-  body.route-wizard .main-column {
-    padding-left: 0;
+  body.route-home #profileGate,
+  body.route-admin #profileGate {
+    padding-left: 46px;
   }
 
   body.route-profiles .sidebar-toggle,
