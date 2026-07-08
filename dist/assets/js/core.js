@@ -951,6 +951,7 @@ export function createEntityState(mode, entityKey) {
   return {
     query: "",
     filters: getDefaultFilters(entityKey, mode),
+    filtersOpen: false,
     selectedId: null,
     presentation: mode === "roster" ? (entityKey === legacyEntityKey ? "parents" : "detail") : "cards",
   };

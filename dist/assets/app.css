@@ -1010,9 +1010,15 @@ body.route-catalog .dataset-bar {
   position: sticky;
   top: var(--sticky-offset);
   z-index: 35;
+  padding: 10px 12px;
   border-color: rgba(95, 212, 198, 0.16);
   background:
     linear-gradient(135deg, rgba(18, 28, 24, 0.98), rgba(14, 19, 17, 0.96));
+}
+
+.toolbar-top h2 {
+  font-size: 1.3rem;
+  line-height: 1.15;
 }
 
 .compact-heading {
@@ -1216,7 +1222,12 @@ body.route-catalog .entity-button .entity-meta {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
-  margin: 10px 0 10px;
+  margin: 8px 0;
+}
+
+.search-row input[type="search"] {
+  padding-top: 8px;
+  padding-bottom: 8px;
 }
 
 input[type="search"],
@@ -1304,10 +1315,72 @@ button {
   border-color: rgba(255, 107, 107, 0.28);
 }
 
-.filters {
-  display: flex;
+.filters-collapse-summary {
+  list-style: none;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  padding: 7px 14px 7px 34px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(17, 31, 46, 0.94), rgba(13, 24, 35, 0.92));
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 0.85rem;
+}
+
+.filters-collapse-summary::-webkit-details-marker {
+  display: none;
+}
+
+.filters-collapse-summary::before {
+  content: "";
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 14px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M2 3h12l-4.5 5v4l-3-1.8V8z' fill='%230f6e82'/%3E%3C/svg%3E") center/14px 14px no-repeat;
+}
+
+.filters-collapse-summary::after {
+  content: "\25B8";
+  color: var(--accent);
+  font-size: 0.72rem;
+  transition: transform 120ms ease;
+}
+
+.filters-collapse[open] .filters-collapse-summary::after {
+  transform: rotate(90deg);
+}
+
+.filters-active-count {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #04211e;
+  font-size: 0.72rem;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.filters-grid {
   flex-wrap: wrap;
   gap: 8px;
+  margin-top: 8px;
+}
+
+/* Only lay out the grid when the details is open; a bare `display: flex` would
+   override the UA rule that hides a closed <details>'s content. */
+.filters-collapse[open] .filters-grid {
+  display: flex;
 }
 
 .filter-box {
@@ -1397,6 +1470,13 @@ button {
 
 .results-panel {
   min-width: 0;
+  padding: 10px 12px;
+}
+
+/* The "Results" heading duplicates the toolbar's visible-count chip; hide it to
+   lift the first result row higher on small screens. */
+.results-panel > .section-heading {
+  display: none;
 }
 
 .profile-gate {
@@ -4191,20 +4271,6 @@ code {
     grid-template-columns: 1fr;
   }
 
-  .toolbar-top,
-  .section-heading {
-    flex-wrap: wrap;
-  }
-
-  .toolbar-top-side {
-    width: 100%;
-    justify-content: flex-start;
-  }
-
-  .count-chip {
-    align-self: flex-start;
-  }
-
   .entity-nav {
     flex-wrap: wrap;
     overflow-x: visible;
@@ -4289,19 +4355,9 @@ code {
 }
 
 @media (max-width: 1280px) {
-  .toolbar-top,
   .section-heading {
     flex-direction: column;
     align-items: flex-start;
-  }
-
-  .search-row {
-    grid-template-columns: 1fr;
-  }
-
-  .filters {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   }
 
   .filter-box {
@@ -4368,6 +4424,20 @@ code {
 
   .legacy-wizard-summary {
     position: static;
+  }
+}
+
+/* Keep the browse toolbar horizontal/compact down to ~1000px (with the sidebar
+   there is still room); only stack the title row and search+reset on genuinely
+   narrow windows so the toolbar stays short on 14" laptops. */
+@media (max-width: 1000px) {
+  .toolbar-top {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .search-row {
+    grid-template-columns: 1fr;
   }
 }
 

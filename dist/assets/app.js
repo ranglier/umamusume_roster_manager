@@ -336,7 +336,7 @@ export function renderNav(mode, activeKey, keys = allowedEntityKeys(mode), targe
 export function renderFilters(mode, entityKey) {
   const localState = getViewState(mode, entityKey);
 
-  filtersEl.innerHTML = getFilterDefinitions(mode, entityKey)
+  const boxesMarkup = getFilterDefinitions(mode, entityKey)
     .map((definition) => {
       const options = getFilterOptions(mode, entityKey, definition);
       if (!options.length) {
@@ -368,6 +368,34 @@ export function renderFilters(mode, entityKey) {
       `;
     })
     .join("");
+
+  if (!boxesMarkup.trim()) {
+    filtersEl.innerHTML = "";
+    return;
+  }
+
+  // Collapsed by default so the filter grid stops pushing results below the fold
+  // on small screens. The active-filter count stays visible on the collapsed
+  // summary, and the open state is remembered per view (localState.filtersOpen).
+  const activeCount = Object.values(localState.filters || {})
+    .reduce((total, values) => total + (Array.isArray(values) ? values.length : 0), 0);
+
+  filtersEl.innerHTML = `
+    <details class="filters-collapse" ${localState.filtersOpen ? "open" : ""}>
+      <summary class="filters-collapse-summary">
+        <span class="filters-collapse-label">Filters</span>
+        ${activeCount ? `<span class="filters-active-count">${activeCount}</span>` : ""}
+      </summary>
+      <div class="filters-grid">${boxesMarkup}</div>
+    </details>
+  `;
+
+  const collapseEl = filtersEl.querySelector(".filters-collapse");
+  if (collapseEl) {
+    collapseEl.addEventListener("toggle", () => {
+      localState.filtersOpen = collapseEl.open;
+    });
+  }
 
   filtersEl.querySelectorAll("[data-filter-key]").forEach((input) => {
     input.addEventListener("change", (event) => {
@@ -1038,7 +1066,10 @@ export function syncShellVisibility(route) {
   const isProfilesLikePage = isGatePage;
   profileGateEl.hidden = !isGatePage;
   if (topHeaderEl) {
-    topHeaderEl.hidden = isProfilesLikePage;
+    // The sidebar (active section) and the toolbar (dataset title + counts)
+    // already convey what the old top header showed, so hide it on browse pages
+    // too — it was pure duplication eating vertical space on small screens.
+    topHeaderEl.hidden = isProfilesLikePage || route.page === "browse";
   }
   // The old #datasetBar is an empty shell now (its entity nav moved into the
   // sidebar); keep it hidden on every route.
