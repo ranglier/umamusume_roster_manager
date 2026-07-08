@@ -297,6 +297,64 @@ body.legacy-detail-expanded.legacy-create-active .app-layout {
   border-top: 1px solid var(--border);
 }
 
+/* Hamburger toggle + backdrop for the off-canvas sidebar (shown only <=1440px;
+   see the media block near the bottom of this file). Hidden in rail mode. */
+.sidebar-toggle {
+  display: none;
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  z-index: 80;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(95, 212, 198, 0.3);
+  border-radius: 10px;
+  background: var(--panel-strong);
+  box-shadow: var(--shadow-soft);
+  cursor: pointer;
+}
+
+.sidebar-toggle-bars,
+.sidebar-toggle-bars::before,
+.sidebar-toggle-bars::after {
+  display: block;
+  width: 18px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--text);
+}
+
+.sidebar-toggle-bars {
+  position: relative;
+}
+
+.sidebar-toggle-bars::before,
+.sidebar-toggle-bars::after {
+  content: "";
+  position: absolute;
+  left: 0;
+}
+
+.sidebar-toggle-bars::before {
+  top: -6px;
+}
+
+.sidebar-toggle-bars::after {
+  top: 6px;
+}
+
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 65;
+  background: rgba(2, 6, 4, 0.5);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.22s ease;
+}
+
 /* Phase 2 home dashboard (renders inside #profileGate on the #/home route). */
 .home-dashboard {
   display: flex;
@@ -4252,7 +4310,24 @@ code {
   pointer-events: auto;
 }
 
-@media (max-width: 1600px) {
+/* ==========================================================================
+   PC responsive breakpoint scale (desktop-first, max-width). Values are
+   VIEWPORT px; the left sidebar (rail) eats ~264px, so content width is
+   ~264px narrower than the viewport UNLESS the sidebar is in overlay mode
+   (<=1440px), where content is the full viewport.
+
+     ultrawide   min-width:1900  rail       2-col detail   result-list 5
+     desktop     (base)          rail       2-col detail   result-list 4
+     small-laptop max-width:1440 hamburger  2-col detail   result-list 3
+     compact     max-width:1100  hamburger  detail stacks  result-list 2
+     narrow      max-width:820   hamburger  stacked        result-list 1
+     panel reflow max-width:1280 (orthogonal: form/panel single-column)
+     toolbar      max-width:1000 (orthogonal: toolbar-top + search stack)
+
+   compact (1100) is wired to compactLayoutQuery in core.js — keep in sync.
+   ========================================================================== */
+
+@media (max-width: 1440px) {
   .result-list {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -4265,20 +4340,6 @@ code {
 
   .detail-column {
     display: none;
-  }
-
-  .top-header {
-    grid-template-columns: 1fr;
-  }
-
-  .entity-nav {
-    flex-wrap: wrap;
-    overflow-x: visible;
-  }
-
-  .entity-button {
-    flex: 1 1 210px;
-    min-width: 210px;
   }
 
   .detail-panel {
@@ -4487,12 +4548,6 @@ code {
     grid-template-columns: 1fr;
   }
 
-  .toolbar-top,
-  .section-heading {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
   .result-list {
     grid-template-columns: 1fr;
   }
@@ -4527,18 +4582,6 @@ code {
     font-size: 0.86rem;
   }
 
-  .search-row {
-    grid-template-columns: 1fr;
-  }
-
-  .filters {
-    display: grid;
-  }
-
-  .filter-box {
-    min-width: 0;
-  }
-
   .filter-options {
     position: static;
     width: auto;
@@ -4567,53 +4610,49 @@ code {
   }
 }
 
-/* Narrow widths: the sidebar stops being a fixed left column and stacks on top
-   as a compact horizontal strip so it doesn't crowd the list/detail. */
-@media (max-width: 900px) {
-  .page-shell {
-    flex-direction: column;
+/* small-laptop & below (<=1440): the sidebar becomes an off-canvas overlay
+   toggled by the hamburger, freeing the ~264px rail for content. It stays a
+   vertical panel (not the old horizontal strip). */
+@media (max-width: 1440px) {
+  .sidebar-toggle {
+    display: flex;
   }
 
   .app-sidebar {
-    width: 100%;
-    position: static;
-    max-height: none;
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    max-height: 100vh;
+    width: min(320px, 84vw);
+    border-radius: 0;
+    transform: translateX(-100%);
+    transition: transform 0.22s ease;
+    z-index: 70;
   }
 
-  .app-sidebar-brand {
-    padding: 4px 6px;
+  body.sidebar-open .app-sidebar {
+    transform: translateX(0);
   }
 
-  .sidebar-sections {
-    flex-direction: row;
-    flex-wrap: wrap;
-    gap: 6px;
+  body.sidebar-open .sidebar-backdrop {
+    opacity: 1;
+    pointer-events: auto;
   }
 
-  .sidebar-section-item {
-    width: auto;
+  /* Make room for the fixed hamburger so it doesn't cover the content's
+     top-left (title / hero). Not on the gate, where the hamburger is hidden. */
+  .main-column {
+    padding-left: 44px;
   }
 
-  .app-sidebar .sidebar-subnav {
-    flex-direction: row;
-    flex-wrap: wrap;
-    width: 100%;
-    border-top: none;
-    padding-top: 0;
+  body.route-profiles .main-column,
+  body.route-wizard .main-column {
+    padding-left: 0;
   }
 
-  .app-sidebar .entity-button {
-    width: auto;
-    min-width: 150px;
-  }
-
-  .sidebar-footer {
-    margin-top: 0;
-    border-top: none;
-    padding-top: 0;
+  body.route-profiles .sidebar-toggle,
+  body.route-wizard .sidebar-toggle {
+    display: none;
   }
 }

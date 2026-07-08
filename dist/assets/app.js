@@ -38,6 +38,46 @@ export function syncLayoutMode(hasSelectedItem) {
   document.body.classList.toggle("layout-compact-detail-active", isCompactLayout() && hasSelectedItem);
 }
 
+// Off-canvas sidebar (overlay mode, <=1440px). `body.sidebar-open` is the single
+// source of truth; the CSS only reacts to it inside the <=1440 media block.
+export function openSidebar() {
+  document.body.classList.add("sidebar-open");
+  const toggle = document.getElementById("sidebarToggle");
+  if (toggle) {
+    toggle.setAttribute("aria-expanded", "true");
+  }
+  const firstItem = document.querySelector("#appSidebar .sidebar-section-item");
+  if (firstItem) {
+    firstItem.focus();
+  }
+}
+
+export function closeSidebar() {
+  if (!document.body.classList.contains("sidebar-open")) {
+    return;
+  }
+  document.body.classList.remove("sidebar-open");
+  const toggle = document.getElementById("sidebarToggle");
+  if (toggle) {
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.focus();
+  }
+}
+
+export function toggleSidebar() {
+  if (document.body.classList.contains("sidebar-open")) {
+    closeSidebar();
+  } else {
+    openSidebar();
+  }
+}
+
+// Exposed for the inline handlers on #sidebarToggle / #sidebarBackdrop. Inline
+// handlers survive any DOM re-insertion and don't depend on bind timing.
+if (typeof window !== "undefined") {
+  window.umaSidebar = { toggle: toggleSidebar, close: closeSidebar };
+}
+
 
 export function getFilterDefinitions(mode, entityKey) {
   const entity = data.entities[entityKey];
@@ -1752,6 +1792,23 @@ function boot() {
   });
   window.addEventListener("scroll", syncBackToTopVisibility, { passive: true });
   window.addEventListener("hashchange", requestRender);
+
+  // Off-canvas sidebar: the toggle/backdrop use inline onclick handlers (see
+  // index.html) that call window.umaSidebar, so no element binding is needed here.
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      closeSidebar();
+    }
+  });
+  // Any navigation (all sidebar links mutate the hash) closes the overlay.
+  window.addEventListener("hashchange", closeSidebar);
+  // Leaving overlay mode (widening past the rail threshold) resets the state.
+  const sidebarOverlayQuery = window.matchMedia("(max-width: 1440px)");
+  sidebarOverlayQuery.addEventListener("change", (event) => {
+    if (!event.matches) {
+      closeSidebar();
+    }
+  });
 
   if (!window.location.hash) {
     setProfilesHash();
