@@ -80,7 +80,7 @@ export const filtersEl = document.getElementById("filters");
 export const searchInput = document.getElementById("searchInput");
 export const clearButton = document.getElementById("clearButton");
 export const backToTopButton = document.getElementById("backToTopButton");
-export const compactLayoutQuery = window.matchMedia("(max-width: 1680px)");
+export const compactLayoutQuery = window.matchMedia("(max-width: 1100px)");
 
 export const referenceEntityKeys = Object.keys(data.entities);
 export const legacyEntityKey = "legacy";

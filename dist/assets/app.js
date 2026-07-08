@@ -1786,10 +1786,17 @@ function boot() {
 
   globalBuild.textContent = formatDateTime(data.reference.generated_at || "-");
 
+  // Debounced resize: only needs to refresh toolbar metrics on drag; layout-tier
+  // changes are handled deterministically by the compactLayoutQuery listener.
+  let resizeTimer = 0;
   window.addEventListener("resize", () => {
-    requestRender();
     window.requestAnimationFrame(syncToolbarMetrics);
+    window.clearTimeout(resizeTimer);
+    resizeTimer = window.setTimeout(() => requestRender(), 150);
   });
+  // Crossing the compact threshold re-renders immediately so the auto-select /
+  // detail-flip logic in renderBrowse re-evaluates without waiting on the debounce.
+  compactLayoutQuery.addEventListener("change", () => requestRender());
   window.addEventListener("scroll", syncBackToTopVisibility, { passive: true });
   window.addEventListener("hashchange", requestRender);
 
