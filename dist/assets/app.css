@@ -215,7 +215,17 @@ body.legacy-detail-expanded.legacy-create-active .app-layout {
 }
 
 .app-sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 4px 8px 6px;
+}
+
+.app-sidebar-brand-mark {
+  flex: 0 0 auto;
+}
+
+.app-sidebar-brand-text {
   font-family: "Bahnschrift", "Trebuchet MS", "Verdana", sans-serif;
   font-size: 1.15rem;
   font-weight: 500;

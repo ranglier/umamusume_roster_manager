@@ -3,13 +3,22 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Umamusume Roster Manager</title>
-  <link rel="icon" type="image/svg+xml" href="./assets/favicon.svg">
-  <link rel="stylesheet" href="./assets/app.css?v=20260720">
+  <title>Umanager</title>
+  <link rel="icon" type="image/svg+xml" href="./assets/favicon.svg?v=20260721">
+  <link rel="stylesheet" href="./assets/app.css?v=20260721">
   <script charset="utf-8" src="./data/reference-data.js" defer></script>
-  <script type="module" charset="utf-8" src="./assets/app.js?v=20260720"></script>
+  <script type="module" charset="utf-8" src="./assets/app.js?v=20260721"></script>
 </head>
 <body>
+  <svg width="0" height="0" aria-hidden="true" style="position:absolute">
+    <defs>
+      <linearGradient id="ug" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#4fd8ff"/>
+        <stop offset=".5" stop-color="#5fe6a0"/>
+        <stop offset="1" stop-color="#f0c85a"/>
+      </linearGradient>
+    </defs>
+  </svg>
   <div id="profileBackgroundMedia" class="profile-background-media" hidden aria-hidden="true">
     <video id="profileBackgroundVideo" class="profile-background-video" autoplay muted loop playsinline>
       <source src="./assets/profile-selection-bg.mp4" type="video/mp4">
@@ -18,7 +27,13 @@
   <div class="page-shell">
     <div id="sidebarBackdrop" class="sidebar-backdrop" onclick="window.umaSidebar&&window.umaSidebar.close()"></div>
     <nav id="appSidebar" class="app-sidebar" aria-label="Sections" hidden>
-      <div class="app-sidebar-brand">uma manager</div>
+      <div class="app-sidebar-brand">
+        <svg class="app-sidebar-brand-mark" width="24" height="24" viewBox="0 0 100 100" aria-hidden="true">
+          <rect x="4" y="4" width="92" height="92" rx="23" fill="url(#ug)"/>
+          <path d="M33 30 V52 a17 17 0 0 0 34 0 V30" fill="none" stroke="#0d1512" stroke-width="13" stroke-linecap="round"/>
+        </svg>
+        <span class="app-sidebar-brand-text">Umanager</span>
+      </div>
       <div id="sidebarSections" class="sidebar-sections"></div>
       <nav id="entityNav" class="entity-nav sidebar-subnav" aria-label="Datasets"></nav>
       <div class="sidebar-footer">
@@ -37,7 +52,7 @@
       <main class="main-column">
         <header id="topHeader" class="top-header panel">
           <div class="top-header-copy">
-            <h1 id="pageTitle">Umamusume Roster Manager</h1>
+            <h1 id="pageTitle">Umanager</h1>
             <p class="hero-text" id="summaryText">
               Static local reference built from versioned GameTora datasets.
             </p>
