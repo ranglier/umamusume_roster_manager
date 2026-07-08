@@ -157,7 +157,7 @@ body.legacy-detail-expanded .app-layout {
 }
 
 body.legacy-detail-expanded.legacy-create-active .app-layout {
-  grid-template-columns: minmax(280px, 0.62fr) minmax(860px, 1.38fr);
+  grid-template-columns: minmax(280px, 0.62fr) minmax(720px, 1.38fr);
 }
 
 .main-column {
@@ -2957,7 +2957,7 @@ body.route-wizard .profile-gate::after {
 .legacy-preview-ancestor-grid,
 .legacy-simulator-lineage-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 12px;
 }
 
@@ -3140,7 +3140,7 @@ body.route-wizard .profile-gate::after {
 
 .legacy-simulator-choice-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 12px;
 }
 
@@ -4384,6 +4384,16 @@ code {
 }
 
 @media (max-width: 1280px) {
+  /* The create-parent wizard needs a wide detail track; below this it would
+     overflow, so stack it (wizard above the parents list). */
+  body.legacy-detail-expanded.legacy-create-active .app-layout {
+    grid-template-columns: 1fr;
+  }
+
+  body.legacy-detail-expanded.legacy-create-active .detail-column {
+    order: -1;
+  }
+
   .section-heading {
     flex-direction: column;
     align-items: flex-start;
