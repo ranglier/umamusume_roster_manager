@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Umamusume Roster Manager</title>
   <link rel="icon" type="image/svg+xml" href="./assets/favicon.svg">
-  <link rel="stylesheet" href="./assets/app.css?v=20260330">
+  <link rel="stylesheet" href="./assets/app.css?v=20260708">
   <script charset="utf-8" src="./data/reference-data.js" defer></script>
-  <script type="module" charset="utf-8" src="./assets/app.js?v=20260330"></script>
+  <script type="module" charset="utf-8" src="./assets/app.js?v=20260708"></script>
 </head>
 <body>
   <div id="profileBackgroundMedia" class="profile-background-media" hidden aria-hidden="true">
@@ -16,11 +16,26 @@
     </video>
   </div>
   <div class="page-shell">
+    <nav id="appSidebar" class="app-sidebar" aria-label="Sections" hidden>
+      <div class="app-sidebar-brand">uma manager</div>
+      <div id="sidebarSections" class="sidebar-sections"></div>
+      <nav id="entityNav" class="entity-nav sidebar-subnav" aria-label="Datasets"></nav>
+      <div class="sidebar-footer">
+        <div id="activeProfileBlock" class="meta-block">
+          <span class="meta-label">Active Profile</span>
+          <strong id="activeProfileName">No profile selected</strong>
+          <div class="active-profile-actions">
+            <button id="changeProfileButton" type="button">Change profile</button>
+            <button id="adminButton" class="button-secondary" type="button">Administration</button>
+          </div>
+        </div>
+      </div>
+    </nav>
+
     <div class="app-layout">
       <main class="main-column">
         <header id="topHeader" class="top-header panel">
           <div class="top-header-copy">
-            <nav id="modeNav" class="mode-nav" aria-label="Primary navigation"></nav>
             <h1 id="pageTitle">Umamusume Roster Manager</h1>
             <p class="hero-text" id="summaryText">
               Static local reference built from versioned GameTora datasets.
@@ -31,30 +46,17 @@
               <span class="meta-label">Last Local Build</span>
               <strong id="globalBuild">-</strong>
             </div>
-            <div id="refreshCommandBlock" class="meta-block">
-              <span class="meta-label">Refresh Command</span>
-              <code>python ./scripts/update_reference.py</code>
-            </div>
-            <div id="activeProfileBlock" class="meta-block">
-              <span class="meta-label">Active Profile</span>
-              <strong id="activeProfileName">No profile selected</strong>
-              <div class="active-profile-actions">
-                <button id="changeProfileButton" type="button">Change profile</button>
-                <button id="adminButton" class="button-secondary" type="button">Administration</button>
-              </div>
-            </div>
           </div>
         </header>
 
         <section id="profileGate" class="panel profile-gate" hidden></section>
 
-        <section id="datasetBar" class="dataset-bar panel">
+        <section id="datasetBar" class="dataset-bar panel" hidden>
           <div class="section-heading compact-heading">
             <div>
               <h2 id="datasetHeading">Datasets</h2>
             </div>
           </div>
-          <nav id="entityNav" class="entity-nav"></nav>
         </section>
 
         <section id="toolbar" class="toolbar panel">

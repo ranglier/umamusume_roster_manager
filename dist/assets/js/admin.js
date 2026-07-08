@@ -1,5 +1,5 @@
-﻿// Auto-split from app.js as part of docs/REFACTOR_PLAN.md.
-import { applyBuildsDocument, applyLegacyViewPayload, asArray, createEmptyLegacyEditorState, createEmptyLegacyViewPayload, data, defaultEntityKeyForMode, getActiveProfile, getOwnedCharacterOptions, normalizeProfilesIndex, profileGateEl, resetBuildsDocument, resetLegacyViewPayload, setBrowseHash, state, syncSelectedProfileId } from "./core.js";
+// Auto-split from app.js as part of docs/REFACTOR_PLAN.md.
+import { applyBuildsDocument, applyLegacyViewPayload, asArray, createEmptyLegacyEditorState, createEmptyLegacyViewPayload, data, defaultEntityKeyForMode, getActiveProfile, getOwnedCharacterOptions, normalizeProfilesIndex, profileGateEl, resetBuildsDocument, resetLegacyViewPayload, setBrowseHash, setHomeHash, state, syncSelectedProfileId } from "./core.js";
 import { escapeHtml, formatDateTime } from "./dom-utils.js";
 import { apiBinary, apiJson, deleteProfileAndRefresh, importProfileArchive, loadAdminJobs, loadBackups, loadBootstrapStatus, loadProfilesIndex, loadRosterForProfile, loadRosterViewsForProfile, renameProfileAndRefresh, requestRender, requestRenderPreservingScroll } from "../app.js";
 
@@ -641,7 +641,7 @@ export async function openProfile(profileId, profilesAlreadyFresh) {
   await loadRosterViewsForProfile(profileId, true);
   await loadLegacyForProfile(profileId, true);
   await loadBuildsForProfile(profileId, true);
-  setBrowseHash("roster", "characters", null);
+  setHomeHash();
 }
 
 export async function runAdminJob(jobType, endpoint) {

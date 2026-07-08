@@ -1,5 +1,5 @@
 // Auto-split from app.js as part of docs/REFACTOR_PLAN.md.
-import { TRAINING_EVENT_EFFECT_LABELS, asArray, data, getEntityItems, getOwnedCharacterOptions, getSkillReferences, getViewState, renderSelectOptions, setBrowseHash, state } from "./core.js";
+import { TRAINING_EVENT_EFFECT_LABELS, asArray, data, getEntityItems, getOwnedCharacterOptions, getSkillReferences, getViewState, renderGradeBadge, renderSelectOptions, setBrowseHash, state } from "./core.js";
 import { escapeHtml, renderBadge, renderLinkedSkillList, renderReferenceList, renderSimpleList, tableFromRows } from "./dom-utils.js";
 import { getRosterEntry, renderCharacterRosterProjection, renderSupportCurrentEffects, renderSupportRosterProjection } from "./roster.js";
 import {
@@ -65,7 +65,7 @@ function getCandidateSkillReco(characterId, deckIds, profile) {
 // payload has to be serialized into the DOM - buttons only carry a character
 // id, matched back to the recommendation here. Each candidate is enriched with
 // a skill shortlist built from its own kit plus the shared suggested deck.
-function getCmTargetRecommendations(detail) {
+export function getCmTargetRecommendations(detail) {
   const profile = targetProfileFromCmDetail(detail);
   const deckIds = getCmTargetDeck(detail).result.deck;
   return recommendBuildForTarget(profile, getOwnedCharacterItems(), { limit: 5 }).map((reco) => ({
@@ -91,7 +91,7 @@ function getOwnedSupportSummariesForDeck() {
 
 // Same recompute-in-both-places pattern as the character recos: the handler
 // re-derives the deck rather than reading it out of the DOM.
-function getCmTargetDeck(detail) {
+export function getCmTargetDeck(detail) {
   const profile = targetProfileFromCmDetail(detail);
   const summaries = getOwnedSupportSummariesForDeck();
   const titleById = new Map(summaries.map((summary) => [summary.id, summary]));
@@ -163,6 +163,8 @@ export function renderCharacterGradeGrid(title, columns, values, options) {
     return "<p class='source-note'>No data.</p>";
   }
 
+  const formatGridValue = (rawValue) => (/^[SABCDEFG]$/i.test(String(rawValue)) ? renderGradeBadge(rawValue) : escapeHtml(rawValue));
+
   return `
     <section class="character-grid-block${config.compact ? " character-grid-block-compact" : ""}">
       <div class="character-grid-head">${escapeHtml(title)}</div>
@@ -171,7 +173,7 @@ export function renderCharacterGradeGrid(title, columns, values, options) {
           .map((column) => `
             <div class="character-grid-cell">
               <span class="character-grid-label">${escapeHtml(column.label)}</span>
-              <strong class="character-grid-value">${escapeHtml(values?.[column.key] ?? "-")}</strong>
+              <strong class="character-grid-value">${formatGridValue(values?.[column.key] ?? "-")}</strong>
             </div>
           `)
           .join("")}

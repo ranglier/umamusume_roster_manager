@@ -1,11 +1,11 @@
 // Entry point. Wires up the feature modules extracted under assets/js/
 // as part of docs/REFACTOR_PLAN.md.
-import { activeProfileBlock, activeProfileNameEl, adminButton, allowedEntityKeys, asArray, backToTopButton, browseActionsEl, buildsEntityKey, changeProfileButton, clearButton, compactLayoutQuery, createEntityState, currentRouteState, data, datasetBarEl, datasetHeadingEl, defaultEntityKeyForMode, defaultProfilesIndex, detailColumnEl, detailEl, detailPanelEl, entityMetaEl, entityTitleEl, filtersEl, getActiveProfile, getLoadedReferenceGeneratedAt, getRosterViewEntry, getRosterViewPayload, getViewState, globalBuild, hasLoadedReferenceBundle, lastBuildBlock, legacyEntityKey, listEl, modeNavEl, navEl, normalizeProfilesIndex, normalizeRosterDocument, normalizeRosterViewPayload, pageTitleEl, profileBackgroundMediaEl, profileBackgroundVideoEl, profileGateEl, refreshCommandBlock, resetBuildsDocument, resetLegacyViewPayload, resultCountEl, resultsPanelEl, rosterEntityKeys, searchInput, setAdminHash, setBrowseHash, setProfilesHash, setWizardHash, state, summaryText, syncSelectedProfileId, toolbarEl, topHeaderEl, viewStateByKey } from "./js/core.js";
+import { activeProfileBlock, activeProfileNameEl, adminButton, allowedEntityKeys, appSidebarEl, asArray, backToTopButton, BUILD_RUNNING_STYLE_OPTIONS, BUILD_STATUS_OPTIONS, browseActionsEl, buildsEntityKey, changeProfileButton, clearButton, collectionEntityKeys, compactLayoutQuery, createEntityState, currentRouteState, data, datasetBarEl, datasetHeadingEl, defaultEntityKeyForMode, defaultProfilesIndex, detailColumnEl, detailEl, detailPanelEl, entityMetaEl, entityTitleEl, filtersEl, getActiveProfile, getBuildTargetOptions, getEntityItems, getLoadedReferenceGeneratedAt, getRosterViewEntry, getRosterViewPayload, getViewState, globalBuild, hasLoadedReferenceBundle, lastBuildBlock, legacyEntityKey, listEl, navEl, normalizeProfilesIndex, normalizeRosterDocument, normalizeRosterViewPayload, pageTitleEl, profileBackgroundMediaEl, profileBackgroundVideoEl, profileGateEl, referenceEntityKeys, renderGradeBadge, resetBuildsDocument, resetLegacyViewPayload, resultCountEl, resultsPanelEl, rosterEntityKeys, searchInput, setAdminHash, setBrowseHash, setHomeHash, setProfilesHash, setWizardHash, SIDEBAR_SECTIONS, sidebarSectionForRoute, sidebarSectionsEl, state, summaryText, syncSelectedProfileId, toolbarEl, topHeaderEl, viewStateByKey } from "./js/core.js";
 import { escapeHtml, formatDateTime, renderBadge, renderDetailHeader, renderLinks, renderResultTop } from "./js/dom-utils.js";
-import { attachCmTargetRecommendationListeners, attachRacetrackVisualizerListeners, renderCatalogSupportQuickAdd, renderCharacters, renderCmTargets, renderCompatibility, renderG1Factors, renderRaces, renderRacetracks, renderScenarios, renderSkills, renderSupports, renderTrainingEvents } from "./js/catalog.js";
+import { attachCmTargetRecommendationListeners, attachRacetrackVisualizerListeners, getCmTargetDeck, getCmTargetRecommendations, renderCatalogSupportQuickAdd, renderCharacters, renderCmTargets, renderCompatibility, renderG1Factors, renderRaces, renderRacetracks, renderScenarios, renderSkills, renderSupports, renderTrainingEvents } from "./js/catalog.js";
 import { attachRosterFormListeners, collectRosterFormData, getDefaultRosterEntry, getRosterBadges, getRosterEntry, getRosterFilterDefinitions, getRosterFilterOptions, renderBatchList, renderReferenceRosterActions, renderRosterCardProgress, renderRosterEditor, rosterCountForEntity, saveVisibleBatchRows, setRosterEntry } from "./js/roster.js";
 import { attachLegacyFormListeners, getCharacterRosterDefaults, getLegacyCharacterOptions, renderLegacyDetailBody, renderLegacyEditor, renderLegacyPreview, renderLegacySimulatorList } from "./js/legacy.js";
-import { attachBuildFormListeners, createEmptyBuildEntry, renderBuildEditor } from "./js/builds.js";
+import { attachBuildFormListeners, createEmptyBuildEntry, renderBuildEditor, startSeededBuildDraft } from "./js/builds.js";
 import { loadBuildsForProfile, loadLegacyForProfile, openProfile, refreshAdminData, renderAdminPage, renderProfilesPage, renderWizardPage, runAdminJob, wizardNeedsReferenceBuild } from "./js/admin.js";
 
 
@@ -120,47 +120,67 @@ export function getFilteredItems(mode, entityKey) {
   });
 }
 
-export function renderModeNav(route) {
-  if (!modeNavEl) {
+// Task-oriented left sidebar. Supersedes renderModeNav (the old mode toggle) and
+// owns the contextual entity sub-nav (previously rendered by renderBrowse). It is
+// a pure projection of the route: the section rail highlights via
+// sidebarSectionForRoute, and the sub-nav lists the entities for the active
+// section. Hidden on the full-screen gate pages (profiles/wizard).
+export function renderSidebar(route) {
+  if (!appSidebarEl) {
     return;
   }
 
-  if (route.page === "profiles" || route.page === "wizard") {
-    modeNavEl.innerHTML = "";
-    modeNavEl.hidden = true;
+  const isGate = route.page === "profiles" || route.page === "wizard";
+  appSidebarEl.hidden = isGate;
+  if (isGate) {
     return;
   }
 
-  modeNavEl.hidden = false;
-  const activeMode = route.page === "admin" ? "roster" : route.mode;
-  const currentEntityForReference = activeMode === "reference" && allowedEntityKeys("reference").includes(route.entityKey)
-    ? route.entityKey
-    : defaultEntityKeyForMode("reference");
-  const currentEntityForRoster = activeMode === "roster" && allowedEntityKeys("roster").includes(route.entityKey)
-    ? route.entityKey
-    : defaultEntityKeyForMode("roster");
+  const activeSection = sidebarSectionForRoute(route);
 
-  modeNavEl.innerHTML = `
-    <button class="mode-button ${activeMode === "roster" ? "active" : ""}" type="button" data-mode="roster" data-target-entity="${escapeHtml(currentEntityForRoster)}">
-      My Roster
-    </button>
-    <button class="mode-button ${activeMode === "reference" ? "active" : ""}" type="button" data-mode="reference" data-target-entity="${escapeHtml(currentEntityForReference)}">
-      Catalog
-    </button>
-  `;
+  if (sidebarSectionsEl) {
+    sidebarSectionsEl.innerHTML = SIDEBAR_SECTIONS
+      .map((section) => `
+        <button
+          type="button"
+          class="sidebar-section-item ${section.id === activeSection ? "active" : ""}"
+          data-section="${escapeHtml(section.id)}"
+        >
+          <span class="sidebar-section-icon" data-icon="${escapeHtml(section.icon)}" aria-hidden="true"></span>
+          <span class="sidebar-section-label">${escapeHtml(section.label)}</span>
+        </button>
+      `)
+      .join("");
 
-  modeNavEl.querySelectorAll("[data-mode]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const mode = button.dataset.mode;
-      const targetEntity = button.dataset.targetEntity;
-      setBrowseHash(mode, targetEntity, null);
+    sidebarSectionsEl.querySelectorAll("[data-section]").forEach((button) => {
+      const section = SIDEBAR_SECTIONS.find((entry) => entry.id === button.dataset.section);
+      if (section) {
+        button.addEventListener("click", () => section.target());
+      }
     });
-  });
-}
+  }
 
+  // Contextual sub-nav for the active section (reuses renderNav's per-entity meta).
+  if (route.page === "admin") {
+    if (navEl) {
+      navEl.innerHTML = "";
+    }
+  } else if (route.mode === "reference") {
+    renderNav("reference", route.entityKey, referenceEntityKeys);
+  } else if (route.entityKey === buildsEntityKey) {
+    renderNav("roster", route.entityKey, [buildsEntityKey]);
+  } else {
+    renderNav("roster", route.entityKey, collectionEntityKeys);
+  }
+}
 
 export function renderProfileGate(route) {
   if (!profileGateEl) {
+    return;
+  }
+
+  if (route.page === "home") {
+    renderHomePage();
     return;
   }
 
@@ -177,9 +197,118 @@ export function renderProfileGate(route) {
   renderProfilesPage();
 }
 
-export function renderNav(mode, activeKey) {
-  const keys = allowedEntityKeys(mode);
-  navEl.innerHTML = keys
+// Phase 2 home dashboard. Task-oriented landing that puts CM prep front and centre
+// and surfaces the player's own roster (recent builds, collection counts). Rendered
+// into #profileGate with the sidebar visible (home is a gate-like page).
+export function renderHomePage() {
+  if (!profileGateEl) {
+    return;
+  }
+
+  const profile = getActiveProfile();
+  const profileName = profile ? profile.name : "your roster";
+  const ownedCharacters = rosterCountForEntity("characters", (entry) => entry.owned);
+  const ownedSupports = rosterCountForEntity("supports", (entry) => entry.owned);
+  const savedParents = data.reference.entities[legacyEntityKey]?.count || 0;
+
+  const builds = getEntityItems(buildsEntityKey);
+  const recentBuilds = builds.slice(-4).reverse();
+
+  const buildsMarkup = recentBuilds.length
+    ? recentBuilds
+        .map((item) => {
+          const labels = item.detail?.labels || {};
+          const subtitle = [labels.character, labels.target].filter(Boolean).join(" · ") || "No character yet";
+          return `
+            <button type="button" class="home-build-row" data-build-id="${escapeHtml(item.id)}">
+              <span class="home-build-copy">
+                <strong>${escapeHtml(item.title)}</strong>
+                <span>${escapeHtml(subtitle)}</span>
+              </span>
+              <span class="home-build-status">${escapeHtml(labels.status || "Draft")}</span>
+            </button>
+          `;
+        })
+        .join("")
+    : `<p class="home-empty">Aucun build encore. Lance une prépa CM pour commencer.</p>`;
+
+  profileGateEl.innerHTML = `
+    <div class="home-dashboard">
+      <div class="home-hero">
+        <p class="home-eyebrow">Profil · ${escapeHtml(profileName)}</p>
+        <h1 class="home-title">Bienvenue</h1>
+        <p class="home-sub">Prépare tes builds de Champions Meeting à partir de ton roster.</p>
+      </div>
+
+      <button type="button" class="home-cta" id="homeStartBuild">
+        <span class="home-cta-copy">
+          <strong>Préparer une Champions Meeting</strong>
+          <span>Cible → uma de ton roster → deck → skills</span>
+        </span>
+        <span class="home-cta-arrow" aria-hidden="true">→</span>
+      </button>
+
+      <div class="home-grid">
+        <section class="home-card">
+          <h2 class="home-card-title">Reprendre un build</h2>
+          <div class="home-build-list">${buildsMarkup}</div>
+          <button type="button" class="home-card-link" data-home-nav="builds">Tous les builds →</button>
+        </section>
+
+        <section class="home-card">
+          <h2 class="home-card-title">Ma collection</h2>
+          <div class="home-stat-row">
+            <div class="home-stat"><strong>${ownedCharacters}</strong><span>persos</span></div>
+            <div class="home-stat"><strong>${ownedSupports}</strong><span>supports</span></div>
+            <div class="home-stat"><strong>${savedParents}</strong><span>parents</span></div>
+          </div>
+          <button type="button" class="home-card-link" data-home-nav="collection">Gérer ma collection →</button>
+        </section>
+
+        <section class="home-card home-card-wide">
+          <h2 class="home-card-title">Références</h2>
+          <p class="home-card-note">Skills · Courses · Circuits · Scénarios · Compatibilités</p>
+          <button type="button" class="home-card-link" data-home-nav="reference">Ouvrir les références →</button>
+        </section>
+      </div>
+    </div>
+  `;
+
+  const startBuildButton = document.getElementById("homeStartBuild");
+  if (startBuildButton) {
+    startBuildButton.addEventListener("click", () => {
+      state.buildsStatus = { kind: "idle", message: "" };
+      state.buildEditor.activeFormTab = "setup";
+      if (state.buildEditor.targetKey === "__new__") {
+        state.buildEditor.draft = null;
+      }
+      setBrowseHash("roster", buildsEntityKey, "__new__");
+    });
+  }
+
+  profileGateEl.querySelectorAll("[data-build-id]").forEach((button) => {
+    button.addEventListener("click", () => setBrowseHash("roster", buildsEntityKey, button.dataset.buildId));
+  });
+
+  profileGateEl.querySelectorAll("[data-home-nav]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const target = button.dataset.homeNav;
+      if (target === "reference") {
+        setBrowseHash("reference", defaultEntityKeyForMode("reference"), null);
+      } else if (target === "collection") {
+        setBrowseHash("roster", "characters", null);
+      } else {
+        setBrowseHash("roster", buildsEntityKey, null);
+      }
+    });
+  });
+}
+
+export function renderNav(mode, activeKey, keys = allowedEntityKeys(mode), targetEl = navEl) {
+  if (!targetEl) {
+    return;
+  }
+  targetEl.innerHTML = keys
     .map((key) => {
       const totalCount = data.reference.entities[key].count;
       const ownedCount = mode === "roster" && key !== legacyEntityKey && key !== buildsEntityKey ? rosterCountForEntity(key, (entry) => entry.owned) : 0;
@@ -199,7 +328,7 @@ export function renderNav(mode, activeKey) {
     })
     .join("");
 
-  navEl.querySelectorAll("[data-entity]").forEach((button) => {
+  targetEl.querySelectorAll("[data-entity]").forEach((button) => {
     button.addEventListener("click", () => setBrowseHash(mode, button.dataset.entity, null));
   });
 }
@@ -279,6 +408,7 @@ export function renderBrowseActions(route, filteredItems) {
     if (newBuildButton) {
       newBuildButton.addEventListener("click", () => {
         state.buildsStatus = { kind: "idle", message: "" };
+        state.buildEditor.activeFormTab = "setup";
         // Start a genuinely fresh draft: drop any persisted create-draft
         // (e.g. a previous CM recommendation seed) so the form isn't stale.
         if (state.buildEditor.targetKey === "__new__") {
@@ -422,6 +552,10 @@ export function renderList(mode, entityKey, filteredItems) {
     renderBatchList(entityKey, filteredItems);
     return;
   }
+  if (mode === "roster" && entityKey === buildsEntityKey) {
+    renderBuildsHub(filteredItems, localState);
+    return;
+  }
   if (!filteredItems.length) {
     listEl.innerHTML = mode === "roster"
       ? (entityKey === legacyEntityKey
@@ -478,6 +612,166 @@ export function renderList(mode, entityKey, filteredItems) {
   });
 }
 
+
+// Phase 3 "Prépa CM" hub: replaces the flat build list with a status-grouped
+// board plus a launcher that brings the CM-target recommendation (previously only
+// reachable from the Catalog) next to the build editor. Selecting a CM target runs
+// the tested recommender engine (getCmTargetRecommendations) against the owned
+// roster; "Construire" seeds a draft and opens it in the detail editor.
+export function renderBuildsHub(filteredItems, localState) {
+  const cmTargetOptions = getBuildTargetOptions("cm_targets");
+  const groups = BUILD_STATUS_OPTIONS
+    .map((option) => ({
+      ...option,
+      items: filteredItems.filter((item) => (item.filters?.status || "draft") === option.value),
+    }))
+    .filter((group) => group.items.length);
+
+  const boardMarkup = filteredItems.length
+    ? groups
+        .map((group) => `
+          <section class="prepa-column">
+            <div class="prepa-column-head">
+              <span>${escapeHtml(group.label)}</span>
+              <span class="prepa-column-count">${group.items.length}</span>
+            </div>
+            <div class="prepa-column-cards">
+              ${group.items
+                .map((item) => {
+                  const labels = item.detail?.labels || {};
+                  const subtitle = [labels.character, labels.target].filter(Boolean).join(" · ") || "Aucun perso";
+                  return `
+                    <button type="button" class="prepa-build-card ${item.id === localState.selectedId ? "active" : ""}" data-item-id="${escapeHtml(item.id)}">
+                      <strong>${escapeHtml(item.title)}</strong>
+                      <span>${escapeHtml(subtitle)}</span>
+                      ${labels.mode ? `<span class="prepa-build-mode">${escapeHtml(labels.mode)}</span>` : ""}
+                    </button>
+                  `;
+                })
+                .join("")}
+            </div>
+          </section>
+        `)
+        .join("")
+    : `<p class="home-empty">Aucun build pour le moment. Choisis une cible CM ci-dessus, ou pars d'un build vierge.</p>`;
+
+  listEl.innerHTML = `
+    <div class="prepa-hub">
+      <section class="prepa-launcher">
+        <div class="prepa-launcher-head">
+          <h3>Nouvelle prépa CM</h3>
+          <button type="button" class="button-secondary" id="prepaBlankBuild">Build vierge</button>
+        </div>
+        <label class="field-stack">
+          <span>Cible Champions Meeting</span>
+          <select id="prepaCmTargetSelect">
+            <option value="">Choisir une cible…</option>
+            ${cmTargetOptions.map((option) => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`).join("")}
+          </select>
+        </label>
+        <div id="prepaRecoPanel" class="prepa-reco-panel"></div>
+      </section>
+      <div class="prepa-board">${boardMarkup}</div>
+    </div>
+  `;
+
+  const blankButton = document.getElementById("prepaBlankBuild");
+  if (blankButton) {
+    blankButton.addEventListener("click", () => {
+      state.buildsStatus = { kind: "idle", message: "" };
+      state.buildEditor.activeFormTab = "setup";
+      if (state.buildEditor.targetKey === "__new__") {
+        state.buildEditor.draft = null;
+      }
+      setBrowseHash("roster", buildsEntityKey, "__new__");
+    });
+  }
+
+  listEl.querySelectorAll(".prepa-build-card[data-item-id]").forEach((card) => {
+    card.addEventListener("click", () => {
+      const itemId = card.dataset.itemId;
+      if (isCompactLayout() && localState.selectedId === itemId) {
+        setBrowseHash("roster", buildsEntityKey, null);
+        return;
+      }
+      setBrowseHash("roster", buildsEntityKey, itemId);
+    });
+  });
+
+  const select = document.getElementById("prepaCmTargetSelect");
+  const recoPanel = document.getElementById("prepaRecoPanel");
+  if (select) {
+    select.addEventListener("change", () => renderPrepaReco(select.value, recoPanel));
+  }
+}
+
+// Compact reco list for a chosen CM target, reusing the tested recommender. Each
+// row seeds a fresh build draft (same seed shape as the Catalog CM reco) and opens
+// the editor, so CM prep now lives entirely inside the Prépa CM section.
+function renderPrepaReco(targetId, panel) {
+  if (!panel) {
+    return;
+  }
+  if (!targetId) {
+    panel.innerHTML = "";
+    return;
+  }
+
+  const cmItem = getEntityItems("cm_targets").find((item) => String(item.id) === String(targetId));
+  const detail = cmItem?.detail;
+  if (!detail) {
+    panel.innerHTML = "<p class='source-note'>Cible introuvable.</p>";
+    return;
+  }
+
+  const recos = getCmTargetRecommendations(detail);
+  const deck = getCmTargetDeck(detail).result.deck;
+  if (!recos.length) {
+    panel.innerHTML = "<p class='source-note'>Aucun uma possédé à recommander pour cette cible. Ajoute des personnages à ta collection d'abord.</p>";
+    return;
+  }
+
+  const styleLabel = (key) => BUILD_RUNNING_STYLE_OPTIONS.find((option) => option.value === key)?.label || key || "-";
+
+  panel.innerHTML = `
+    <p class="prepa-reco-title">Uma de ton roster recommandés</p>
+    <div class="prepa-reco-list">
+      ${recos
+        .map((reco) => `
+          <div class="prepa-reco-row">
+            <span class="prepa-reco-copy">
+              <strong>${escapeHtml(reco.title)}</strong>
+              <span>${escapeHtml(styleLabel(reco.bestStyle))} · fit ${reco.fitScore.toFixed(2)}</span>
+            </span>
+            <span class="prepa-reco-grades">${renderGradeBadge(reco.surfaceGrade)}${renderGradeBadge(reco.distanceGrade)}</span>
+            <button type="button" class="button-strong prepa-reco-build" data-reco-char="${escapeHtml(reco.characterId)}">Construire</button>
+          </div>
+        `)
+        .join("")}
+    </div>
+  `;
+
+  panel.querySelectorAll("[data-reco-char]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const reco = recos.find((candidate) => candidate.characterId === button.dataset.recoChar);
+      if (!reco) {
+        return;
+      }
+      const skill = reco.skillReco || { required: [], optional: [] };
+      startSeededBuildDraft({
+        target_id: String(detail.id),
+        character_id: reco.characterId,
+        running_style: reco.bestStyle,
+        target_stats: { ...reco.proposal.stats },
+        support_deck: [...deck],
+        required_skills: [...skill.required],
+        optional_skills: [...skill.optional],
+        name: `${detail.name} — ${reco.title}`,
+      });
+      setBrowseHash("roster", buildsEntityKey, "__new__");
+    });
+  });
+}
 
 export function renderBrowseBody(entityKey, detail, rosterProjection) {
   if (entityKey === "characters") return renderCharacters(detail, rosterProjection);
@@ -691,9 +985,6 @@ export function syncHeader(route) {
   if (lastBuildBlock) {
     lastBuildBlock.hidden = (route.page === "profiles" || route.page === "wizard" || (route.page === "browse" && route.mode === "roster"));
   }
-  if (refreshCommandBlock) {
-    refreshCommandBlock.hidden = (route.page === "profiles" || route.page === "wizard" || (route.page === "browse" && route.mode === "roster"));
-  }
 
   if (route.page === "wizard") {
     pageTitleEl.textContent = "Bootstrap Wizard";
@@ -718,6 +1009,14 @@ export function syncHeader(route) {
     return;
   }
 
+  if (route.page === "home") {
+    // The home dashboard renders its own hero; the top header stays hidden here.
+    pageTitleEl.textContent = "Accueil";
+    summaryText.textContent = "";
+    datasetHeadingEl.textContent = "Accueil";
+    return;
+  }
+
   pageTitleEl.textContent = route.mode === "roster" ? "My Roster" : "Umamusume Pretty Derby Catalog";
 
   if (route.mode === "roster") {
@@ -733,22 +1032,32 @@ export function syncHeader(route) {
 }
 
 export function syncShellVisibility(route) {
-  const isGatePage = route.page === "profiles" || route.page === "wizard" || route.page === "admin";
-  const isProfilesLikePage = route.page === "profiles" || route.page === "wizard" || route.page === "admin";
+  // Home + admin render into #profileGate (like the profiles/wizard gate) but keep
+  // the sidebar visible; only profiles/wizard are the full-screen video gate.
+  const isGatePage = route.page === "profiles" || route.page === "wizard" || route.page === "admin" || route.page === "home";
+  const isProfilesLikePage = isGatePage;
   profileGateEl.hidden = !isGatePage;
   if (topHeaderEl) {
     topHeaderEl.hidden = isProfilesLikePage;
   }
-  datasetBarEl.hidden = isGatePage;
+  // The old #datasetBar is an empty shell now (its entity nav moved into the
+  // sidebar); keep it hidden on every route.
+  datasetBarEl.hidden = true;
   toolbarEl.hidden = isGatePage;
   if (resultsPanelEl) {
     resultsPanelEl.hidden = isGatePage;
   }
   detailColumnEl.hidden = isGatePage;
   backToTopButton.hidden = isGatePage;
+  // Sidebar shows on browse + admin; hidden on the full-screen gate pages
+  // (profiles/wizard) so the animated video background is never overlapped.
+  if (appSidebarEl) {
+    appSidebarEl.hidden = route.page === "profiles" || route.page === "wizard";
+  }
   document.body.classList.toggle("route-profiles", route.page === "profiles");
   document.body.classList.toggle("route-wizard", route.page === "wizard");
   document.body.classList.toggle("route-admin", route.page === "admin");
+  document.body.classList.toggle("route-home", route.page === "home");
   document.body.classList.toggle("route-roster", route.page === "browse" && route.mode === "roster");
   document.body.classList.toggle("route-catalog", route.page === "browse" && route.mode === "reference");
   if (route.page !== "browse") {
@@ -782,7 +1091,8 @@ export function renderBrowse(route) {
     localState.selectedId = null;
   }
 
-  renderNav(route.mode, route.entityKey);
+  // The entity sub-nav is now owned by renderSidebar (called earlier in render());
+  // renderBrowse no longer touches navEl.
   entityTitleEl.textContent = route.mode === "roster" ? `${entity.label} Roster` : entity.label;
 
   if (route.mode === "roster") {
@@ -1197,7 +1507,7 @@ export async function render() {
   } else if (route.page === "wizard" && !state.wizardProfileId) {
     if (state.bootstrapStatus.recommended_entry === "roster" && state.profilesIndex.last_profile_id) {
       state.activeProfileId = state.profilesIndex.last_profile_id;
-      setBrowseHash("roster", "characters", null);
+      setHomeHash();
     } else {
       setProfilesHash();
     }
@@ -1264,7 +1574,9 @@ export async function render() {
     }
   }
 
-  if (route.page === "browse" && !state.activeProfileId) {
+  const needsRosterData = route.page === "browse" || route.page === "home";
+
+  if (needsRosterData && !state.activeProfileId) {
     if (state.profilesIndex.last_profile_id) {
       state.activeProfileId = state.profilesIndex.last_profile_id;
     } else {
@@ -1273,7 +1585,7 @@ export async function render() {
     }
   }
 
-  if (route.page === "browse" && state.activeProfileId) {
+  if (needsRosterData && state.activeProfileId) {
     await loadRosterForProfile(state.activeProfileId, false);
     await loadRosterViewsForProfile(state.activeProfileId, false);
     await loadLegacyForProfile(state.activeProfileId, false);
@@ -1284,10 +1596,10 @@ export async function render() {
   }
 
   syncHeader(route);
-  renderModeNav(route);
+  renderSidebar(route);
   syncShellVisibility(route);
 
-  if (route.page === "profiles" || route.page === "wizard" || route.page === "admin") {
+  if (route.page === "profiles" || route.page === "wizard" || route.page === "admin" || route.page === "home") {
     renderProfileGate(route);
     syncLayoutMode(false);
     window.requestAnimationFrame(syncToolbarMetrics);
@@ -1309,9 +1621,9 @@ export function requestRender() {
   return render().catch((error) => {
     console.error(error);
     const route = currentRouteState();
-    if (route.page === "profiles" || route.page === "wizard" || route.page === "admin") {
+    if (route.page === "profiles" || route.page === "wizard" || route.page === "admin" || route.page === "home") {
       syncShellVisibility(route);
-      renderModeNav(route);
+      renderSidebar(route);
       renderProfileGate(route);
       window.requestAnimationFrame(syncToolbarMetrics);
       return;

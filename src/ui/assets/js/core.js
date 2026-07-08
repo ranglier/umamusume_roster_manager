@@ -51,13 +51,13 @@ export const hasLoadedReferenceBundle = Boolean(window.UMA_REFERENCE_DATA);
 export const data = window.UMA_REFERENCE_DATA || createEmptyReferenceBundle();
 export const profileBackgroundMediaEl = document.getElementById("profileBackgroundMedia");
 export const profileBackgroundVideoEl = document.getElementById("profileBackgroundVideo");
-export const modeNavEl = document.getElementById("modeNav");
+export const appSidebarEl = document.getElementById("appSidebar");
+export const sidebarSectionsEl = document.getElementById("sidebarSections");
 export const topHeaderEl = document.getElementById("topHeader");
 export const pageTitleEl = document.getElementById("pageTitle");
 export const summaryText = document.getElementById("summaryText");
 export const globalBuild = document.getElementById("globalBuild");
 export const lastBuildBlock = document.getElementById("lastBuildBlock");
-export const refreshCommandBlock = document.getElementById("refreshCommandBlock");
 export const activeProfileBlock = document.getElementById("activeProfileBlock");
 export const activeProfileNameEl = document.getElementById("activeProfileName");
 export const changeProfileButton = document.getElementById("changeProfileButton");
@@ -86,6 +86,10 @@ export const referenceEntityKeys = Object.keys(data.entities);
 export const legacyEntityKey = "legacy";
 export const buildsEntityKey = "builds";
 export const rosterEntityKeys = ["characters", "supports", legacyEntityKey, buildsEntityKey];
+// Collection sub-nav = roster minus builds (builds now lives under the "Prépa CM"
+// section). This is a view-layer grouping only; allowedEntityKeys("roster") keeps
+// returning the full tested list, so the route model / tests are untouched.
+export const collectionEntityKeys = ["characters", "supports", legacyEntityKey];
 export const inlineMediaEntityKeys = new Set(["characters", "skills", "supports"]);
 export const rosterFilterDefinitionsBase = [
   { key: "_roster_favorite", label: "Favorites" },
@@ -216,6 +220,15 @@ export const BUILD_APTITUDE_FIELDS = [
   { key: "style", label: "Style" },
 ];
 export const BUILD_APTITUDE_GRADES = ["", "S", "A", "B", "C", "D", "E", "F", "G"];
+
+export function renderGradeBadge(grade) {
+  const normalized = String(grade || "").toUpperCase();
+  if (!BUILD_APTITUDE_GRADES.includes(normalized) || !normalized) {
+    return escapeHtml(grade ?? "-");
+  }
+  return `<span class="grade-badge" data-grade="${normalized}">${normalized}</span>`;
+}
+
 export const BUILD_RUNNING_STYLE_OPTIONS = [
   { value: "", label: "Not chosen" },
   { value: "runner", label: "Front Runner" },
@@ -813,6 +826,10 @@ export function currentRouteState() {
     return { page: "admin" };
   }
 
+  if (segments[0] === "home") {
+    return { page: "home" };
+  }
+
   if (segments[0] === "reference" || segments[0] === "roster") {
     const mode = segments[0];
     const entityKey = segments[1] || defaultEntityKeyForMode(mode);
@@ -861,6 +878,14 @@ export function setAdminHash() {
   requestRender();
 }
 
+export function setHomeHash() {
+  if (window.location.hash !== "#/home") {
+    window.location.hash = "#/home";
+    return;
+  }
+  requestRender();
+}
+
 export function setBrowseHash(mode, entityKey, itemId) {
   const target = itemId
     ? `#/${mode}/${entityKey}/${encodeURIComponent(itemId)}`
@@ -870,6 +895,31 @@ export function setBrowseHash(mode, entityKey, itemId) {
     return;
   }
   requestRender();
+}
+
+// Task-oriented sidebar sections. Each is a pure view-layer projection over the
+// existing route grammar (setBrowseHash / setAdminHash), so no new routing scheme
+// is introduced. `target()` is deferred to click time. Later phases (Accueil
+// dashboard, Prépa CM hub) only re-point a `target` and add a branch below.
+export const SIDEBAR_SECTIONS = [
+  { id: "accueil", label: "Accueil", icon: "home", target: () => setHomeHash() },
+  // TODO(phase3): give Prépa CM its own hub screen (builds board + CM reco).
+  { id: "prepa_cm", label: "Prépa CM", icon: "target", target: () => setBrowseHash("roster", buildsEntityKey, null) },
+  { id: "collection", label: "Ma collection", icon: "collection", target: () => setBrowseHash("roster", "characters", null) },
+  { id: "reference", label: "Références", icon: "reference", target: () => setBrowseHash("reference", defaultEntityKeyForMode("reference"), null) },
+  { id: "admin", label: "Admin", icon: "admin", target: () => setAdminHash() },
+];
+
+// Derive the active sidebar section from the current route. Returns null on the
+// full-screen gate pages (profiles/wizard) where the sidebar is hidden.
+export function sidebarSectionForRoute(route) {
+  if (route.page === "home") return "accueil";
+  if (route.page === "admin") return "admin";
+  if (route.page === "browse" && route.mode === "reference") return "reference";
+  if (route.page === "browse" && route.mode === "roster") {
+    return route.entityKey === buildsEntityKey ? "prepa_cm" : "collection";
+  }
+  return null;
 }
 
 export function hasFilterOption(entity, filterKey, value) {

@@ -1,5 +1,5 @@
 // Auto-split from app.js as part of docs/REFACTOR_PLAN.md.
-import { BUILD_APTITUDE_FIELDS, BUILD_APTITUDE_GRADES, BUILD_MODE_OPTIONS, BUILD_RUNNING_STYLE_OPTIONS, BUILD_STATUS_OPTIONS, BUILD_STAT_FIELDS, BUILD_SUPPORT_TYPES, asArray, data, getActiveProfile, getBuildReferenceLabel, getBuildTargetOptions, getEntityItems, getOwnedCharacterOptions, getOwnedSupportOptions, getRosterViewEntry, normalizeBuildEntry, renderSelectOptions, state } from "./core.js";
+import { BUILD_APTITUDE_FIELDS, BUILD_APTITUDE_GRADES, BUILD_MODE_OPTIONS, BUILD_RUNNING_STYLE_OPTIONS, BUILD_STATUS_OPTIONS, BUILD_STAT_FIELDS, BUILD_SUPPORT_TYPES, asArray, data, getActiveProfile, getBuildReferenceLabel, getBuildTargetOptions, getEntityItems, getOwnedCharacterOptions, getOwnedSupportOptions, getRosterViewEntry, normalizeBuildEntry, renderGradeBadge, renderSelectOptions, state } from "./core.js";
 import { clampNumber, escapeHtml, parseRosterTokenList, renderBadge, tableFromRows } from "./dom-utils.js";
 import { getRosterEntry } from "./roster.js";
 import { deleteBuild, formatLegacyFactorLabel, getCharacterReferenceItem, saveBuildForm } from "./legacy.js";
@@ -142,13 +142,13 @@ function renderAptitudeFitRow(label, fit) {
   if (!fit) {
     return "";
   }
-  const currentText = fit.currentGrade ? `${fit.currentGrade} (${formatModifier(fit.current)})` : `Unknown (${formatModifier(fit.current)})`;
+  const currentGradeMarkup = fit.currentGrade ? renderGradeBadge(fit.currentGrade) : escapeHtml("Unknown");
   const targetText = fit.targetGrade ? `${fit.targetGrade} (${formatModifier(fit.target)})` : "no target set";
   const gainText = fit.gain == null ? "" : fit.gain === 0 ? " · no change planned" : ` · ${fit.gain > 0 ? "+" : ""}${fit.gain.toFixed(2)}x planned`;
   return `
     <div>
       <span>${escapeHtml(label)}</span>
-      <strong>${escapeHtml(currentText)}</strong>
+      <strong>${currentGradeMarkup} <span>(${escapeHtml(formatModifier(fit.current))})</span></strong>
       <small>${escapeHtml(`-> ${targetText}${gainText}`)}</small>
     </div>
   `;
@@ -944,6 +944,18 @@ export const BUILD_EDITOR_TABS = [
   { key: "notes", label: "Notes & Tags" },
 ];
 
+// Phase 4 guided assistant (create mode only): the existing editor tabs presented
+// as a linear journey with a final recap. Parents/Notes stay out of the guided
+// flow — they remain available once the draft is saved and reopens in edit mode's
+// full tab set. Reuses the exact same tab panel bodies, so nothing is duplicated.
+export const BUILD_ASSISTANT_STEPS = [
+  { key: "setup", label: "Cible & uma" },
+  { key: "deck", label: "Deck" },
+  { key: "stats", label: "Stats" },
+  { key: "skills", label: "Skills" },
+  { key: "recap", label: "Récap" },
+];
+
 // Ergonomic rework (docs/CM_BUILD_PLAN.md phase 3): the proposal readout
 // (insight panels) leads; the heavy manual form is split into tabs so only one
 // refinement section shows at a time instead of a ~10000px scroll. Every field
@@ -1052,22 +1064,75 @@ export function renderBuildEditor(entry, isCreateMode, labels = {}) {
     `,
   };
 
-  return `
-    <div class="detail-section roster-section">
-      <h3>${isCreateMode ? "New Build Draft" : "Build Draft"}</h3>
-      <p class="source-note">Planner for <strong>${escapeHtml(getActiveProfile()?.name || "selected profile")}</strong>. The panels below are the deterministic proposal readout (aptitude, HP, stat thresholds, skill activation, last-spurt projection) — no opponent or position simulation. Refine the draft in the tabs.</p>
-      ${renderBuildInsightPanels(entry)}
-      <form id="buildForm" class="roster-form" data-build-id="${escapeHtml(entry.id || "")}" data-build-mode="${isCreateMode ? "create" : "edit"}">
+  const statusLine = `<p id="buildStatus" class="source-note ${state.buildsStatus.kind === "error" ? "error-text" : ""}">${escapeHtml(statusText)}</p>`;
+
+  let formMarkup;
+  if (isCreateMode) {
+    const activeStep = BUILD_ASSISTANT_STEPS.some((step) => step.key === state.buildEditor.activeFormTab)
+      ? state.buildEditor.activeFormTab
+      : "setup";
+    const activeIndex = BUILD_ASSISTANT_STEPS.findIndex((step) => step.key === activeStep);
+    const recapLabels = {
+      mode: BUILD_MODE_OPTIONS.find((option) => option.value === entry.mode)?.label || entry.mode,
+      status: BUILD_STATUS_OPTIONS.find((option) => option.value === entry.status)?.label || entry.status,
+      target: getBuildReferenceLabel("cm_targets", entry.target_id),
+      character: getBuildReferenceLabel("characters", entry.character_id),
+      scenario: getBuildReferenceLabel("scenarios", entry.scenario_id),
+      parents: [],
+    };
+    const recapBody = `
+      <p class="source-note">Vérifie la proposition (panneaux ci-dessus), puis crée le build. Les parents et notes se règlent ensuite dans l'éditeur complet.</p>
+      ${renderBuildReferenceSummary(entry, recapLabels)}
+    `;
+    const stepBodies = { ...tabBodies, recap: recapBody };
+
+    formMarkup = `
+      <form id="buildForm" class="roster-form build-assistant" data-build-id="${escapeHtml(entry.id || "")}" data-build-mode="create">
+        <div class="build-assistant-progress">
+          ${BUILD_ASSISTANT_STEPS.map((step, index) => {
+            const stepState = index < activeIndex ? "done" : index === activeIndex ? "active" : "";
+            return `
+              <button type="button" class="build-assistant-step ${stepState}" data-assistant-step="${step.key}">
+                <span class="build-assistant-step-n">${index + 1}</span>
+                <span class="build-assistant-step-label">${escapeHtml(step.label)}</span>
+              </button>
+            `;
+          }).join("")}
+        </div>
+        ${BUILD_ASSISTANT_STEPS.map((step) => `<div class="build-tab-panel${step.key === activeStep ? " active" : ""}" data-build-tab-panel="${step.key}">${stepBodies[step.key]}</div>`).join("")}
+        <div class="roster-actions build-assistant-nav">
+          ${activeStep !== "setup" ? `<button type="button" class="button-secondary" data-assistant-nav="prev">Précédent</button>` : "<span></span>"}
+          ${activeStep !== "recap"
+            ? `<button type="button" class="button-strong" data-assistant-nav="next">Suivant</button>`
+            : `<button type="submit" class="button-strong">Créer le build</button>`}
+        </div>
+        ${statusLine}
+      </form>
+    `;
+  } else {
+    formMarkup = `
+      <form id="buildForm" class="roster-form" data-build-id="${escapeHtml(entry.id || "")}" data-build-mode="edit">
         <div class="build-tabs" role="tablist">
           ${BUILD_EDITOR_TABS.map((tab) => `<button type="button" class="build-tab${tab.key === activeTab ? " active" : ""}" data-build-tab="${tab.key}">${escapeHtml(tab.label)}</button>`).join("")}
         </div>
         ${BUILD_EDITOR_TABS.map((tab) => `<div class="build-tab-panel${tab.key === activeTab ? " active" : ""}" data-build-tab-panel="${tab.key}">${tabBodies[tab.key]}</div>`).join("")}
         <div class="roster-actions">
           <button type="submit" class="button-strong">Save build</button>
-          ${isCreateMode ? "" : `<button type="button" class="button-danger" id="deleteBuildButton">Delete build</button>`}
+          <button type="button" class="button-danger" id="deleteBuildButton">Delete build</button>
         </div>
-        <p id="buildStatus" class="source-note ${state.buildsStatus.kind === "error" ? "error-text" : ""}">${escapeHtml(statusText)}</p>
+        ${statusLine}
       </form>
+    `;
+  }
+
+  return `
+    <div class="detail-section roster-section">
+      <h3>${isCreateMode ? "Assistant Prépa CM" : "Build Draft"}</h3>
+      <p class="source-note">${isCreateMode
+        ? `Parcours guidé pour <strong>${escapeHtml(getActiveProfile()?.name || "selected profile")}</strong>. Les panneaux ci-dessous sont la proposition déterministe (aptitude, HP, seuils de stats, activation des skills, projection du dernier sprint). Avance étape par étape.`
+        : `Planner for <strong>${escapeHtml(getActiveProfile()?.name || "selected profile")}</strong>. The panels below are the deterministic proposal readout (aptitude, HP, stat thresholds, skill activation, last-spurt projection) — no opponent or position simulation. Refine the draft in the tabs.`}</p>
+      ${renderBuildInsightPanels(entry)}
+      ${formMarkup}
     </div>
   `;
 }
@@ -1147,6 +1212,30 @@ export function attachBuildFormListeners(isCreateMode, buildId) {
     button.addEventListener("click", () => {
       captureBuildFormDraft(isCreateMode, buildId);
       state.buildEditor.activeFormTab = button.dataset.buildTab;
+      requestRenderPreservingScroll();
+    });
+  });
+
+  // Guided assistant (create mode): step chips jump directly, prev/next walk the
+  // ordered steps. Same capture-then-rerender contract as the edit-mode tabs.
+  buildForm.querySelectorAll("[data-assistant-step]").forEach((button) => {
+    button.addEventListener("click", () => {
+      captureBuildFormDraft(isCreateMode, buildId);
+      state.buildEditor.activeFormTab = button.dataset.assistantStep;
+      requestRenderPreservingScroll();
+    });
+  });
+
+  buildForm.querySelectorAll("[data-assistant-nav]").forEach((button) => {
+    button.addEventListener("click", () => {
+      captureBuildFormDraft(isCreateMode, buildId);
+      const currentKey = BUILD_ASSISTANT_STEPS.some((step) => step.key === state.buildEditor.activeFormTab)
+        ? state.buildEditor.activeFormTab
+        : "setup";
+      const currentIndex = BUILD_ASSISTANT_STEPS.findIndex((step) => step.key === currentKey);
+      const delta = button.dataset.assistantNav === "prev" ? -1 : 1;
+      const nextIndex = Math.min(Math.max(currentIndex + delta, 0), BUILD_ASSISTANT_STEPS.length - 1);
+      state.buildEditor.activeFormTab = BUILD_ASSISTANT_STEPS[nextIndex].key;
       requestRenderPreservingScroll();
     });
   });
