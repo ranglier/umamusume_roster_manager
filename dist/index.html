@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Umamusume Roster Manager</title>
   <link rel="icon" type="image/svg+xml" href="./assets/favicon.svg">
-  <link rel="stylesheet" href="./assets/app.css?v=20260719">
+  <link rel="stylesheet" href="./assets/app.css?v=20260720">
   <script charset="utf-8" src="./data/reference-data.js" defer></script>
-  <script type="module" charset="utf-8" src="./assets/app.js?v=20260719"></script>
+  <script type="module" charset="utf-8" src="./assets/app.js?v=20260720"></script>
 </head>
 <body>
   <div id="profileBackgroundMedia" class="profile-background-media" hidden aria-hidden="true">
@@ -16,9 +16,6 @@
     </video>
   </div>
   <div class="page-shell">
-    <button id="sidebarToggle" class="sidebar-toggle" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="appSidebar" onclick="window.umaSidebar&&window.umaSidebar.toggle()">
-      <span class="sidebar-toggle-bars" aria-hidden="true"></span>
-    </button>
     <div id="sidebarBackdrop" class="sidebar-backdrop" onclick="window.umaSidebar&&window.umaSidebar.close()"></div>
     <nav id="appSidebar" class="app-sidebar" aria-label="Sections" hidden>
       <div class="app-sidebar-brand">uma manager</div>
@@ -65,9 +62,14 @@
 
         <section id="toolbar" class="toolbar panel">
           <div class="toolbar-top">
-            <div>
-              <h2 id="entityTitle">Characters</h2>
-              <p id="entityMeta" class="entity-meta"></p>
+            <div class="toolbar-top-lead">
+              <button class="sidebar-toggle" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="appSidebar" onclick="window.umaSidebar&&window.umaSidebar.toggle()">
+                <span class="sidebar-toggle-bars" aria-hidden="true"></span>
+              </button>
+              <div>
+                <h2 id="entityTitle">Characters</h2>
+                <p id="entityMeta" class="entity-meta"></p>
+              </div>
             </div>
             <div class="toolbar-top-side">
               <div id="browseActions" class="browse-actions"></div>

@@ -333,6 +333,9 @@ export function renderAdminPage() {
   profileGateEl.innerHTML = `
     <div class="profile-landing admin-landing">
       <div class="profile-top-meta">
+        <button class="sidebar-toggle" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="appSidebar" onclick="window.umaSidebar&&window.umaSidebar.toggle()">
+          <span class="sidebar-toggle-bars" aria-hidden="true"></span>
+        </button>
         <nav class="mode-nav admin-page-nav" aria-label="Administration navigation">
           <button class="mode-button" type="button" data-mode="roster" data-target-entity="${escapeHtml(rosterEntityKey)}">
             My Roster

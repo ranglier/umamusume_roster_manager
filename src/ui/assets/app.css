@@ -35,6 +35,31 @@
   box-sizing: border-box;
 }
 
+/* Themed scrollbars everywhere (page + sidebar + any scroll container), so the
+   browser's default white bars stop clashing with the dark theme. */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(95, 212, 198, 0.5) rgba(255, 255, 255, 0.04);
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(95, 212, 198, 0.28);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(95, 212, 198, 0.42);
+}
+
+*::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.04);
+}
+
 [hidden] {
   display: none !important;
 }
@@ -297,18 +322,16 @@ body.legacy-detail-expanded.legacy-create-active .app-layout {
   border-top: 1px solid var(--border);
 }
 
-/* Hamburger toggle + backdrop for the off-canvas sidebar (shown only <=1440px;
-   see the media block near the bottom of this file). Hidden in rail mode. */
+/* Menu button for the off-canvas sidebar. Rendered inline as the first item of
+   each screen's header row (toolbar / hero / admin meta); shown only <=1440px
+   (overlay mode). In rail mode (>1440) it's hidden. */
 .sidebar-toggle {
   display: none;
-  position: fixed;
-  top: 15px;
-  left: 13px;
-  z-index: 80;
-  width: 34px;
-  height: 34px;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
+  width: 34px;
+  height: 34px;
   border: 1px solid var(--border);
   border-radius: 9px;
   background: var(--panel);
@@ -361,12 +384,27 @@ body.legacy-detail-expanded.legacy-create-active .app-layout {
   transition: opacity 0.22s ease;
 }
 
+/* Header lead group (menu button + title) so the inline toggle sits left of the
+   title while the toolbar's right-side actions stay right (space-between). */
+.toolbar-top-lead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
 /* Phase 2 home dashboard (renders inside #profileGate on the #/home route). */
 .home-dashboard {
   display: flex;
   flex-direction: column;
   gap: 14px;
   max-width: 1200px;
+}
+
+.home-hero {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
 }
 
 .home-eyebrow {
@@ -4622,7 +4660,7 @@ code {
    vertical panel (not the old horizontal strip). */
 @media (max-width: 1440px) {
   .sidebar-toggle {
-    display: flex;
+    display: inline-flex;
   }
 
   .app-sidebar {
@@ -4647,18 +4685,8 @@ code {
     pointer-events: auto;
   }
 
-  /* Clear the fixed hamburger only on the top-left row of each screen (the
-     title row on browse, the hero on the home/admin gate) — not the whole
-     column, so no empty left gutter runs down the page. */
-  .toolbar-top {
-    padding-left: 46px;
-  }
-
-  body.route-home #profileGate,
-  body.route-admin #profileGate {
-    padding-left: 46px;
-  }
-
+  /* The menu button is inline in each header, so no gate needs it hidden except
+     the full-screen profiles/wizard (which have no header to host it). */
   body.route-profiles .sidebar-toggle,
   body.route-wizard .sidebar-toggle {
     display: none;

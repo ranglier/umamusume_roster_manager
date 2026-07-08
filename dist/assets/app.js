@@ -42,10 +42,7 @@ export function syncLayoutMode(hasSelectedItem) {
 // source of truth; the CSS only reacts to it inside the <=1440 media block.
 export function openSidebar() {
   document.body.classList.add("sidebar-open");
-  const toggle = document.getElementById("sidebarToggle");
-  if (toggle) {
-    toggle.setAttribute("aria-expanded", "true");
-  }
+  document.querySelectorAll(".sidebar-toggle").forEach((el) => el.setAttribute("aria-expanded", "true"));
   const firstItem = document.querySelector("#appSidebar .sidebar-section-item");
   if (firstItem) {
     firstItem.focus();
@@ -57,10 +54,11 @@ export function closeSidebar() {
     return;
   }
   document.body.classList.remove("sidebar-open");
-  const toggle = document.getElementById("sidebarToggle");
-  if (toggle) {
-    toggle.setAttribute("aria-expanded", "false");
-    toggle.focus();
+  document.querySelectorAll(".sidebar-toggle").forEach((el) => el.setAttribute("aria-expanded", "false"));
+  // Return focus to the visible toggle (the one in the active screen's header).
+  const visibleToggle = Array.from(document.querySelectorAll(".sidebar-toggle")).find((el) => el.offsetParent !== null);
+  if (visibleToggle) {
+    visibleToggle.focus();
   }
 }
 
@@ -275,9 +273,14 @@ export function renderHomePage() {
   profileGateEl.innerHTML = `
     <div class="home-dashboard">
       <div class="home-hero">
-        <p class="home-eyebrow">Profile · ${escapeHtml(profileName)}</p>
-        <h1 class="home-title">Welcome</h1>
-        <p class="home-sub">Plan your Champions Meeting builds from your roster.</p>
+        <button class="sidebar-toggle" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="appSidebar" onclick="window.umaSidebar&&window.umaSidebar.toggle()">
+          <span class="sidebar-toggle-bars" aria-hidden="true"></span>
+        </button>
+        <div class="home-hero-copy">
+          <p class="home-eyebrow">Profile · ${escapeHtml(profileName)}</p>
+          <h1 class="home-title">Welcome</h1>
+          <p class="home-sub">Plan your Champions Meeting builds from your roster.</p>
+        </div>
       </div>
 
       <button type="button" class="home-cta" id="homeStartBuild">
