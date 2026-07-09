@@ -518,8 +518,31 @@ reco etait perdu sur double-render async — `startSeededBuildDraft` le stocke
 desormais dans `buildEditor.draft` (persistant), et "New build" le nettoie pour
 un formulaire vierge. Verifie en navigateur.
 
-Reste: Phase 4 = reorientation de la navigation (preparation CM en entree
-principale).
+Phase 4 livree (reorientation de la navigation): l'app ne s'ouvre plus sur le
+catalogue mais sur un dashboard oriente taches, la preparation CM en entree
+principale.
+
+- point d'entree CM-first: un profil connu qui revient atterrit sur le
+  dashboard `home` (`setHomeHash()` dans `app.js`, branche sur
+  `bootstrap-status.recommended_entry`) au lieu du browse catalogue
+- dashboard `home` (`renderHomePage`, `app.js`): CTA principal "Prepare a
+  Champions Meeting" (target -> uma -> deck -> skills, seede un draft neuf en
+  un clic), reprise des builds recents, compteurs de collection
+  (characters / supports / parents), raccourcis vers Collection et References
+- sidebar orientee taches (`SIDEBAR_SECTIONS` dans `core.js`: Home / CM Prep /
+  My Collection / References / Admin), rendue par `renderSidebar` — projection
+  pure du routing existant (`setHomeHash`/`setBrowseHash`/`setAdminHash`),
+  aucun nouveau schema de routes introduit, et `sidebarSectionForRoute` derive
+  la section active de la route courante
+- hub CM Prep: la liste plate de builds devient une vue groupee par statut
+- suivi de plusieurs passes de polish: copie UI en anglais, dashboard plus
+  dense, chrome teal, responsive (sidebar off-canvas, breakpoints), et le
+  rebrand "Umanager" (monogramme "U")
+
+L'auto-build est donc accessible en deux clics depuis l'ecran d'accueil, et
+la navigation reflete le but produit (preparer un CM) plutot que la structure
+des donnees. Le programme de refonte CM-first + auto-build (sections 14) est
+complet.
 
 ## Choix techniques et justification
 

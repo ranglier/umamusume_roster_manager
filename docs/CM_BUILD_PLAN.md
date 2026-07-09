@@ -984,8 +984,28 @@ divulgation progressive:
   skills), navigation entre onglets preservant tout (Skills 10 chips, Deck
   6 coches, Setup intact), zero erreur console
 
-Reste: Phase 4 = reorientation de la navigation (la preparation CM comme
-entree principale de l'app).
+## Phase 4 livree (navigation CM-first)
+
+La reorientation de la navigation est livree: l'app ne s'ouvre plus sur le
+catalogue mais sur un dashboard oriente taches, la preparation CM en entree
+principale.
+
+- point d'entree CM-first: un profil connu qui revient atterrit sur le
+  dashboard `home` (`app.js` `setHomeHash()`, branche sur
+  `bootstrap-status.recommended_entry`)
+- dashboard `home` (`renderHomePage`): CTA "Prepare a Champions Meeting"
+  (seede un draft neuf en un clic), reprise des builds recents, compteurs de
+  collection, raccourcis Collection / References
+- sidebar orientee taches (`SIDEBAR_SECTIONS`: Home / CM Prep / My Collection
+  / References / Admin) — projection pure du routing existant, aucun nouveau
+  schema de routes
+- hub CM Prep: builds groupes par statut au lieu d'une liste plate
+
+Le programme "refonte CM-first + auto-build" est donc complet (uma + style +
+stats + deck + skills auto-remplis, editeur en onglets, et navigation qui
+mene a la preparation CM). Prochaine brique produit manquante: `run_results`
+(voir Phase 3B "Fondations utilisateur" — `run_results` reste a ajouter), qui
+fermera la boucle entre build planifie et resultat reel.
 
 ## Sources utiles
 
