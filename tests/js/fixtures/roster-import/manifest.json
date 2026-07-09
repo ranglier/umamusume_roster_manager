@@ -1,0 +1,121 @@
+{
+  "note": "Fixtures extraites d'une capture reelle 1080x2392 (grille supports: origine 45,295, carte 180x240, pas 202x275). refs = illustrations locales LANCZOS 90x120. Donnees RGBA brutes.",
+  "cells": [
+    {
+      "file": "cell_0_0.rgba",
+      "width": 180,
+      "height": 240,
+      "row": 0,
+      "col": 0,
+      "card_id": "30002",
+      "level": 35,
+      "limit_break": 1
+    },
+    {
+      "file": "cell_1_3.rgba",
+      "width": 180,
+      "height": 240,
+      "row": 1,
+      "col": 3,
+      "card_id": "30084",
+      "level": 50,
+      "limit_break": 4
+    },
+    {
+      "file": "cell_3_1.rgba",
+      "width": 180,
+      "height": 240,
+      "row": 3,
+      "col": 1,
+      "card_id": "20044",
+      "level": 25,
+      "limit_break": 2
+    },
+    {
+      "file": "cell_5_0.rgba",
+      "width": 180,
+      "height": 240,
+      "row": 5,
+      "col": 0,
+      "card_id": "10072",
+      "level": 1,
+      "limit_break": 4
+    },
+    {
+      "file": "cell_0_1.rgba",
+      "width": 180,
+      "height": 240,
+      "row": 0,
+      "col": 1,
+      "card_id": "30003",
+      "level": 30,
+      "limit_break": 0
+    },
+    {
+      "file": "cell_1_4.rgba",
+      "width": 180,
+      "height": 240,
+      "row": 1,
+      "col": 4,
+      "card_id": "30018",
+      "level": 40,
+      "limit_break": 2
+    }
+  ],
+  "refs": [
+    {
+      "id": "30002",
+      "file": "ref_30002.rgba",
+      "width": 90,
+      "height": 120
+    },
+    {
+      "id": "30084",
+      "file": "ref_30084.rgba",
+      "width": 90,
+      "height": 120
+    },
+    {
+      "id": "20044",
+      "file": "ref_20044.rgba",
+      "width": 90,
+      "height": 120
+    },
+    {
+      "id": "10072",
+      "file": "ref_10072.rgba",
+      "width": 90,
+      "height": 120
+    },
+    {
+      "id": "30003",
+      "file": "ref_30003.rgba",
+      "width": 90,
+      "height": 120
+    },
+    {
+      "id": "30018",
+      "file": "ref_30018.rgba",
+      "width": 90,
+      "height": 120
+    },
+    {
+      "id": "10002",
+      "file": "ref_10002.rgba",
+      "width": 90,
+      "height": 120
+    },
+    {
+      "id": "10003",
+      "file": "ref_10003.rgba",
+      "width": 90,
+      "height": 120
+    },
+    {
+      "id": "30044",
+      "file": "ref_30044.rgba",
+      "width": 90,
+      "height": 120
+    }
+  ]
+}

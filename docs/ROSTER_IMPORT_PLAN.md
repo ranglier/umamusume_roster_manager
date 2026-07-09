@@ -104,7 +104,33 @@ apres un update GameTora). Taille ~1 Ko/carte -> ~500 Ko, OK.
 
 ## Phases d'implementation
 
-### Phase A — fixtures + moteur pur + tests
+### Phase A — fixtures + moteur pur + tests — LIVREE
+
+Livre (`src/ui/assets/js/roster_import_cv.js` + `tests/js/test_roster_import_cv.mjs`,
+16 tests; fixtures reelles dans `tests/js/fixtures/roster-import/`):
+
+- fixtures extraites de la capture reelle: 6 cellules RGBA brutes (niveaux
+  35/50/25/1/30/40, LB 1/4/2/4/0/2, verite terrain recoupee par les caps de
+  rarete), 9 references 90x120 dont les paires confusables Suzuka SSR/R et
+  Teio SSR/R, glyphes 0-5 embarques dans le module
+- **validation e2e du moteur JS reel** (script jetable, capture complete
+  contre les 534 illustrations pleine taille): identite **30/30 corrects**
+  (28/30 confiants), niveaux 28/30 — les 2 erreurs de niveau sortent a
+  confiance 0.52/0.56 la ou toutes les lectures justes sont >=0.96, donc le
+  gating "a verifier" fonctionne —, LB 30/30 coherents. Perf: 1.3s pour
+  empreinter 534 refs (une fois, a cacher), 104ms pour matcher+lire 30
+  cellules
+- decouvertes d'implementation: la position verticale de la bande "Lvl"
+  varie de quelques px selon la carte (ne pas sur-contraindre les lignes);
+  la limite de colonnes doit couvrir toute la region (un chiffre peut
+  s'etendre jusqu'au bord — le coin arrondi se filtre par ligne-sommet de
+  blob, pas par colonne); hauteur de chiffre bornee a 22px pour ecarter la
+  courbe du coin fusionnee dans un blob
+- limites connues: glyphes 6-9 absents (aucun niveau de la capture n'en
+  contient — leurs lectures sortiront en basse confiance jusqu'a extension
+  du jeu de templates); geometrie fixe 1080px (choix assume)
+
+Detail de la phase telle que planifiee:
 
 - Extraire des fixtures depuis les captures reelles deja fournies
   (`data/user/import_samples/`): quelques cellules en tableaux de pixels
