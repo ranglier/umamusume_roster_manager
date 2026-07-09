@@ -3490,6 +3490,143 @@ body.route-wizard .profile-gate::after {
   text-align: left;
 }
 
+/* Screenshot-based support import (roster/supports "Import" presentation) */
+.support-import {
+  display: grid;
+  gap: 14px;
+}
+
+.import-dropzone {
+  display: grid;
+  gap: 8px;
+  padding: 18px;
+  border: 2px dashed rgba(115, 160, 198, 0.35);
+  border-radius: 16px;
+  background: rgba(10, 19, 29, 0.6);
+  text-align: center;
+  justify-items: center;
+}
+
+.import-dropzone p {
+  margin: 0;
+}
+
+.import-dropzone-active {
+  border-color: var(--accent);
+  background: rgba(95, 212, 198, 0.08);
+}
+
+.import-file-label {
+  cursor: pointer;
+}
+
+.import-apply-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid rgba(115, 160, 198, 0.14);
+  border-radius: 12px;
+  background: rgba(10, 19, 29, 0.7);
+}
+
+.import-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid rgba(115, 160, 198, 0.12);
+  border-radius: 16px;
+}
+
+.import-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: rgba(10, 19, 29, 0.92);
+}
+
+.import-table th,
+.import-table td {
+  padding: 8px;
+  border-bottom: 1px solid rgba(115, 160, 198, 0.08);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.import-table th {
+  background: rgba(15, 27, 39, 0.98);
+  color: var(--ink-deep);
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.import-cell-thumb {
+  width: 44px;
+  height: 59px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.import-ref-thumb {
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+  object-fit: cover;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+
+.import-match-cell select {
+  max-width: 300px;
+}
+
+.import-level-input {
+  width: 72px;
+}
+
+.import-status {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+}
+
+.import-status-new {
+  background: rgba(95, 212, 198, 0.16);
+  color: var(--accent-2);
+}
+
+.import-status-changed {
+  background: rgba(224, 193, 90, 0.16);
+  color: var(--accent-3);
+}
+
+.import-status-unchanged {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-soft);
+}
+
+.import-status-unknown {
+  background: rgba(255, 139, 102, 0.16);
+  color: var(--accent-4);
+}
+
+.import-warnings {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.78rem;
+  color: var(--accent-4);
+}
+
+.import-row-unknown {
+  background: rgba(255, 139, 102, 0.04);
+}
+
+.import-unchanged summary {
+  cursor: pointer;
+  color: var(--text-soft);
+}
+
 .batch-row-subtitle {
   margin-top: 6px;
   color: var(--text-soft);

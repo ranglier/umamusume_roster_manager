@@ -389,6 +389,17 @@ export const state = {
     activeFormTab: "setup",
   },
   rosterStatus: { kind: "idle", message: "" },
+  // Screenshot-based support import (docs/ROSTER_IMPORT_PLAN.md). Reference
+  // fingerprints live in memory (hydrated from localStorage); results carry
+  // the reviewed/edited rows of the reconciliation table.
+  supportImport: {
+    status: { kind: "idle", message: "" },
+    fingerprints: null,
+    fingerprintsVersion: "",
+    building: false,
+    processing: false,
+    results: [],
+  },
   profilesApiStatus: { kind: "idle", message: "" },
   adminJobs: { active_job: null, recent_jobs: [] },
   backups: [],

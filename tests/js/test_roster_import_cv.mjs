@@ -17,6 +17,7 @@ import {
   colorHistogram,
   cropImage,
   dedupeExtracted,
+  deserializeFingerprint,
   dhash64,
   gridCells,
   hamming64,
@@ -28,6 +29,7 @@ import {
   reconcile,
   referenceFingerprint,
   resizeImage,
+  serializeFingerprint,
 } from "../../src/ui/assets/js/roster_import_cv.js";
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "roster-import");
@@ -160,6 +162,16 @@ test("readLevel reads the expected level on every fixture cell", () => {
     const result = readLevel(cell.img);
     assert.equal(result.level, cell.level, `cellule (${cell.row},${cell.col})`);
     assert.ok(result.confidence > 0.85, `(${cell.row},${cell.col}) confiance faible: ${result.confidence.toFixed(2)}`);
+  }
+});
+
+// --- fingerprint cache serialization ---
+
+test("fingerprints round-trip losslessly through serialization", () => {
+  for (const [id, fp] of refFingerprints) {
+    const restored = deserializeFingerprint(JSON.parse(JSON.stringify(serializeFingerprint(fp))));
+    assert.equal(hamming64(fp.hash, restored.hash), 0, `hash de ${id}`);
+    assert.ok(Math.abs(histIntersect(fp.hist, restored.hist) - 1) < 1e-12, `histogramme de ${id}`);
   }
 });
 

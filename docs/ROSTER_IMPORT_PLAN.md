@@ -144,23 +144,42 @@ Detail de la phase telle que planifiee:
   `reconcile` (nouveau/modifie/inchange, jamais de retrait)
 - Sortie: moteur teste, zero UI
 
-### Phase B — cache d'empreintes + branchement navigateur
+### Phases B + C — branchement navigateur + UI de reconciliation — LIVREES
 
-- `roster_import.js`: decode fichiers, decoupe de grille (constantes du
-  spike, echelle par largeur), construction du cache d'empreintes
-  localStorage, pipeline complet capture -> liste de
-  `{cellCrop, cardId, level, limitBreak, confidence, top3}`
-- Verification navigateur sur les captures reelles: on doit retrouver le
-  30/30 du spike (meme methode, meme donnees)
+Livrees ensemble (`src/ui/assets/js/roster_import.js`, nouveau module):
 
-### Phase C — UI de reconciliation
+- pipeline navigateur: `createImageBitmap` -> canvas -> `getImageData` ->
+  moteur pur (decoupe de grille, empreintes, top-3, niveau, LB, vignette
+  jpeg par cellule)
+- cache d'empreintes: construit au premier import (les 534 illustrations
+  locales, ~13s, avec progression affichee), stocke en `localStorage`
+  (~260 Ko, histogrammes en sparse int — round-trip exact car 1024 = 2^10),
+  versionne par `generated_at` de la reference; les imports suivants sont
+  quasi instantanes
+- UI: 3e presentation "Import" de la vue roster/supports (a cote de
+  Detail/Batch, meme plein-ecran que Batch), dropzone + file picker, table
+  de reconciliation (vignette capturee | carte matchee avec icone + select
+  top-3 | niveau editable | LB editable | badge New/changed/unchanged/
+  Unknown + avertissements dont depassement de cap via
+  `getSupportLevelCap`), lignes "unchanged" repliees, barre "N selected ->
+  Apply to my roster"
+- application: merge dans `state.rosterDocument.supports` via
+  `setRosterEntry` + `persistRosterDocument` (PUT roster existant), zero
+  changement serveur comme prevu
+- piege trouve et corrige en verification: le roster persiste **elague des
+  valeurs par defaut** (`pruneRosterEntry` retire `level: 1` et
+  `limit_break: 0`) -> le diff naif marquait "changed" toutes les cartes a
+  valeurs par defaut au re-import (`undefined != 1`). Corrige en
+  normalisant les entrees courantes avant `reconcile`/affichage
+  (`normalizedSupportEntry`)
 
-- Presentation "Import" dans roster/supports, table de reconciliation,
-  edition des lignes douteuses, diff, application via
-  `persistRosterDocument`
-- CSS dedie (table, vignettes, badges de confiance)
-- Verification navigateur de bout en bout: importer les ~6 captures reelles
-  de l'utilisateur, roster mis a jour correctement
+Verifie en navigateur sur la capture reelle (profil p_001): 30 cellules
+lues, 28 matchs confiants + 2 "a verifier" (les 2 cas limites du spike,
+leur bonne reponse en tete du top-3), correction d'une ligne via le
+dropdown, application de 29 cartes (verifiees cote serveur via l'API,
+y compris une correction de valeurs saisies a la main auparavant),
+re-import de la meme capture -> **28 "already up to date", 0 selectionnee**
+(idempotence), zero erreur console.
 
 ### Phase D — polissage guide par l'usage reel
 

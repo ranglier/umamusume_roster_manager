@@ -514,6 +514,38 @@ export function readLevel(cellImg) {
   };
 }
 
+// --- Fingerprint (de)serialization for the localStorage cache ---
+// The histogram counts 32x32 = 1024 samples; count/1024 is exact in binary
+// floating point, so sparse integer counts round-trip losslessly.
+
+const HIST_SAMPLES = HIST_SIZE * HIST_SIZE;
+
+export function histToSparse(hist) {
+  const sparse = {};
+  for (let i = 0; i < hist.length; i += 1) {
+    if (hist[i] > 0) {
+      sparse[i] = Math.round(hist[i] * HIST_SAMPLES);
+    }
+  }
+  return sparse;
+}
+
+export function sparseToHist(sparse) {
+  const hist = new Float64Array(HIST_BINS * HIST_BINS * HIST_BINS);
+  for (const [index, count] of Object.entries(sparse || {})) {
+    hist[Number(index)] = count / HIST_SAMPLES;
+  }
+  return hist;
+}
+
+export function serializeFingerprint(fp) {
+  return { h: [fp.hash.hi, fp.hash.lo], s: histToSparse(fp.hist) };
+}
+
+export function deserializeFingerprint(raw) {
+  return { hash: { hi: raw.h[0] >>> 0, lo: raw.h[1] >>> 0 }, hist: sparseToHist(raw.s) };
+}
+
 // --- Reconciliation (pure diff; the import never removes ownership) ---
 
 // Entries: [{cardId, level, limitBreak, confidence}] possibly with duplicates

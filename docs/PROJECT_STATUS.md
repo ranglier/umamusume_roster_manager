@@ -597,6 +597,37 @@ Reste hors perimetre v1 (assume): import auto depuis screenshots/jeu;
 dashboards d'agregats (win-rate, historique meta); calcul du rang depuis
 `single_mode_rank` (table importee mais pas de formule points->rang).
 
+### 16. Import du roster supports par screenshots
+
+Chantier a plus fort levier d'adoption identifie avec l'utilisateur (frein #1:
+saisir et maintenir des centaines de cartes a la main). Cadrage, alternatives
+ecartees (API serveur, capture de paquets — DMM only, inaccessible a un compte
+global) et verdicts des spikes dans `docs/EXTERNAL_SOURCES_PLAN.md`; plan
+d'execution et statut detaille dans `docs/ROSTER_IMPORT_PLAN.md`. Livre de
+bout en bout (phases A puis B+C):
+
+- moteur CV **pur, 100% local, zero dependance** (`roster_import_cv.js`,
+  teste sous Node sur des fixtures RGBA extraites d'une capture reelle):
+  identite par dHash 64 bits (min sur 5 jitters) + histogramme couleur 6x6x6
+  contre les illustrations deja presentes dans `dist/media/reference/supports/`,
+  niveau par OCR de glyphes (templates embarques, chiffres 0-5 — 6-9 absents
+  de la capture source, sortiront en basse confiance), limit break par
+  echantillonnage couleur des 4 gemmes, geometrie de grille calee sur
+  l'appareil de l'utilisateur (1080x2392)
+- orchestration navigateur (`roster_import.js`): canvas/`createImageBitmap`,
+  cache d'empreintes en localStorage (~260 Ko, versionne par `generated_at`,
+  construit une fois en ~13s puis quasi instantane), presentation "Import"
+  dans roster/supports avec table de reconciliation (top-3 pour les cellules
+  incertaines, niveau/LB editables, badges New/changed/unchanged/Unknown,
+  garde-fou de cap via `getSupportLevelCap`), application via le PUT roster
+  existant — **zero changement serveur**
+- resultat mesure sur la capture reelle: 30/30 identites correctes (28
+  confiantes + 2 proposees en tete de leur top-3), idempotence verifiee
+  (re-import -> 28 "already up to date", 0 selectionnee), l'import ne retire
+  jamais une possession
+- les umas restent hors perimetre (pas d'asset public au cadrage de l'icone
+  in-game, ~40-50% top-1 au spike — decision documentee)
+
 ## Choix techniques et justification
 
 ### Manifest + JSON versionnes plutot que scraping HTML
@@ -873,6 +904,7 @@ Cote frontend, une suite existe aussi dans `tests/js/` (stdlib `node:test` + `no
 - `admin.js`: `wizardNeedsReferenceBuild`, `getWizardProgress`, `getTimedProgress`, `getUpdateProgress`
 - `visualizer.js` (Race Skill Visualizer, voir section 11/11bis/11ter): `parseConditionString`, `resolveStaticZones`, `describeDynamicTermHuman`, `buildTrackSvg` (dont le comportement multi-groupes/multi-couleurs), `getFilteredSkillPickerOptions` (multi-selection, epinglage dans l'ordre de selection)
 - `runs.js` (run_results, voir section 15): `seedRunFromBuild` (snapshot du plan + non-aliasing des objets imbriques), `computeRunDelta` (deltas de stats signes, skills requis non appris, extras hors plan, changements d'aptitude)
+- `roster_import_cv.js` (import screenshots, voir section 16): teste sur des fixtures RGBA reelles (`tests/js/fixtures/roster-import/`) — primitives (dhash/hamming/histogramme/crop/resize), decoupe de grille, matching d'identite (dont paires confusables Suzuka/Teio SSR vs R), lecture niveau/LB, serialisation des empreintes, dedupe et reconcile (jamais de retrait de possession). Module pur sans DOM: c'est le premier fichier de test qui n'a pas besoin du domshim
 
 Lancer la suite (Node 22 installe et verifie dans cet environnement de dev; sur Windows, utiliser explicitement le glob, la forme repertoire seule echoue avec `ERR_MODULE_NOT_FOUND` — voir `CLAUDE.md`):
 

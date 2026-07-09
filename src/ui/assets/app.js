@@ -7,6 +7,7 @@ import { attachRosterFormListeners, collectRosterFormData, getDefaultRosterEntry
 import { attachLegacyFormListeners, getCharacterRosterDefaults, getLegacyCharacterOptions, renderLegacyDetailBody, renderLegacyEditor, renderLegacyPreview, renderLegacySimulatorList } from "./js/legacy.js";
 import { attachBuildFormListeners, createEmptyBuildEntry, renderBuildEditor, startSeededBuildDraft } from "./js/builds.js";
 import { loadBuildsForProfile, loadLegacyForProfile, loadRunsForProfile, openProfile, refreshAdminData, renderAdminPage, renderProfilesPage, renderWizardPage, runAdminJob, wizardNeedsReferenceBuild } from "./js/admin.js";
+import { renderSupportImportPanel } from "./js/roster_import.js";
 
 
 export function syncToolbarMetrics() {
@@ -529,11 +530,14 @@ export function renderBrowseActions(route, filteredItems) {
   }
 
   const isBatch = localState.presentation === "batch";
+  const isImport = localState.presentation === "import";
+  const supportsImport = route.entityKey === "supports";
   browseActionsEl.hidden = false;
   browseActionsEl.innerHTML = `
     <div class="presentation-switch">
-      <button type="button" class="${!isBatch ? "active" : ""}" data-roster-presentation="detail">Detail</button>
+      <button type="button" class="${!isBatch && !isImport ? "active" : ""}" data-roster-presentation="detail">Detail</button>
       <button type="button" class="${isBatch ? "active" : ""}" data-roster-presentation="batch">Batch</button>
+      ${supportsImport ? `<button type="button" class="${isImport ? "active" : ""}" data-roster-presentation="import">Import</button>` : ""}
     </div>
     ${isBatch ? `
       <div class="batch-toolbar">
@@ -549,7 +553,7 @@ export function renderBrowseActions(route, filteredItems) {
   browseActionsEl.querySelectorAll("[data-roster-presentation]").forEach((button) => {
     button.addEventListener("click", () => {
       localState.presentation = button.dataset.rosterPresentation;
-      if (localState.presentation === "batch") {
+      if (localState.presentation === "batch" || localState.presentation === "import") {
         localState.selectedId = null;
       }
       requestRenderPreservingScroll();
@@ -617,6 +621,10 @@ export function renderList(mode, entityKey, filteredItems) {
   const localState = getViewState(mode, entityKey);
   if (mode === "roster" && entityKey === legacyEntityKey && localState.presentation === "simulator") {
     renderLegacySimulatorList();
+    return;
+  }
+  if (mode === "roster" && entityKey === "supports" && localState.presentation === "import") {
+    renderSupportImportPanel();
     return;
   }
   if (mode === "roster" && localState.presentation === "batch") {
@@ -861,7 +869,9 @@ export function renderBrowseBody(entityKey, detail, rosterProjection) {
 
 export function renderDetail(route, selectedItem) {
   const localState = route.page === "browse" ? getViewState(route.mode, route.entityKey) : null;
-  const isBatchMode = Boolean(route.mode === "roster" && localState?.presentation === "batch");
+  // Batch and import are full-width presentations: the detail column is
+  // hidden by renderBrowse, this placeholder only shows if it reappears.
+  const isBatchMode = Boolean(route.mode === "roster" && (localState?.presentation === "batch" || localState?.presentation === "import"));
   if (isBatchMode) {
     detailEl.innerHTML = "<div class='detail-empty'>Batch mode focuses on quick inline maintenance. Use <strong>Open</strong> on a row or switch back to <strong>Detail</strong> mode for the full roster sheet.</div>";
     return;
@@ -1157,7 +1167,7 @@ export function syncShellVisibility(route) {
 export function renderBrowse(route) {
   const entity = data.entities[route.entityKey];
   const localState = getViewState(route.mode, route.entityKey);
-  const isBatchMode = route.mode === "roster" && localState.presentation === "batch";
+  const isBatchMode = route.mode === "roster" && (localState.presentation === "batch" || localState.presentation === "import");
 
   if (route.itemId) {
     localState.selectedId = route.itemId;
