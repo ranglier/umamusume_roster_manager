@@ -428,3 +428,222 @@ Cette sequence maximise:
 - l'utilite immediate
 - la robustesse
 - la coherence avec le futur moteur de build CM
+
+## Import et synchronisation du roster depuis le jeu
+
+Troisieme source externe etudiee, distincte des deux precedentes: non pas des
+donnees meta ou de visualisation, mais les **donnees de compte du joueur**
+(cartes possedees, niveaux, MLB, uma, stars, awakening).
+
+### Probleme
+
+Le principal frein a l'usage reel de l'app n'est pas la qualite des recos mais
+le cout d'**entree ET de maintenance** du roster: plusieurs centaines de support
+cards a des MLB/niveaux differents, plusieurs dizaines d'uma a des stars/
+awakening differents, qui evoluent en continu. Sans import rapide + mise a jour
+incrementale, l'app reste sous-utilisee au profit d'un LLM externe (ChatGPT)
+nourri de screenshots. Voir memoire projet
+`project_cm_prep_workflow_and_frictions`.
+
+### Voie "API serveur / capture de paquets": ecartee pour un joueur global
+
+Recherche menee (juillet 2026):
+
+- pas d'API publique Cygames exposant les donnees de compte
+- la DB locale (`master.mdb` + `meta`) ne contient que la **reference**
+  (definitions cartes/skills), deja couverte par GameTora; le roster possede
+  n'y est pas, il vient du serveur
+- l'ecosysteme qui reconstruit le roster passe par la **capture de paquets**
+  (famille CarrotJuicer, hook de `libnative.dll`, enrobe par UmaLauncher),
+  concu et maintenu pour la version **DMM japonaise**
+- le compte de l'utilisateur est **global** (client Steam, sorti le 25 juin
+  2025), liable au PC via Data Link, mais: aucun outil maintenu ne fait de
+  capture de paquets sur le client Steam global (non confirme, ecosysteme reste
+  DMM); Steam EN et DMM JP partagent le meme dossier d'install; le compte global
+  n'est pas jouable sur le client DMM JP
+
+Conclusion: pour un joueur global, **il n'existe pas aujourd'hui de pipe roster
+fiable via serveur/paquets**. A surveiller (Steam est jeune) mais pas a attendre.
+
+### Voie retenue par elimination: OCR / screenshot + reconciliation
+
+Toute la tooling active pour la version globale lit l'etat du jeu par
+OCR/capture d'ecran, pas par paquets — signal fort que l'OCR est l'approche
+pragmatique sur global. Avantages:
+
+- **ToS-safe** quand elle se limite a lire une image (voir risques ci-dessous)
+- multiplateforme (peut meme tourner cote telephone)
+- adaptee a la maintenance: penser **"reconciliation"** plutot qu'"import" —
+  l'utilisateur re-shoote les cartes qui ont bouge, l'app calcule un diff contre
+  le roster stocke et propose les changements a confirmer
+
+L'export `.zip` de profil existant (roster + builds + runs) sert deja le cote
+"consommation sur telephone" du decouplage PC-authoring / phone-consumption.
+
+### Projets communautaires OCR (references techniques, pas des dependances)
+
+Categorises par mecanisme, car le mecanisme determine le risque de ban:
+
+**Lecture seule par OCR / capture d'ecran (risque faible):**
+
+- GameTora Training Event Helper — `https://gametora.com/umamusume/training-event-helper`
+- IRMINSUL Training Event Helper — `https://irminsul.gg/uma/training-event-helper`
+- daftuyda / UmaTools — `https://github.com/daftuyda/UmaTools`
+- steve1316 / uma-android-training-helper — `https://github.com/steve1316/uma-android-training-helper` (OCR **sur Android**, tourne sur le telephone)
+
+**OCR + automation / mods (risque eleve, NON necessaires pour lire un roster):**
+
+- watsonjph / UmaTrainerTools — `https://github.com/watsonjph/UmaTrainerTools` (batti sur Trainers-Legend-G: auto-train, FPS unlock, freecam)
+- suchxs / UmaTrainerTools — `https://github.com/suchxs/UmaTrainerTools`
+
+**Capture de paquets (DMM only, hors sujet pour un compte global):**
+
+- CNA-Bld / CarrotJuicer — `https://github.com/CNA-Bld/CarrotJuicer`
+- KevinVG207 / UmaLauncher — `https://github.com/KevinVG207/UmaLauncher`
+
+### Evaluation du risque de ban
+
+Precision honnete: pas de statistiques de ban fiables sous la main; les CGU
+interdisent largement les outils tiers, mais l'application concrete cible
+surtout l'automation et la triche, pas la lecture passive d'ecran. Par paliers
+de risque croissant:
+
+- **Tier 1 — screenshot passif / OCR hors-ligne** (l'app parse une image fournie
+  par l'utilisateur): risque **quasi nul**. Le jeu n'est jamais touche; c'est
+  l'equivalent de lire une capture d'ecran. **Approche recommandee.**
+- **Tier 2 — capture d'ecran live du jeu** (OCR temps reel, lecture seule):
+  risque **faible**. Lecture passive de la fenetre, aucune modification du
+  process ni du reseau. Les event helpers OCR sont ici.
+- **Tier 3 — automation / envoi d'inputs** (auto-trainers): risque **eleve**.
+  L'automatisation du gameplay est typiquement interdite et ciblee par les bans.
+- **Tier 4 — mods memoire / injection DLL** (Trainers-Legend-G, hachimi, FPS
+  unlock, freecam) **et capture de paquets** (CarrotJuicer): risque **le plus
+  eleve**. Hook/modification du process. Tolere historiquement cote DMM mais
+  formellement bannissable, et l'anti-triche global est plus recent.
+
+Pour lire un roster, seuls les Tier 1/2 sont pertinents; le Tier 1 est a la fois
+le plus sur ET le meilleur fit.
+
+### Approche recommandee pour l'app
+
+- import roster par **OCR d'images fournies par l'utilisateur** (screenshots des
+  ecrans d'inventaire), parse **hors-ligne** — Tier 1
+- **ne pas** embarquer d'automation ni de mod/injection (Tier 3/4): inutile pour
+  lire un roster et seule vraie source de risque
+- **flux de reconciliation** (diff + confirmation) pour la maintenance continue
+- philosophie offline: si un modele de vision est utilise, arbitrer **local vs
+  API** (le local preserve l'offline; une API vision est plus simple a batir
+  mais introduit une dependance runtime et un cout)
+
+### Faisabilite validee sur captures reelles (juillet 2026)
+
+Test mene sur 3 captures reelles du client (2 grilles support cards filtrees
+Speed/Wit, 1 grille umas "Trainee Umamusume"). **Decision: on construit
+l'import par screenshot.**
+
+Catalogue de match deja present dans le repo:
+
+- `dist/media/reference/supports/*.png` — 1075 images indexees par **ID de carte**
+- `dist/media/reference/characters/<groupe>/<id>.png` — 258 images d'umas
+
+Lisible directement en **vue grille** (sans ouvrir chaque carte — point cle):
+
+- supports: rarete (badge SSR/SR/R), type (icone haut-droite; le **filtre par
+  type est un aide-capture** — une salve = un seul type), niveau (`Lvl XX`),
+  limit break (rangee de 4 gemmes en bas a gauche), possession (`Held 171/225`)
+- umas: **etoiles (rang) ET `Potential Lvl`** — correction importante: le
+  "Potential Lvl" affiche **EST le niveau d'awakening**. Donc les deux champs
+  roster uma (stars + awakening) sont presents dans la vue liste
+
+Methode d'identite retenue: **match d'image** (perceptual hash / template
+matching) de la vignette contre le catalogue indexe par ID — **pas** de l'OCR de
+nom (souvent absent en grille). Plus fiable qu'une reconnaissance semantique car
+la vignette in-game et l'image de reference sont le meme artwork.
+
+Points durs identifies (tous rattrapes par l'etape "diff a confirmer"):
+
+- recadrage de la vignette vs l'image de reference avant le hash (crops
+  potentiellement differents)
+- comptage precis des gemmes de limit break a la resolution d'une grille
+- versions d'art quasi identiques (alt outfits) ou le match peut hesiter
+
+Volumetrie: ~30 cartes/ecran, 171 supports possedes -> ~6 captures. Gerable.
+
+### Spike de matching execute (juillet 2026) — verdict et methode retenue
+
+Decisions prealables: moteur **CV locale** (pas de modele de vision — arbitrage
+"local-first, integre a l'app" et perspective de packaging => cible finale
+**cote navigateur JS/Canvas**, le spike jetable etant en Python+Pillow), MVP
+**umas d'abord**, libs externes seulement si le fait-maison est trop lourd.
+
+Resultat du spike (grille umas 35 cellules, capture 1080x2392):
+
+- decoupe de grille: OK (geometrie fixe calee sur la resolution du telephone
+  de l'utilisateur — simplification assumee, un seul appareil)
+- **decouverte structurante**: il n'existe **aucun asset public identique a
+  l'icone visage in-game** des umas. Nos `chara_stand_*` (en pied, pose libre)
+  et les `chr_icon_*` GameTora (buste circulaire, 41/131 seulement) cadrent
+  differemment -> tout matching pixel-a-pixel naif (dHash, NCC mono/multi-
+  echelle, gris ou RGB) echoue completement, teste et confirme ~5 fois
+- **meilleur asset trouve**: `characters/thumb/chara_stand_<chara>_<variant>.png`
+  (GameTora, 128x128, fond alpha, **258/258 variantes couvertes**, URL
+  previsible depuis nos donnees). A ajouter au pipeline d'assets
+- **methode qui marche**: histogramme de couleurs 3D (6x6x6 bins) — insensible
+  a l'alignement/echelle, trivial a porter en JS/Canvas. Cote thumb: pixels
+  alpha>128 uniquement (sinon le fond compose contamine le match, teste);
+  cote cellule: suppression des 1-2 bins dominants (fond de carte).
+  Suzuka test: 0.545 vs 0.441 au 2e (gap net)
+- **precision brute sur les 35 cellules: ~40-50% top-1, 9/35 "confiants"**
+  (gap>=0.05), le bon perso souvent dans le top-2-3; deux variantes du score
+  (palette tenue entiere vs palette tete seule via bbox alpha) font des
+  erreurs *differentes* -> un score combine devrait monter sensiblement
+
+Consequences pour l'implementation reelle:
+
+1. l'UI de reconciliation n'est pas un filet de securite optionnel, c'est
+   **le coeur du produit**: proposer le **top-3** par cellule (dropdown
+   pre-rempli), l'utilisateur confirme/corrige — meme a 50% top-1, corriger
+   ~15 cellules via un choix pre-mache bat totalement la saisie manuelle
+2. score combine (palette tenue + palette tete + forme grossiere) a
+   construire et calibrer sur les vraies captures
+3. **le cas `supports` (le vrai volume, 1075 cartes) devrait etre BEAUCOUP
+   plus facile**: nos images de reference supports sont le *meme artwork*
+   que la grille in-game (la ou les umas n'ont pas d'asset equivalent) —
+   le matching pixel/dHash devrait y etre quasi exact. Ironie du sequencement:
+   les umas choisies comme cas "facile" (moins nombreuses) sont en realite le
+   cas *dur* cote assets. Valider par un mini-spike supports avant de figer
+   la conception du matcher
+4. ajouter les thumbs umas au pipeline d'update (nouvelle famille d'assets)
+
+### Mini-spike supports (juillet 2026): cas resolu, 30/30
+
+Confirme sur une capture reelle (grille 6x5, filtre Speed, 1080x2392):
+
+- comparaison **illustration pleine locale** (450x600, meme ratio 3:4 et meme
+  artwork que la grille in-game) contre la zone d'art de la cellule
+  (fractions identiques des deux cotes: x 10-90%, y 14-78%)
+- score ensemble: dHash 64 bits (min sur 5 jitters de boite de +/-2%) combine
+  a l'histogramme couleur 6x6x6 (`d - 10*intersection`)
+- resultat: **30/30 top-1 corrects** (verification visuelle), 28/30 au-dessus
+  du seuil strict (d<=12, gap>=2), distances typiques d=2-11 avec gaps enormes
+- important: matcher contre les **illustrations pleines** (`supports/*.png`),
+  PAS contre `supports/icons/*.png` (128x128, cadrage different, 0/30 — meme
+  piege que les icones umas)
+- aucun nouvel asset a importer: le catalogue local actuel (534 illustrations)
+  suffit
+
+L'identite matchee donne gratuitement rarete/type via la reference. Ce qui
+reste a lire sur la capture = **l'etat utilisateur seulement**: niveau
+("Lvl XX", OCR de chiffres par template) et limit break (comptage des 4
+gemmes, detection de couleur a positions connues).
+
+### Statut et decision de perimetre
+
+**Decision (juillet 2026): le MVP d'import se concentre sur les `supports`**
+(cas resolu 30/30, et c'est le vrai volume: ~170 cartes possedees). Le
+matching **umas est abandonne pour l'instant** (~40-50% top-1 faute d'asset
+public au bon cadrage) — les umas restent saisies a la main (dizaines, moins
+douloureux) ou attendront une meilleure source d'asset. Prochaines etapes:
+construction du flux d'import supports (moteur JS/Canvas portant la methode
+du spike + lecture Lvl/LB + page d'import + diff/confirmation + PUT roster
+existant).
