@@ -1,4 +1,4 @@
-:root {
+﻿:root {
   --bg: #0a0e0c;
   --panel: rgba(16, 22, 19, 0.84);
   --panel-strong: rgba(20, 27, 24, 0.94);
@@ -2172,6 +2172,132 @@ body.route-wizard .profile-gate::after {
 
 .build-tab-panel.active {
   display: block;
+}
+
+/* Run results (Runs tab inside the build editor) */
+.build-runs-list {
+  display: grid;
+  gap: 14px;
+  margin-top: 12px;
+}
+
+.run-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(115, 160, 198, 0.16);
+  border-radius: 10px;
+  background: rgba(6, 14, 22, 0.55);
+}
+
+.run-card-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.run-outcome-field {
+  max-width: 200px;
+}
+
+.run-card-id {
+  font-size: 0.8rem;
+  color: var(--text-soft);
+  opacity: 0.7;
+}
+
+.run-stat-grid,
+.run-apt-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.run-stat-grid {
+  grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+}
+
+.run-apt-grid {
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+
+.run-card-block {
+  display: grid;
+  gap: 6px;
+}
+
+.run-card-label {
+  font-size: 0.85rem;
+  color: var(--text-soft);
+}
+
+.run-skill-checklist {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 4px 12px;
+}
+
+.run-skill-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.88rem;
+}
+
+.run-skill-option em {
+  color: var(--accent-3);
+  font-style: normal;
+  opacity: 0.85;
+}
+
+.run-delta {
+  padding: 10px 12px;
+  border: 1px solid rgba(115, 160, 198, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.run-delta h5 {
+  margin: 0 0 8px;
+  color: var(--accent);
+  font-size: 0.9rem;
+}
+
+.run-delta-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.run-delta-table th,
+.run-delta-table td {
+  padding: 3px 8px;
+  text-align: right;
+  border-bottom: 1px solid rgba(115, 160, 198, 0.1);
+}
+
+.run-delta-table th[scope="row"],
+.run-delta-table th[scope="col"]:first-child {
+  text-align: left;
+  color: var(--text-soft);
+  font-weight: 500;
+}
+
+.run-delta-note {
+  margin: 8px 0 0;
+  font-size: 0.85rem;
+}
+
+.run-delta-positive {
+  color: var(--accent-2);
+}
+
+.run-delta-negative {
+  color: var(--accent-4);
+}
+
+.run-delta-neutral {
+  color: var(--text-soft);
 }
 
 .build-panel-grid {

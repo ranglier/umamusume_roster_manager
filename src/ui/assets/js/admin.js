@@ -1,5 +1,5 @@
 // Auto-split from app.js as part of docs/REFACTOR_PLAN.md.
-import { applyBuildsDocument, applyLegacyViewPayload, asArray, createEmptyLegacyEditorState, createEmptyLegacyViewPayload, data, defaultEntityKeyForMode, getActiveProfile, getOwnedCharacterOptions, normalizeProfilesIndex, profileGateEl, resetBuildsDocument, resetLegacyViewPayload, setBrowseHash, setHomeHash, state, syncSelectedProfileId } from "./core.js";
+import { applyBuildsDocument, applyLegacyViewPayload, applyRunsDocument, asArray, createEmptyLegacyEditorState, createEmptyLegacyViewPayload, data, defaultEntityKeyForMode, getActiveProfile, getOwnedCharacterOptions, normalizeProfilesIndex, profileGateEl, resetBuildsDocument, resetLegacyViewPayload, resetRunsDocument, setBrowseHash, setHomeHash, state, syncSelectedProfileId } from "./core.js";
 import { escapeHtml, formatDateTime } from "./dom-utils.js";
 import { apiBinary, apiJson, deleteProfileAndRefresh, importProfileArchive, loadAdminJobs, loadBackups, loadBootstrapStatus, loadProfilesIndex, loadRosterForProfile, loadRosterViewsForProfile, renameProfileAndRefresh, requestRender, requestRenderPreservingScroll } from "../app.js";
 
@@ -735,6 +735,30 @@ export async function loadBuildsForProfile(profileId, force) {
     state.buildsStatus = {
       kind: "error",
       message: error.message || "Build drafts unavailable for the current profile.",
+    };
+  }
+}
+
+export async function loadRunsForProfile(profileId, force) {
+  if (!profileId) {
+    resetRunsDocument();
+    return;
+  }
+  if (!force && state.runsProfileId === profileId) {
+    return;
+  }
+  try {
+    const payload = await apiJson(`/api/profiles/${encodeURIComponent(profileId)}/runs`);
+    state.runsProfileId = profileId;
+    applyRunsDocument(payload);
+    if (state.runsStatus.kind === "error") {
+      state.runsStatus = { kind: "idle", message: "" };
+    }
+  } catch (error) {
+    resetRunsDocument(profileId);
+    state.runsStatus = {
+      kind: "error",
+      message: error.message || "Run results unavailable for the current profile.",
     };
   }
 }

@@ -1,4 +1,4 @@
-// Auto-split from app.js as part of docs/REFACTOR_PLAN.md.
+﻿// Auto-split from app.js as part of docs/REFACTOR_PLAN.md.
 import { clampNumber, escapeHtml } from "./dom-utils.js";
 import { getRosterEntry } from "./roster.js";
 import { requestRender } from "../app.js";
@@ -366,6 +366,12 @@ export const state = {
   buildsDocument: normalizeBuildsDocument(null, null),
   buildsProfileId: null,
   buildsStatus: { kind: "idle", message: "" },
+  // Run results: the real outcome of executing a build. Displayed inside the
+  // build's editor as a "Runs" tab, so they are not a top-level nav entity —
+  // just a per-profile document kept alongside builds.
+  runsDocument: { version: 1, updated_at: "", entries: [] },
+  runsProfileId: null,
+  runsStatus: { kind: "idle", message: "" },
   // One-shot seed for a pre-filled build draft, set by the CM-target
   // recommendation flow (build_recommender) before routing to "__new__".
   // createEmptyBuildEntry() consumes and clears it.
@@ -668,6 +674,25 @@ export function resetBuildsDocument(profileId = null) {
     showAllCharacters: false,
     showAllParents: false,
   };
+}
+
+export function applyRunsDocument(payload) {
+  const entries = Array.isArray(payload?.entries) ? payload.entries : [];
+  state.runsDocument = { version: 1, updated_at: String(payload?.updated_at || ""), entries };
+}
+
+export function resetRunsDocument(profileId = null) {
+  state.runsProfileId = profileId;
+  state.runsDocument = { version: 1, updated_at: "", entries: [] };
+  state.runsStatus = { kind: "idle", message: "" };
+}
+
+export function getRunsForBuild(buildId) {
+  const targetId = String(buildId || "");
+  if (!targetId) {
+    return [];
+  }
+  return asArray(state.runsDocument?.entries).filter((entry) => String(entry.build_id) === targetId);
 }
 
 export function createSkillReferenceBucket() {

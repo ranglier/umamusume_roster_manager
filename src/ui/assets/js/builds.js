@@ -3,6 +3,7 @@ import { BUILD_APTITUDE_FIELDS, BUILD_APTITUDE_GRADES, BUILD_MODE_OPTIONS, BUILD
 import { clampNumber, escapeHtml, parseRosterTokenList, renderBadge, tableFromRows } from "./dom-utils.js";
 import { getRosterEntry } from "./roster.js";
 import { deleteBuild, formatLegacyFactorLabel, getCharacterReferenceItem, saveBuildForm } from "./legacy.js";
+import { attachBuildRunsListeners, renderBuildRunsPanel } from "./runs.js";
 import { requestRenderPreservingScroll, requestRenderPreservingScrollAndFocus } from "../app.js";
 import {
   compareAptitudeModifiers,
@@ -942,6 +943,7 @@ export const BUILD_EDITOR_TABS = [
   { key: "skills", label: "Skills" },
   { key: "legacy", label: "Parents" },
   { key: "notes", label: "Notes & Tags" },
+  { key: "runs", label: "Runs" },
 ];
 
 // Phase 4 guided assistant (create mode only): the existing editor tabs presented
@@ -1062,6 +1064,9 @@ export function renderBuildEditor(entry, isCreateMode, labels = {}) {
         <textarea name="notes" rows="5" placeholder="Training assumptions, substitutes, run notes">${escapeHtml(entry.notes || "")}</textarea>
       </label>
     `,
+    // Runs only make sense against a saved build (they need a build_id), so the
+    // panel is empty in the create-mode assistant and only populated in edit mode.
+    runs: isCreateMode ? "" : renderBuildRunsPanel(entry),
   };
 
   const statusLine = `<p id="buildStatus" class="source-note ${state.buildsStatus.kind === "error" ? "error-text" : ""}">${escapeHtml(statusText)}</p>`;
@@ -1354,5 +1359,13 @@ export function attachBuildFormListeners(isCreateMode, buildId) {
       }
       await deleteBuild(buildId);
     });
+  }
+
+  // Runs tab (edit mode only): wire log/save/delete against the saved build.
+  if (!isCreateMode && buildId) {
+    const buildEntry = asArray(state.buildsDocument?.entries).find((current) => String(current.id) === String(buildId));
+    if (buildEntry) {
+      attachBuildRunsListeners(buildEntry);
+    }
   }
 }

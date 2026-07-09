@@ -1,4 +1,4 @@
-// Entry point. Wires up the feature modules extracted under assets/js/
+﻿// Entry point. Wires up the feature modules extracted under assets/js/
 // as part of docs/REFACTOR_PLAN.md.
 import { activeProfileBlock, activeProfileNameEl, adminButton, allowedEntityKeys, appSidebarEl, asArray, backToTopButton, BUILD_RUNNING_STYLE_OPTIONS, BUILD_STATUS_OPTIONS, browseActionsEl, buildsEntityKey, changeProfileButton, clearButton, collectionEntityKeys, compactLayoutQuery, createEntityState, currentRouteState, data, datasetBarEl, datasetHeadingEl, defaultEntityKeyForMode, defaultProfilesIndex, detailColumnEl, detailEl, detailPanelEl, entityMetaEl, entityTitleEl, filtersEl, getActiveProfile, getBuildTargetOptions, getEntityItems, getLoadedReferenceGeneratedAt, getRosterViewEntry, getRosterViewPayload, getViewState, globalBuild, hasLoadedReferenceBundle, lastBuildBlock, legacyEntityKey, listEl, navEl, normalizeProfilesIndex, normalizeRosterDocument, normalizeRosterViewPayload, pageTitleEl, profileBackgroundMediaEl, profileBackgroundVideoEl, profileGateEl, referenceEntityKeys, renderGradeBadge, resetBuildsDocument, resetLegacyViewPayload, resultCountEl, resultsPanelEl, rosterEntityKeys, searchInput, setAdminHash, setBrowseHash, setHomeHash, setProfilesHash, setWizardHash, SIDEBAR_SECTIONS, sidebarSectionForRoute, sidebarSectionsEl, state, summaryText, syncSelectedProfileId, toolbarEl, topHeaderEl, viewStateByKey } from "./js/core.js";
 import { escapeHtml, formatDateTime, renderBadge, renderDetailHeader, renderLinks, renderResultTop } from "./js/dom-utils.js";
@@ -6,7 +6,7 @@ import { attachCmTargetRecommendationListeners, attachRacetrackVisualizerListene
 import { attachRosterFormListeners, collectRosterFormData, getDefaultRosterEntry, getRosterBadges, getRosterEntry, getRosterFilterDefinitions, getRosterFilterOptions, renderBatchList, renderReferenceRosterActions, renderRosterCardProgress, renderRosterEditor, rosterCountForEntity, saveVisibleBatchRows, setRosterEntry } from "./js/roster.js";
 import { attachLegacyFormListeners, getCharacterRosterDefaults, getLegacyCharacterOptions, renderLegacyDetailBody, renderLegacyEditor, renderLegacyPreview, renderLegacySimulatorList } from "./js/legacy.js";
 import { attachBuildFormListeners, createEmptyBuildEntry, renderBuildEditor, startSeededBuildDraft } from "./js/builds.js";
-import { loadBuildsForProfile, loadLegacyForProfile, openProfile, refreshAdminData, renderAdminPage, renderProfilesPage, renderWizardPage, runAdminJob, wizardNeedsReferenceBuild } from "./js/admin.js";
+import { loadBuildsForProfile, loadLegacyForProfile, loadRunsForProfile, openProfile, refreshAdminData, renderAdminPage, renderProfilesPage, renderWizardPage, runAdminJob, wizardNeedsReferenceBuild } from "./js/admin.js";
 
 
 export function syncToolbarMetrics() {
@@ -1664,6 +1664,7 @@ export async function render() {
     await loadRosterViewsForProfile(state.activeProfileId, false);
     await loadLegacyForProfile(state.activeProfileId, false);
     await loadBuildsForProfile(state.activeProfileId, false);
+    await loadRunsForProfile(state.activeProfileId, false);
     if (token !== state.renderToken) {
       return;
     }

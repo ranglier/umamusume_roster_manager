@@ -6,7 +6,7 @@ import { attachCmTargetRecommendationListeners, attachRacetrackVisualizerListene
 import { attachRosterFormListeners, collectRosterFormData, getDefaultRosterEntry, getRosterBadges, getRosterEntry, getRosterFilterDefinitions, getRosterFilterOptions, renderBatchList, renderReferenceRosterActions, renderRosterCardProgress, renderRosterEditor, rosterCountForEntity, saveVisibleBatchRows, setRosterEntry } from "./js/roster.js";
 import { attachLegacyFormListeners, getCharacterRosterDefaults, getLegacyCharacterOptions, renderLegacyDetailBody, renderLegacyEditor, renderLegacyPreview, renderLegacySimulatorList } from "./js/legacy.js";
 import { attachBuildFormListeners, createEmptyBuildEntry, renderBuildEditor, startSeededBuildDraft } from "./js/builds.js";
-import { loadBuildsForProfile, loadLegacyForProfile, openProfile, refreshAdminData, renderAdminPage, renderProfilesPage, renderWizardPage, runAdminJob, wizardNeedsReferenceBuild } from "./js/admin.js";
+import { loadBuildsForProfile, loadLegacyForProfile, loadRunsForProfile, openProfile, refreshAdminData, renderAdminPage, renderProfilesPage, renderWizardPage, runAdminJob, wizardNeedsReferenceBuild } from "./js/admin.js";
 
 
 export function syncToolbarMetrics() {
@@ -1664,6 +1664,7 @@ export async function render() {
     await loadRosterViewsForProfile(state.activeProfileId, false);
     await loadLegacyForProfile(state.activeProfileId, false);
     await loadBuildsForProfile(state.activeProfileId, false);
+    await loadRunsForProfile(state.activeProfileId, false);
     if (token !== state.renderToken) {
       return;
     }
