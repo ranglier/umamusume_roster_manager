@@ -1,0 +1,167 @@
+# Roster Import Plan — import des supports par screenshots
+
+## Objet
+
+Plan d'implementation du MVP d'import de roster par captures d'ecran,
+cadre et valide par spikes dans `docs/EXTERNAL_SOURCES_PLAN.md` (section
+"Import et synchronisation du roster depuis le jeu"). Ce document est le
+plan d'execution; l'autre contient le pourquoi (frein #1 d'adoption), les
+alternatives ecartees et les verdicts de spike.
+
+## Decisions actees (ne pas re-debattre)
+
+- **Perimetre MVP: `supports` uniquement.** Cas resolu 30/30 par le spike.
+  Les umas sont hors perimetre (pas d'asset public au bon cadrage, ~40-50%
+  top-1) et restent saisies a la main.
+- **Moteur 100% client-side (JS/Canvas), zero dependance ajoutee.** Decide
+  pour le packaging futur (ne pas approfondir la dependance au runtime
+  Python) et le local-first (aucun appel externe a l'execution). La methode
+  du spike (dHash + histogramme couleur) se porte trivialement en Canvas.
+- **La reconciliation avec confirmation est le coeur du flux**, pas un
+  filet: on vise "quasi tout juste + verification rapide", pas 100% aveugle.
+- **Geometrie de grille calee sur l'appareil de l'utilisateur** (captures
+  1080x2392, grille 6x5, constantes mesurees au spike), mise a l'echelle
+  proportionnelle a la largeur. Pas de detection generique de grille au MVP.
+
+## La recette validee (a porter telle quelle)
+
+Pour chaque cellule de la grille (base 1080px: origine 45,295; carte
+180x240; pas 202x275):
+
+1. **Identite** — zone d'art aux memes fractions des deux cotes
+   (x 10-90%, y 14-78%) sur la cellule ET sur l'illustration de reference
+   (`dist/media/reference/supports/<id>.png`, 450x600, meme artwork/ratio):
+   - dHash 64 bits (grayscale 9x8, gradient horizontal), **min sur 5
+     jitters** de la boite (+/-2% en x ou y)
+   - histogramme couleur 6x6x6 (216 bins, normalise)
+   - score = `dHamming - 10 * intersection_histogrammes`; tri croissant
+   - confiance: `d <= 12 et gap >= 2.0` -> auto; sinon "a verifier" avec
+     top-3 propose
+   - **ne PAS matcher contre `supports/icons/*.png`** (cadrage different,
+     0/30 au spike)
+2. **Niveau** — texte "Lvl XX" en bas de carte: OCR par template des 10
+   glyphes (police fixe du jeu), glyphes extraits une fois des captures
+   reelles et embarques en constantes JS (petits masques binaires)
+3. **Limit break** — 4 gemmes en bas gauche: echantillonnage de couleur a 4
+   positions connues (rempli = cyan, vide = gris)
+4. Rarete/type: PAS lus sur l'image — donnes par la reference via l'id
+   matche
+
+## Architecture
+
+```
+src/ui/assets/js/roster_import_cv.js   # moteur pur: primitives CV + scoring
+src/ui/assets/js/roster_import.js      # orchestration: fichiers, cache, UI
+tests/js/test_roster_import_cv.mjs     # tests du moteur pur sur fixtures
+```
+
+- `roster_import_cv.js` — **pur, sans DOM** (testable sous node comme
+  `build_scoring.js`): travaille sur des tableaux de pixels RGBA plats
+  (`{width, height, data}`). Fonctions: `dhash64`, `hamming64` (le hash 64
+  bits est manipule en **deux entiers 32 bits** ou BigInt — attention, les
+  bitwise JS natifs tronquent a 32 bits), `colorHistogram`, `histIntersect`,
+  `artBox`, `gridCells`, `scoreCandidate`, `rankCandidates`, `readLevel`,
+  `readLimitBreak`, `reconcile(current, extracted)` (calcul de diff)
+- `roster_import.js` — cote navigateur: decode les fichiers deposes
+  (`FileReader` -> `Image` -> `canvas.drawImage` -> `getImageData`),
+  construit/charge le cache d'empreintes, rend l'UI, applique le resultat
+- Le **resize vers les tailles de hash est fait par le meme code Canvas des
+  deux cotes** (references et cellules) — la coherence de l'algorithme de
+  downscale compte plus que sa qualite; ne jamais melanger deux methodes de
+  resize entre les deux cotes
+- Serveur: **aucun changement**. Les illustrations sont deja servies
+  (`/media/reference/supports/`), la sauvegarde passe par le
+  `PUT /api/profiles/<id>/roster` existant (champs `owned`/`level`/
+  `limit_break` deja valides par `normalize_roster_entry`)
+
+### Cache des empreintes de reference
+
+Hasher 534 illustrations a chaque import serait lent (chargement + decode).
+Au premier import: charger les images (locales, rapide), calculer
+`{dhash, histogramme}` par carte, stocker en `localStorage` sous une cle
+versionnee par `generated_at` de la reference (invalide automatiquement
+apres un update GameTora). Taille ~1 Ko/carte -> ~500 Ko, OK.
+
+## Flux utilisateur cible
+
+1. My Collection -> Supports -> bouton "Import from screenshots" (nouvelle
+   presentation de la vue roster/supports, meme pattern que le switch
+   Parents/Simulator de `legacy.js`)
+2. L'utilisateur depose ses ~6 captures (drag & drop ou file picker),
+   d'un coup ou en plusieurs fois
+3. Table de reconciliation, une ligne par carte detectee: vignette de la
+   cellule | carte matchee (image + nom + rarete) | niveau lu | LB lu |
+   confiance. Lignes sous le seuil: dropdown top-3 pre-rempli. Toute ligne
+   reste editable (select carte, input niveau, input LB)
+4. Dedup par id matche entre captures (chevauchement de scroll): garder la
+   lecture de meilleure confiance
+5. Panneau de diff avant application: **nouvelles** (pas dans le roster) /
+   **modifiees** (niveau ou LB different) / **inchangees** (masquees par
+   defaut). L'import ne retire jamais une possession (pas de "carte absente
+   des captures -> unowned" — les captures sont partielles par nature)
+6. "Apply N changes" -> merge dans `state.rosterDocument.supports` ->
+   `persistRosterDocument` (PUT roster existant)
+
+## Phases d'implementation
+
+### Phase A — fixtures + moteur pur + tests
+
+- Extraire des fixtures depuis les captures reelles deja fournies
+  (`data/user/import_samples/`): quelques cellules en tableaux de pixels
+  JSON (petits crops), les glyphes 0-9 du "Lvl", des exemples de gemmes
+  pleines/vides. Script d'extraction jetable (scratchpad, Python) — les
+  fixtures committees sont des petits crops anonymes de cartes, pas les
+  captures completes
+- Ecrire `roster_import_cv.js` + `tests/js/test_roster_import_cv.mjs`:
+  dhash/hamming/histogramme/scoring reproduisent les resultats du spike sur
+  les fixtures; `readLevel`/`readLimitBreak` sur les exemples extraits;
+  `reconcile` (nouveau/modifie/inchange, jamais de retrait)
+- Sortie: moteur teste, zero UI
+
+### Phase B — cache d'empreintes + branchement navigateur
+
+- `roster_import.js`: decode fichiers, decoupe de grille (constantes du
+  spike, echelle par largeur), construction du cache d'empreintes
+  localStorage, pipeline complet capture -> liste de
+  `{cellCrop, cardId, level, limitBreak, confidence, top3}`
+- Verification navigateur sur les captures reelles: on doit retrouver le
+  30/30 du spike (meme methode, meme donnees)
+
+### Phase C — UI de reconciliation
+
+- Presentation "Import" dans roster/supports, table de reconciliation,
+  edition des lignes douteuses, diff, application via
+  `persistRosterDocument`
+- CSS dedie (table, vignettes, badges de confiance)
+- Verification navigateur de bout en bout: importer les ~6 captures reelles
+  de l'utilisateur, roster mis a jour correctement
+
+### Phase D — polissage guide par l'usage reel
+
+Seulement apres un premier import complet reel: tolerance d'echelle si
+l'utilisateur change de telephone, umas si une source d'asset apparait,
+raccourcis UX. Ne rien pre-construire ici.
+
+## Risques connus
+
+- **Lecture du niveau (OCR glyphes)**: la partie la moins validee par le
+  spike (l'identite l'est, pas la lecture de texte). Si elle s'avere
+  fragile, la reconciliation la rattrape (champ editable) — et le niveau
+  est borne par le cap de rarete/LB (`getSupportLevelCap`), utilisable
+  comme garde-fou de vraisemblance
+- **Bas de grille masque** (barre "Filters"/"Held" par-dessus la derniere
+  rangee visible): les gemmes/niveau peuvent etre illisibles sur cette
+  rangee -> la detection doit marquer ces cellules "partielles" plutot que
+  lire n'importe quoi; l'utilisateur scrolle et re-capture de toute facon
+- **Cartes hors catalogue** (nouvelle carte du jeu pas encore importee de
+  GameTora): distance au plus proche elevee -> afficher "carte inconnue,
+  lancer un update de reference?" plutot qu'un mauvais match confiant
+
+## Ce que ce plan ne fait pas (assume)
+
+- pas d'import des umas (decision de perimetre, voir
+  `EXTERNAL_SOURCES_PLAN.md`)
+- pas de detection generique de grille multi-appareils
+- pas de lecture de la rarete/du type sur l'image (inutile, la reference
+  les fournit)
+- pas de suppression de possession via l'import
