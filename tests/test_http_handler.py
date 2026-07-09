@@ -267,5 +267,111 @@ class BuildsRouteTests(LiveServerTestCase):
         )
 
 
+class RunsRouteTests(LiveServerTestCase):
+    def _create_build(self, profile_id):
+        created = self.request(
+            "POST",
+            f"/api/profiles/{profile_id}/builds",
+            {"mode": "champions_meeting", "name": "Plan A"},
+            expect_status=201,
+        )
+        return created["entry"]["id"]
+
+    def test_runs_crud_round_trip(self):
+        profile_id = self.create_profile()["id"]
+        build_id = self._create_build(profile_id)
+
+        created = self.request(
+            "POST",
+            f"/api/profiles/{profile_id}/runs",
+            {"build_id": build_id, "outcome": "untested", "final_stats": {"speed": 1600}},
+            expect_status=201,
+        )
+        run_id = created["entry"]["id"]
+        self.assertEqual(created["entry"]["build_id"], build_id)
+        self.assertEqual(created["entry"]["outcome"], "untested")
+        self.assertEqual(created["entry"]["final_stats"]["speed"], 1600)
+
+        listed = self.request("GET", f"/api/profiles/{profile_id}/runs")
+        self.assertEqual([entry["id"] for entry in listed["entries"]], [run_id])
+
+        updated = self.request(
+            "PATCH",
+            f"/api/profiles/{profile_id}/runs/{run_id}",
+            {"outcome": "win", "notes": "Clean sweep"},
+        )
+        self.assertEqual(updated["entry"]["outcome"], "win")
+        self.assertEqual(updated["entry"]["notes"], "Clean sweep")
+        # The build link and untouched fields are preserved across a partial update.
+        self.assertEqual(updated["entry"]["build_id"], build_id)
+        self.assertEqual(updated["entry"]["final_stats"]["speed"], 1600)
+
+        self.request("DELETE", f"/api/profiles/{profile_id}/runs/{run_id}", expect_status=200)
+        after_delete = self.request("GET", f"/api/profiles/{profile_id}/runs")
+        self.assertEqual(after_delete["entries"], [])
+
+    def test_run_requires_a_build_id(self):
+        profile_id = self.create_profile()["id"]
+        self.request(
+            "POST",
+            f"/api/profiles/{profile_id}/runs",
+            {"outcome": "win"},
+            expect_status=400,
+        )
+
+    def test_run_rejects_an_unknown_build_id(self):
+        profile_id = self.create_profile()["id"]
+        self.request(
+            "POST",
+            f"/api/profiles/{profile_id}/runs",
+            {"build_id": "build_999", "outcome": "win"},
+            expect_status=400,
+        )
+
+    def test_run_rejects_an_invalid_outcome(self):
+        profile_id = self.create_profile()["id"]
+        build_id = self._create_build(profile_id)
+        self.request(
+            "POST",
+            f"/api/profiles/{profile_id}/runs",
+            {"build_id": build_id, "outcome": "flawless"},
+            expect_status=400,
+        )
+
+    def test_updating_an_unknown_run_is_a_404(self):
+        profile_id = self.create_profile()["id"]
+        self.request(
+            "PATCH",
+            f"/api/profiles/{profile_id}/runs/run_999",
+            {"outcome": "win"},
+            expect_status=404,
+        )
+
+    def test_deleting_a_build_cascades_to_its_runs(self):
+        profile_id = self.create_profile()["id"]
+        build_a = self._create_build(profile_id)
+        build_b = self._create_build(profile_id)
+
+        run_a = self.request(
+            "POST",
+            f"/api/profiles/{profile_id}/runs",
+            {"build_id": build_a, "outcome": "win"},
+            expect_status=201,
+        )["entry"]["id"]
+        run_b = self.request(
+            "POST",
+            f"/api/profiles/{profile_id}/runs",
+            {"build_id": build_b, "outcome": "loss"},
+            expect_status=201,
+        )["entry"]["id"]
+
+        self.request("DELETE", f"/api/profiles/{profile_id}/builds/{build_a}", expect_status=200)
+
+        remaining = self.request("GET", f"/api/profiles/{profile_id}/runs")
+        remaining_ids = [entry["id"] for entry in remaining["entries"]]
+        self.assertNotIn(run_a, remaining_ids)
+        self.assertIn(run_b, remaining_ids)
+
+
 if __name__ == "__main__":
     unittest.main()

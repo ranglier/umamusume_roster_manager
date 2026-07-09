@@ -52,6 +52,7 @@ from lib.legacy_factors import (
     build_compact_pair_summary,
 )
 from lib.profiles import next_profile_id, unique_profile_name
+from lib.runs_validation import next_run_id
 from lib.roster_progression import (
     get_support_level_cap,
     summarize_character_progression,
@@ -85,6 +86,7 @@ PROFILES_INDEX_PATH = USER_DATA_ROOT / "profiles.json"
 PROFILE_DATA_ROOT = USER_DATA_ROOT / "profiles"
 PROFILE_ID_PATTERN = re.compile(r"^p_\d{3,}$")
 BUILD_ID_PATTERN = re.compile(r"^build_\d{3,}$")
+RUN_ID_PATTERN = re.compile(r"^run_\d{3,}$")
 BACKUP_ID_PATTERN = re.compile(r"^backup_\d{8}_\d{6}_[0-9a-f]{8}$")
 PROFILE_EXPORT_KIND = "umamusume-profile-export"
 FULL_BACKUP_KIND = "umamusume-full-backup"
@@ -122,6 +124,14 @@ def default_legacy_document() -> dict:
 
 
 def default_builds_document() -> dict:
+    return {
+        "version": 1,
+        "updated_at": utc_timestamp(),
+        "entries": [],
+    }
+
+
+def default_runs_document() -> dict:
     return {
         "version": 1,
         "updated_at": utc_timestamp(),
@@ -873,6 +883,10 @@ def profile_builds_path(profile_id: str) -> Path:
     return PROFILE_DATA_ROOT / profile_id / "builds.json"
 
 
+def profile_runs_path(profile_id: str) -> Path:
+    return PROFILE_DATA_ROOT / profile_id / "runs.json"
+
+
 def profile_exists(profile_id: str) -> bool:
     return profile_id in {profile["id"] for profile in load_profiles_index()["profiles"]}
 
@@ -1106,7 +1120,198 @@ def delete_build_entry(profile_id: str, build_id: str) -> dict:
     if len(remaining_entries) == len(document["entries"]):
         raise FileNotFoundError("Build not found.")
     document["entries"] = remaining_entries
+
+    # Cascade: a run only exists in the context of its build (it is displayed
+    # inside the build's detail view). Loading runs while the build still exists
+    # keeps the other runs valid; we then drop the ones pointing at build_id.
+    runs_document = load_runs(profile_id)
+    remaining_runs = [run for run in runs_document["entries"] if run.get("build_id") != build_id]
+    if len(remaining_runs) != len(runs_document["entries"]):
+        runs_document["entries"] = remaining_runs
+        save_runs(profile_id, runs_document)
+
     return save_builds(profile_id, document)
+
+
+def validate_run_references(profile_id: str, entry: dict) -> None:
+    build_id = str(entry.get("build_id") or "").strip()
+    known_build_ids = {build["id"] for build in load_builds(profile_id).get("entries", [])}
+    if build_id not in known_build_ids:
+        raise ValueError("run.build_id does not exist for this profile.")
+
+    reference_checks = [
+        ("target_id", "cm_targets"),
+        ("character_id", "characters"),
+        ("scenario_id", "scenarios"),
+    ]
+    for field_name, entity_key in reference_checks:
+        ref_id = str(entry.get(field_name) or "").strip()
+        if not ref_id:
+            continue
+        try:
+            if ref_id not in existing_ids(entity_key, [ref_id], database_path=REFERENCE_DB_PATH):
+                raise ValueError(f"run.{field_name} does not exist in local reference.")
+        except FileNotFoundError:
+            continue
+
+    support_ids = entry.get("support_deck") or []
+    if support_ids:
+        try:
+            has_supports = entity_has_any_rows("supports", database_path=REFERENCE_DB_PATH)
+        except FileNotFoundError:
+            has_supports = False
+        if has_supports:
+            known_support_ids = existing_ids("supports", support_ids, database_path=REFERENCE_DB_PATH)
+            missing = [support_id for support_id in support_ids if support_id not in known_support_ids]
+            if missing:
+                raise ValueError("run.support_deck contains unknown supports.")
+
+    skill_ids = list(entry.get("learned_skills") or [])
+    if skill_ids:
+        try:
+            has_skills = entity_has_any_rows("skills", database_path=REFERENCE_DB_PATH)
+        except FileNotFoundError:
+            has_skills = False
+        if has_skills:
+            known_skill_ids = existing_ids("skills", skill_ids, database_path=REFERENCE_DB_PATH)
+            missing = [skill_id for skill_id in skill_ids if skill_id not in known_skill_ids]
+            if missing:
+                raise ValueError("run.learned_skills contain unknown skill ids.")
+
+    legacy_ids = set((entry.get("legacy_pair") or {}).values())
+    if legacy_ids:
+        known_legacy_ids = {legacy["id"] for legacy in load_legacies(profile_id).get("entries", [])}
+        missing = sorted(legacy_ids - known_legacy_ids)
+        if missing:
+            raise ValueError("run.legacy_pair contains unknown legacy parents.")
+
+
+def normalize_run_entry(raw_entry: object, profile_id: str, *, existing_id: str | None = None) -> dict:
+    if not isinstance(raw_entry, dict):
+        raise ValueError("run entry must be an object.")
+
+    run_id = existing_id or str(raw_entry.get("id") or "").strip()
+    if run_id and not RUN_ID_PATTERN.match(run_id):
+        raise ValueError("run id is invalid.")
+
+    build_id = str(raw_entry.get("build_id") or "").strip()
+    if not build_id:
+        raise ValueError("run.build_id is required.")
+    if not BUILD_ID_PATTERN.match(build_id):
+        raise ValueError("run.build_id is invalid.")
+
+    outcome = str(raw_entry.get("outcome") or "untested").strip()
+    if outcome not in {"untested", "win", "loss"}:
+        raise ValueError("run.outcome must be untested, win or loss.")
+
+    notes = str(raw_entry.get("notes") or "").strip()
+    if len(notes) > 4000:
+        raise ValueError("run.notes is too long.")
+
+    running_style = str(raw_entry.get("running_style") or "").strip()
+    if running_style and running_style not in {"runner", "leader", "betweener", "chaser"}:
+        raise ValueError("run.running_style is invalid.")
+
+    entry = {
+        "id": run_id,
+        "build_id": build_id,
+        "target_id": str(raw_entry.get("target_id") or "").strip(),
+        "character_id": str(raw_entry.get("character_id") or "").strip(),
+        "scenario_id": str(raw_entry.get("scenario_id") or "").strip(),
+        "running_style": running_style,
+        "support_deck": normalize_build_id_list(raw_entry.get("support_deck"), field_name="run.support_deck", max_items=6),
+        "legacy_pair": normalize_build_legacy_pair(raw_entry.get("legacy_pair")),
+        "final_stats": normalize_build_stats(raw_entry.get("final_stats")),
+        "final_aptitudes": normalize_build_aptitudes(raw_entry.get("final_aptitudes")),
+        "learned_skills": normalize_build_id_list(raw_entry.get("learned_skills"), field_name="run.learned_skills"),
+        "outcome": outcome,
+        "notes": notes,
+        "custom_tags": normalize_string_list(raw_entry.get("custom_tags"), field_name="run.custom_tags"),
+        "created_at": str(raw_entry.get("created_at") or utc_timestamp()),
+        "updated_at": str(raw_entry.get("updated_at") or utc_timestamp()),
+    }
+
+    validate_run_references(profile_id, entry)
+    return entry
+
+
+def normalize_runs_document(raw_document: object, profile_id: str) -> dict:
+    document = default_runs_document()
+    if not isinstance(raw_document, dict):
+        return document
+
+    entries: list[dict] = []
+    for raw_entry in raw_document.get("entries") or []:
+        try:
+            entry = normalize_run_entry(raw_entry, profile_id)
+        except ValueError:
+            continue
+        if not entry["id"]:
+            entry["id"] = next_run_id(entries)
+        entries.append(entry)
+
+    return {
+        "version": 1,
+        "updated_at": str(raw_document.get("updated_at") or document["updated_at"]),
+        "entries": entries,
+    }
+
+
+def load_runs(profile_id: str) -> dict:
+    return normalize_runs_document(read_json(profile_runs_path(profile_id), default_runs_document), profile_id)
+
+
+def save_runs(profile_id: str, document: dict) -> dict:
+    normalized = normalize_runs_document(document, profile_id)
+    normalized["updated_at"] = utc_timestamp()
+    atomic_write_json(profile_runs_path(profile_id), normalized)
+    return normalized
+
+
+def create_run_entry(profile_id: str, payload: dict) -> dict:
+    document = load_runs(profile_id)
+    entry = normalize_run_entry(payload, profile_id)
+    entry["id"] = next_run_id(document["entries"])
+    timestamp = utc_timestamp()
+    entry["created_at"] = timestamp
+    entry["updated_at"] = timestamp
+    document["entries"].append(entry)
+    saved_document = save_runs(profile_id, document)
+    saved_entry = next(item for item in saved_document["entries"] if item["id"] == entry["id"])
+    return {"document": saved_document, "entry": saved_entry}
+
+
+def update_run_entry(profile_id: str, run_id: str, payload: dict) -> dict:
+    if not RUN_ID_PATTERN.match(run_id):
+        raise FileNotFoundError("Run not found.")
+
+    document = load_runs(profile_id)
+    existing_entry = next((entry for entry in document["entries"] if entry["id"] == run_id), None)
+    if existing_entry is None:
+        raise FileNotFoundError("Run not found.")
+
+    merged_payload = {**existing_entry, **(payload or {}), "id": run_id, "created_at": existing_entry.get("created_at")}
+    entry = normalize_run_entry(merged_payload, profile_id, existing_id=run_id)
+    entry["updated_at"] = utc_timestamp()
+    for index, current in enumerate(document["entries"]):
+        if current["id"] == run_id:
+            document["entries"][index] = entry
+            break
+    saved_document = save_runs(profile_id, document)
+    saved_entry = next(item for item in saved_document["entries"] if item["id"] == run_id)
+    return {"document": saved_document, "entry": saved_entry}
+
+
+def delete_run_entry(profile_id: str, run_id: str) -> dict:
+    if not RUN_ID_PATTERN.match(run_id):
+        raise FileNotFoundError("Run not found.")
+
+    document = load_runs(profile_id)
+    remaining_entries = [entry for entry in document["entries"] if entry["id"] != run_id]
+    if len(remaining_entries) == len(document["entries"]):
+        raise FileNotFoundError("Run not found.")
+    document["entries"] = remaining_entries
+    return save_runs(profile_id, document)
 
 
 def create_profile(name: str) -> tuple[dict, dict]:
@@ -1131,6 +1336,7 @@ def create_profile(name: str) -> tuple[dict, dict]:
     save_roster(profile["id"], default_roster())
     save_legacies(profile["id"], default_legacy_document())
     save_builds(profile["id"], default_builds_document())
+    save_runs(profile["id"], default_runs_document())
     return saved_index, profile
 
 
@@ -1193,9 +1399,10 @@ def export_profile_archive_bytes(profile_id: str) -> tuple[bytes, str]:
     roster = load_roster(profile_id)
     legacies = read_raw_legacies(profile_id)
     builds = load_builds(profile_id)
+    runs = load_runs(profile_id)
     manifest = {
         "kind": PROFILE_EXPORT_KIND,
-        "version": 2,
+        "version": 3,
         "created_at": utc_timestamp(),
         "profile_id": profile_id,
     }
@@ -1207,6 +1414,7 @@ def export_profile_archive_bytes(profile_id: str) -> tuple[bytes, str]:
         archive.writestr("roster.json", json.dumps(roster, ensure_ascii=False, indent=2) + "\n")
         archive.writestr("legacy.json", json.dumps(legacies, ensure_ascii=False, indent=2) + "\n")
         archive.writestr("builds.json", json.dumps(builds, ensure_ascii=False, indent=2) + "\n")
+        archive.writestr("runs.json", json.dumps(runs, ensure_ascii=False, indent=2) + "\n")
 
     safe_name = re.sub(r"[^A-Za-z0-9._-]+", "-", profile["name"]).strip("-") or profile_id
     return buffer.getvalue(), f"{safe_name}.zip"
@@ -1239,6 +1447,12 @@ def import_profile_archive_bytes(payload: bytes, target_profile_id: str | None =
             builds_document = default_builds_document()
         except json.JSONDecodeError as exc:
             raise ValueError("Profile archive contains invalid builds JSON.") from exc
+        try:
+            runs_document = json.loads(archive.read("runs.json").decode("utf-8"))
+        except KeyError:
+            runs_document = default_runs_document()
+        except json.JSONDecodeError as exc:
+            raise ValueError("Profile archive contains invalid runs JSON.") from exc
 
     if manifest.get("kind") != PROFILE_EXPORT_KIND:
         raise ValueError("Unsupported profile archive format.")
@@ -1264,6 +1478,7 @@ def import_profile_archive_bytes(payload: bytes, target_profile_id: str | None =
         else:
             persist_unresolved_legacies(target_profile_id, legacy_document)
         save_builds(target_profile_id, builds_document)
+        save_runs(target_profile_id, runs_document)
         saved_profile = next(entry for entry in saved_index["profiles"] if entry["id"] == target_profile_id)
         return saved_index, saved_profile
 
@@ -1288,6 +1503,7 @@ def import_profile_archive_bytes(payload: bytes, target_profile_id: str | None =
     else:
         persist_unresolved_legacies(profile_id, legacy_document)
     save_builds(profile_id, builds_document)
+    save_runs(profile_id, runs_document)
     return saved_index, new_profile
 
 
@@ -1701,6 +1917,15 @@ class ReferenceRequestHandler(http.server.SimpleHTTPRequestHandler):
             self._send_json(load_builds(profile_id))
             return
 
+        match = re.fullmatch(r"/api/profiles/(p_\d{3,})/runs", request_path)
+        if match:
+            profile_id = match.group(1)
+            if not profile_exists(profile_id):
+                self._send_api_error(404, "Profile not found.")
+                return
+            self._send_json(load_runs(profile_id))
+            return
+
         match = re.fullmatch(r"/api/profiles/(p_\d{3,})/legacy-view", request_path)
         if match:
             profile_id = match.group(1)
@@ -1852,6 +2077,21 @@ class ReferenceRequestHandler(http.server.SimpleHTTPRequestHandler):
             self._send_json(result, status=201)
             return
 
+        match = re.fullmatch(r"/api/profiles/(p_\d{3,})/runs", request_path)
+        if match:
+            profile_id = match.group(1)
+            if not profile_exists(profile_id):
+                self._send_api_error(404, "Profile not found.")
+                return
+            try:
+                payload = self._read_json_body()
+                result = create_run_entry(profile_id, payload)
+            except ValueError as exc:
+                self._send_api_error(400, str(exc))
+                return
+            self._send_json(result, status=201)
+            return
+
         match = re.fullmatch(r"/api/profiles/(p_\d{3,})/legacy-simulator/preview", request_path)
         if match:
             profile_id = match.group(1)
@@ -1968,6 +2208,25 @@ class ReferenceRequestHandler(http.server.SimpleHTTPRequestHandler):
             self._send_json(result)
             return
 
+        match = re.fullmatch(r"/api/profiles/(p_\d{3,})/runs/(run_\d{3,})", request_path)
+        if match:
+            profile_id = match.group(1)
+            run_id = match.group(2)
+            if not profile_exists(profile_id):
+                self._send_api_error(404, "Profile not found.")
+                return
+            try:
+                payload = self._read_json_body()
+                result = update_run_entry(profile_id, run_id, payload)
+            except FileNotFoundError:
+                self._send_api_error(404, "Run not found.")
+                return
+            except ValueError as exc:
+                self._send_api_error(400, str(exc))
+                return
+            self._send_json(result)
+            return
+
         match = re.fullmatch(r"/api/profiles/(p_\d{3,})", request_path)
         if not match:
             self._send_api_error(404, "API route not found.")
@@ -2027,6 +2286,21 @@ class ReferenceRequestHandler(http.server.SimpleHTTPRequestHandler):
                 document = delete_build_entry(profile_id, build_id)
             except FileNotFoundError:
                 self._send_api_error(404, "Build not found.")
+                return
+            self._send_json(document)
+            return
+
+        match = re.fullmatch(r"/api/profiles/(p_\d{3,})/runs/(run_\d{3,})", request_path)
+        if match:
+            profile_id = match.group(1)
+            run_id = match.group(2)
+            if not profile_exists(profile_id):
+                self._send_api_error(404, "Profile not found.")
+                return
+            try:
+                document = delete_run_entry(profile_id, run_id)
+            except FileNotFoundError:
+                self._send_api_error(404, "Run not found.")
                 return
             self._send_json(document)
             return

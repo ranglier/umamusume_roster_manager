@@ -448,6 +448,13 @@ class SequentialIdTests(unittest.TestCase):
         entries = [{"id": "build_001"}, {"id": "build_004"}]
         self.assertEqual(sr.next_build_id(entries), "build_005")
 
+    def test_next_run_id_starts_at_one(self):
+        self.assertEqual(sr.next_run_id([]), "run_001")
+
+    def test_next_run_id_increments_past_highest_existing(self):
+        entries = [{"id": "run_001"}, {"id": "run_004"}, {"id": "not-an-id"}]
+        self.assertEqual(sr.next_run_id(entries), "run_005")
+
     def test_next_legacy_id_ignores_malformed_ids(self):
         entries = [{"id": "legacy_002"}, {"id": "not-an-id"}]
         self.assertEqual(sr.next_legacy_id(entries), "legacy_003")

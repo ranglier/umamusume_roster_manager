@@ -4,7 +4,7 @@ Covers the last previously-untested route family flagged in
 docs/PROJECT_STATUS.md: GET /api/profiles/<id>/export, POST
 /api/profiles/import (import as a new profile) and POST
 /api/profiles/<id>/import (import into an existing profile, overwriting its
-roster/legacy/builds). These return/accept a zip archive rather than JSON,
+roster/legacy/builds/runs). These return/accept a zip archive rather than JSON,
 so this file adds a raw byte-level request helper on top of
 LiveServerTestCase's JSON-only one instead of reusing it directly.
 """
@@ -28,14 +28,16 @@ def build_export_archive(
     roster=None,
     legacy=None,
     builds=None,
+    runs=None,
     omit=(),
 ):
     files = {
-        "manifest.json": {"kind": kind, "version": 2, "created_at": "2026-01-01T00:00:00Z", "profile_id": "p_999"},
+        "manifest.json": {"kind": kind, "version": 3, "created_at": "2026-01-01T00:00:00Z", "profile_id": "p_999"},
         "profile.json": profile if profile is not None else {"id": "p_999", "name": "Imported Trainer"},
         "roster.json": roster if roster is not None else {"version": 1, "characters": {}, "supports": {}},
         "legacy.json": legacy if legacy is not None else {"version": 4, "entries": []},
         "builds.json": builds if builds is not None else {"version": 1, "entries": []},
+        "runs.json": runs if runs is not None else {"version": 1, "entries": []},
     }
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
@@ -78,7 +80,7 @@ class ExportRouteTests(ProfileTransferTestCase):
 
         with zipfile.ZipFile(io.BytesIO(body)) as archive:
             names = set(archive.namelist())
-            self.assertEqual(names, {"manifest.json", "profile.json", "roster.json", "legacy.json", "builds.json"})
+            self.assertEqual(names, {"manifest.json", "profile.json", "roster.json", "legacy.json", "builds.json", "runs.json"})
             manifest = json.loads(archive.read("manifest.json"))
             roster = json.loads(archive.read("roster.json"))
         self.assertEqual(manifest["kind"], "umamusume-profile-export")
@@ -131,13 +133,55 @@ class ImportAsNewProfileTests(ProfileTransferTestCase):
         archive = build_export_archive(omit=("roster.json",))
         self.request_json_body("POST", "/api/profiles/import", archive, expect_status=400)
 
-    def test_tolerates_a_missing_legacy_or_builds_member_with_empty_defaults(self):
-        archive = build_export_archive(profile={"id": "p_1", "name": "Bare Import"}, omit=("legacy.json", "builds.json"))
+    def test_tolerates_a_missing_legacy_builds_or_runs_member_with_empty_defaults(self):
+        archive = build_export_archive(profile={"id": "p_1", "name": "Bare Import"}, omit=("legacy.json", "builds.json", "runs.json"))
         result = self.request_json_body("POST", "/api/profiles/import", archive, expect_status=201)
         imported_id = result["created_profile"]["id"]
 
         builds = self.request("GET", f"/api/profiles/{imported_id}/builds")
         self.assertEqual(builds["entries"], [])
+        runs = self.request("GET", f"/api/profiles/{imported_id}/runs")
+        self.assertEqual(runs["entries"], [])
+
+    def test_rejects_an_archive_with_invalid_runs_json(self):
+        archive = build_export_archive(omit=("runs.json",))
+        with zipfile.ZipFile(io.BytesIO(archive)) as source:
+            members = {name: source.read(name) for name in source.namelist()}
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive_out:
+            for name, payload in members.items():
+                archive_out.writestr(name, payload)
+            archive_out.writestr("runs.json", b"{ not valid json")
+        self.request_json_body("POST", "/api/profiles/import", buffer.getvalue(), expect_status=400)
+
+    def test_round_trip_preserves_runs_linked_to_a_build(self):
+        archive = build_export_archive(
+            profile={"id": "p_src", "name": "Runner"},
+            builds={"version": 1, "entries": [{"id": "build_001", "name": "Plan A"}]},
+            runs={"version": 1, "entries": [{"id": "run_001", "build_id": "build_001", "outcome": "win", "final_stats": {"speed": 1600}}]},
+        )
+        result = self.request_json_body("POST", "/api/profiles/import", archive, expect_status=201)
+        imported_id = result["created_profile"]["id"]
+
+        runs = self.request("GET", f"/api/profiles/{imported_id}/runs")
+        self.assertEqual(len(runs["entries"]), 1)
+        self.assertEqual(runs["entries"][0]["build_id"], "build_001")
+        self.assertEqual(runs["entries"][0]["outcome"], "win")
+        self.assertEqual(runs["entries"][0]["final_stats"]["speed"], 1600)
+
+    def test_round_trip_drops_runs_whose_build_is_absent(self):
+        # A run only exists in the context of its build; an orphaned run (no
+        # matching build_id) is silently dropped on normalization.
+        archive = build_export_archive(
+            profile={"id": "p_src", "name": "Orphan Runner"},
+            builds={"version": 1, "entries": []},
+            runs={"version": 1, "entries": [{"id": "run_001", "build_id": "build_404", "outcome": "loss"}]},
+        )
+        result = self.request_json_body("POST", "/api/profiles/import", archive, expect_status=201)
+        imported_id = result["created_profile"]["id"]
+
+        runs = self.request("GET", f"/api/profiles/{imported_id}/runs")
+        self.assertEqual(runs["entries"], [])
 
 
 class ImportIntoExistingProfileTests(ProfileTransferTestCase):
