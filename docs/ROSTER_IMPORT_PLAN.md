@@ -187,6 +187,34 @@ Seulement apres un premier import complet reel: tolerance d'echelle si
 l'utilisateur change de telephone, umas si une source d'asset apparait,
 raccourcis UX. Ne rien pre-construire ici.
 
+### Phase E — import des umas (debloquee, a implementer)
+
+La source d'asset manquante a ete trouvee (icones in-game par variante du
+depot `wrrwrr111/pretty-derby` + transformation de crop calibree — verdict
+complet et risques dans `EXTERNAL_SOURCES_PLAN.md`, "Umas debloquees").
+Valide sur la capture reelle: 32/35 confiants, discrimination par variante.
+
+Travail:
+
+- `scripts/fetch_chara_icons.py` (fait): telecharge les icones couvertes
+  vers `dist/media/reference/characters/icons/<variante>.png` + manifest de
+  provenance/couverture. Fetch one-shot separe de `update_reference.py`
+  (source differente de GameTora, cadence differente); valide la signature
+  PNG (le depot peut servir des fichiers corrompus)
+- moteur (`roster_import_cv.js`): constantes umas — grille 7x5 (origine
+  45,299, carte 180x~200 dont art 180x180, pas 202x242), boites calibrees
+  `UMA_ICON_BOX = (28,46,238,227)` / `UMA_CELL_BOX = (8,8,172,150)`,
+  lecture des **etoiles** (rangee sous le bandeau) et du **"Potential Lvl
+  X"** (= awakening 1-5, OCR de glyphe, un seul chiffre, nouvelle police a
+  extraire d'une capture)
+- UI: toggle supports/umas dans la presentation Import (ou detection auto
+  du type de grille via le header de la capture), reconciliation identique,
+  application sur `characters` (`stars`/`awakening`)
+- variantes non couvertes par la source (126/258): "Unknown" -> dropdown,
+  comme les cas incertains supports
+
+## Risques connus
+
 ## Risques connus
 
 - **Lecture du niveau (OCR glyphes)**: la partie la moins validee par le
@@ -204,8 +232,8 @@ raccourcis UX. Ne rien pre-construire ici.
 
 ## Ce que ce plan ne fait pas (assume)
 
-- pas d'import des umas (decision de perimetre, voir
-  `EXTERNAL_SOURCES_PLAN.md`)
+- ~~pas d'import des umas~~ — decision revenue, voir Phase E (source
+  d'icones trouvee)
 - pas de detection generique de grille multi-appareils
 - pas de lecture de la rarete/du type sur l'image (inutile, la reference
   les fournit)

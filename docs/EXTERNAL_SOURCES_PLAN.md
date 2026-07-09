@@ -647,3 +647,49 @@ douloureux) ou attendront une meilleure source d'asset. Prochaines etapes:
 construction du flux d'import supports (moteur JS/Canvas portant la methode
 du spike + lecture Lvl/LB + page d'import + diff/confirmation + PUT roster
 existant).
+
+Mise a jour: le MVP supports est livre (voir `docs/ROSTER_IMPORT_PLAN.md`,
+phases A/B/C), et la decision "umas abandonnees" est **revenue** grace a une
+nouvelle source d'asset — voir la section suivante.
+
+### Umas debloquees: source d'icones par variante trouvee (juillet 2026)
+
+Chasse a une source non-GameTora menee apres la livraison du MVP supports.
+Ecartees: umapyoi.net (art promotionnel officiel, mauvais cadrage), uma.moe
+(memes `character_stand` que GameTora), umamusu.wiki (icones buste par
+personnage, pas par variante, cadrage different), Fandom (art officiel,
+scraping bloque).
+
+**Source retenue: `https://github.com/wrrwrr111/pretty-derby`** (outil
+communautaire chinois, depot actif — dernier commit mars 2026). Le dossier
+`public/img/chara_card/` heberge les **icones in-game extraites du jeu**,
+nommees `chr_icon_<chara>_<variante>_01.png` (256x280) — l'asset exact de la
+liste "Trainee Umamusume", par variante. 213 fichiers.
+
+**Deblocage technique cle**: meme avec le bon asset, le match echouait
+(8/35) car la vignette in-game est un **crop zoome fixe** de l'icone.
+Transformation calibree par recherche brute sur la capture reelle:
+`icone.crop((28, 46, 238, 227))` correspond pixel-perfect (dHash d=0) a la
+zone d'art `(8, 8, 172, 150)` de la cellule 180x180. Constante de l'UI du
+jeu, calibree une fois, valable pour toutes les cartes.
+
+**Resultat sur la capture reelle umas (35 cellules)**: **32/35 confiants**
+(d=0-9, gaps enormes — la qualite du cas supports), verifies visuellement.
+La discrimination **par variante** fonctionne (Maruzensky ete -> 100402,
+les deux McQueen -> 101301 et 101302). Les 3 "??" sont des variantes non
+couvertes, correctement signalees plutot que mal matchees.
+
+**Limites et risques assumes**:
+
+- **couverture: 132/258** variantes du catalogue (le depot suit le rythme de
+  son mainteneur, pas celui du jeu). Les manquantes tomberont en "Unknown"
+  -> dropdown, comme les cas incertains supports
+- **fraicheur dans le temps** (inquietude explicite de l'utilisateur): cette
+  source peut se perimer la ou GameTora suit le jeu de pres. Decision: on
+  l'utilise quand meme (elle debloque le cas umas aujourd'hui), et **on
+  reste en veille pour une source plus complete/perenne** — le nommage
+  `chr_icon_<chara>_<variante>` est celui des fichiers du jeu, d'autres
+  miroirs existent probablement
+- provenance: assets du jeu heberges sur GitHub — meme zone grise que les
+  images GameTora, usage local personnel, pas de dependance runtime (fetch
+  one-shot via script, voir `scripts/fetch_chara_icons.py`)
