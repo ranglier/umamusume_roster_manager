@@ -758,7 +758,9 @@ Etat actuel:
 
 - `legacies` est en place avec inventaire parent et simulateur d'heritage v1
 - `builds` est en place comme document utilisateur local et API CRUD
-- `run_results` reste a ajouter
+- `run_results` est en place (`runs.json` par profil, CRUD, cascade depuis le
+  build, onglet "Runs" dans la fiche build avec delta plan/reel) — voir
+  `docs/PROJECT_STATUS.md` section 15
 
 ### Phase 3C. Build planner manuel assiste
 
@@ -1003,9 +1005,9 @@ principale.
 
 Le programme "refonte CM-first + auto-build" est donc complet (uma + style +
 stats + deck + skills auto-remplis, editeur en onglets, et navigation qui
-mene a la preparation CM). Prochaine brique produit manquante: `run_results`
-(voir Phase 3B "Fondations utilisateur" — `run_results` reste a ajouter), qui
-fermera la boucle entre build planifie et resultat reel.
+mene a la preparation CM). La brique `run_results` qui ferme la boucle
+build planifie / resultat reel est desormais livree aussi (onglet "Runs" dans
+la fiche build, delta plan/reel) — voir `docs/PROJECT_STATUS.md` section 15.
 
 ## Sources utiles
 

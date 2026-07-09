@@ -544,6 +544,59 @@ la navigation reflete le but produit (preparer un CM) plutot que la structure
 des donnees. Le programme de refonte CM-first + auto-build (sections 14) est
 complet.
 
+### 15. run_results — fermeture de la boucle plan/reel
+
+Derniere couche utilisateur du `docs/CM_BUILD_PLAN.md` (Phase 3B) a manquer:
+le resultat reel d'une run. L'app proposait un build mais ne captait jamais ce
+qui etait *reellement* obtenu, donc ne pouvait pas comparer plan vs reel. Un
+`run` capture ce resultat et est une couche distincte (par
+`docs/CM_BUILD_PLAN.md`), stockee par profil dans `runs.json`, calquee
+exactement sur le CRUD `builds`.
+
+Decisions de conception:
+
+- **`build_id` obligatoire**: un run n'existe que dans le contexte de son build
+  (il s'affiche comme un onglet "Runs" de la fiche build), donc supprimer un
+  build supprime ses runs en cascade (charges pendant que le build existe
+  encore, puis filtres explicitement dans `delete_build_entry`)
+- champs denormalises (target/character/scenario/deck/legacy) copies dans le
+  run pour qu'il survive aux editions du build et soit auto-suffisant a l'export
+- `outcome` en v1: `untested` / `win` / `loss` + notes libres
+- le **delta plan vs reel** est cote client (`computeRunDelta` dans `runs.js`),
+  pas une route serveur: le build et ses runs sont deja tous deux en memoire
+  cote client sur la fiche build, donc le delta est de l'affichage — evite du
+  code Python mort non branche sur une route
+
+Backend (`serve_reference.py` + `lib/runs_validation.py`): `normalize_run_entry`
+(reutilise les validateurs stats/aptitudes/deck/legacy de `builds`),
+`validate_run_references` (build_id doit exister pour le profil; refs tolerees
+sans base de reference, comme builds), CRUD complet, routes
+`GET/POST /api/profiles/<id>/runs` et `PATCH/DELETE .../runs/<run_id>`,
+`runs.json` ajoute au scaffolding profil et a l'export/import (manifest v3,
+membre optionnel defaut vide, sauve *apres* builds pour que la validation du
+lien passe).
+
+Frontend (`runs.js`, nouveau module): onglet "Runs" dans `BUILD_EDITOR_TABS`
+(edition seulement). "Log a run" seede un run depuis les valeurs planifiees du
+build; l'utilisateur edite les stats, coche les skills reellement appris (les
+extras hors plan sont preserves a la sauvegarde), fixe l'outcome; une carte de
+delta (ecarts de stats + skills requis non appris, noms resolus) s'affiche par
+run. Les inputs vivent dans le formulaire build mais sont lus par carte via
+data-attributes et sauves par des boutons `type=button` dedies, donc aucune
+collision avec la capture `FormData` du build.
+
+Verifie en navigateur (profil p_001, build_001): log -> edition -> save
+(rafraichit la carte en place, onglet preserve) -> delta avec nom de skill
+resolu ("Xceleration") -> delete. Teste: `next_run_id` + CRUD HTTP +
+build_id requis/inconnu + outcome invalide + cascade delete
+(`tests/test_http_handler.py`), export/round-trip/orphelin
+(`tests/test_http_profile_transfer.py`), `computeRunDelta`/`seedRunFromBuild`
+(`tests/js/test_runs.mjs`).
+
+Reste hors perimetre v1 (assume): import auto depuis screenshots/jeu;
+dashboards d'agregats (win-rate, historique meta); calcul du rang depuis
+`single_mode_rank` (table importee mais pas de formule points->rang).
+
 ## Choix techniques et justification
 
 ### Manifest + JSON versionnes plutot que scraping HTML
@@ -809,7 +862,7 @@ Elle tourne aussi automatiquement sur chaque push / pull request via `.github/wo
 
 Ce filet couvre maintenant les fonctions pures les plus critiques (y compris les 13 `normalize_X` du pipeline d'import), l'orchestration `legacy`, le handler HTTP dans son integralite, les jobs d'admin/backups, et l'ecriture SQLite de bout en bout. Ce qui reste a couvrir en priorite: les fonctions de rendu HTML (`renderXxx`) et l'orchestration DOM/fetch cote JS (attendraient plutot des tests d'integration type Playwright), et, si la bascule des lectures vers SQLite demarre un jour, les requetes de lecture qui en decouleront.
 
-Cote frontend, une suite existe aussi dans `tests/js/` (stdlib `node:test` + `node:assert/strict`, zero dependance ajoutee, meme philosophie que le cote Python). `tests/js/_domshim.mjs` pose un `document`/`window` minimal pour que `src/ui/assets/js/core.js` (qui interroge des elements DOM au chargement du module) soit importable sous Node tout court — et par ricochet, tous les modules qui l'importent (directement ou via `../app.js`, dependance circulaire volontaire deja documentee plus haut). Couverture actuelle (111 tests / 238 assertions, un fichier de test par module source):
+Cote frontend, une suite existe aussi dans `tests/js/` (stdlib `node:test` + `node:assert/strict`, zero dependance ajoutee, meme philosophie que le cote Python). `tests/js/_domshim.mjs` pose un `document`/`window` minimal pour que `src/ui/assets/js/core.js` (qui interroge des elements DOM au chargement du module) soit importable sous Node tout court — et par ricochet, tous les modules qui l'importent (directement ou via `../app.js`, dependance circulaire volontaire deja documentee plus haut). Couverture actuelle (un fichier de test par module source):
 
 - `dom-utils.js`: `escapeHtml`, `hashText`, `badgePalette`, `clampRatio`, `clampNumber`, `parseRosterTokenList`, `tableFromRows`
 - `core.js`: `asArray`, `normalizeProfilesIndex`, `normalizeRosterDocument`, `normalizeBuildEntry`, `normalizeBuildsDocument`, `getSupportLevelCap`, `hasFilterOption`, `defaultEntityKeyForMode`, `allowedEntityKeys`, `currentRouteState`
@@ -819,6 +872,7 @@ Cote frontend, une suite existe aussi dans `tests/js/` (stdlib `node:test` + `no
 - `legacy.js`: `getCharacterBaseRarity`, `getCharacterRosterDefaults`, `getCharacterUniqueSkill`, `characterSupportsGreenSpark`, `getLegacyScenarioLabel`, `formatLegacyFactorLabel`, `deriveLegacyWhiteSparks`
 - `admin.js`: `wizardNeedsReferenceBuild`, `getWizardProgress`, `getTimedProgress`, `getUpdateProgress`
 - `visualizer.js` (Race Skill Visualizer, voir section 11/11bis/11ter): `parseConditionString`, `resolveStaticZones`, `describeDynamicTermHuman`, `buildTrackSvg` (dont le comportement multi-groupes/multi-couleurs), `getFilteredSkillPickerOptions` (multi-selection, epinglage dans l'ordre de selection)
+- `runs.js` (run_results, voir section 15): `seedRunFromBuild` (snapshot du plan + non-aliasing des objets imbriques), `computeRunDelta` (deltas de stats signes, skills requis non appris, extras hors plan, changements d'aptitude)
 
 Lancer la suite (Node 22 installe et verifie dans cet environnement de dev; sur Windows, utiliser explicitement le glob, la forme repertoire seule echoue avec `ERR_MODULE_NOT_FOUND` — voir `CLAUDE.md`):
 
