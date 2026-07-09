@@ -693,3 +693,31 @@ couvertes, correctement signalees plutot que mal matchees.
 - provenance: assets du jeu heberges sur GitHub — meme zone grise que les
   images GameTora, usage local personnel, pas de dependance runtime (fetch
   one-shot via script, voir `scripts/fetch_chara_icons.py`)
+
+#### Veille sources japonaises (juillet 2026): pas mieux pour la precision
+
+Chasse complementaire cote JP menee a la demande de l'utilisateur (inquiet
+de la fraicheur de pretty-derby dans le temps). Resultats:
+
+- **Game8** (`game8.jp/umamusume/225382`, liste des 育成ウマ娘): la seule
+  source **complete et fraiche** trouvee — 254 variantes avec titre JP
+  exact en alt (`［titre］nom`), mappables sur notre catalogue via
+  `titles.ja`/`names.ja` (**237/258 en matching exact**; les ~21 restantes
+  sont des divergences d'orthographe — ex. GameTora "tach-nology" vs Game8
+  "tech-nology" — recuperables en matching flou). **MAIS images retraitees
+  par leur CDN/uploads** (tailles heterogenes 100/205/440/1000px, recadrages
+  incoherents d'un upload a l'autre, badge 新 incruste sur les recentes):
+  calibration impossible (d=13-22 meme icone-contre-icone la ou pretty-derby
+  donne d=0). **Inutilisable pour le matching de precision**; utile comme
+  (a) liste de completude/veille des variantes existantes, (b) eventuel
+  fallback faible niveau histogramme pour les variantes non couvertes
+- gamedbs.jp: icones circulaires par personnage (mauvais asset)
+- U-tools (ウマ娘.tools): icones par personnage + art officiel (mauvais asset)
+- hakuraku: n'heberge aucune image
+- forks de pretty-derby: le seul actif (shironue, pousse 2026-06) a les
+  **memes 213 icones** — pas de miroir plus frais
+
+**Critere degage pour evaluer toute future source**: seuls les assets bruts
+du jeu se calibrent (d~0 sur une paire de reference); toute image retraitee
+par un site (recompression, recadrage editorial) echoue. Le nommage a
+chercher reste `chr_icon_<chara>_<variante>` dans des depots d'extraction.
