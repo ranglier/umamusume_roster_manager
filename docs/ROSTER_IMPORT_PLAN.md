@@ -216,6 +216,16 @@ Seulement apres un premier import complet reel: tolerance d'echelle si
 l'utilisateur change de telephone, glyphes 6-9 des niveaux supports (des
 qu'une capture en contient), raccourcis UX. Ne rien pre-construire ici.
 
+Livre a la demande:
+
+- **apercu agrandi pour la verification visuelle**: clic sur la vignette
+  capturee -> overlay plein ecran avec la capture en resolution native a
+  cote de l'image de la carte matchee (illustration pour les supports,
+  icone in-game pour les umas couvertes, stand art sinon), fermeture par
+  Echap / clic. Prealable: les vignettes sont maintenant capturees en
+  resolution native de cellule (~10 Ko/ligne) au lieu de 66px, la table les
+  reduit en CSS
+
 ### Phase E — import des umas — LIVREE
 
 Source d'asset: icones in-game par variante du depot `wrrwrr111/pretty-derby`

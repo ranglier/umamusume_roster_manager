@@ -32,7 +32,6 @@ import { getRosterEntry, setRosterEntry } from "./roster.js";
 import { persistRosterDocument, requestRenderPreservingScroll } from "../app.js";
 
 const FETCH_CONCURRENCY = 8;
-const THUMB_WIDTH = 66;
 // Level digits read below this agreement are unreliable (correct reads sit
 // >= 0.96, known-bad ones ~0.5-0.6, missing 6-9 glyph reads land there too).
 const LEVEL_CONFIDENCE_FLOOR = 0.9;
@@ -44,7 +43,6 @@ const IMPORT_MODES = {
     storageKey: "umaSupportImportFingerprints",
     learnedKey: "umaSupportImportLearned",
     grid: SUPPORT_GRID,
-    thumbHeight: 88,
     intro: "Drop screenshots of the in-game Support Card List (portrait, full screen). Cards are identified locally — nothing leaves this machine.",
     referenceSrc: (item) => item?.media?.cover?.src || "",
     displaySrc: (item) => item?.media?.icon?.src || item?.media?.cover?.src || "",
@@ -111,7 +109,6 @@ const IMPORT_MODES = {
     storageKey: "umaCharacterImportFingerprints",
     learnedKey: "umaCharacterImportLearned",
     grid: UMA_GRID,
-    thumbHeight: 84,
     intro: "Drop screenshots of the in-game Trainee Umamusume list (portrait, full screen). Variants not covered by the icon set show as Unknown — pick them from the dropdown.",
     referenceSrc: (item) => (item?.id ? `./media/reference/characters/icons/${item.id}.png` : ""),
     displaySrc: (item) => item?.media?.icon?.src || item?.media?.portrait?.src || "",
@@ -322,12 +319,15 @@ async function ensureReferenceFingerprints(modeKey) {
   return fingerprints;
 }
 
-function cellThumbnail(sourceCanvas, cell, mode) {
+// Captured at the cell's native resolution: the same data URL serves as the
+// small table thumbnail (sized by CSS) and as the enlarged preview overlay
+// used for visual verification.
+function cellThumbnail(sourceCanvas, cell) {
   const canvas = document.createElement("canvas");
-  canvas.width = THUMB_WIDTH;
-  canvas.height = mode.thumbHeight;
-  canvas.getContext("2d").drawImage(sourceCanvas, cell.x, cell.y, cell.width, cell.height, 0, 0, THUMB_WIDTH, mode.thumbHeight);
-  return canvas.toDataURL("image/jpeg", 0.75);
+  canvas.width = cell.width;
+  canvas.height = cell.height;
+  canvas.getContext("2d").drawImage(sourceCanvas, cell.x, cell.y, cell.width, cell.height, 0, 0, cell.width, cell.height);
+  return canvas.toDataURL("image/jpeg", 0.8);
 }
 
 function betterRow(a, b) {
@@ -368,7 +368,7 @@ export async function processImportFiles(modeKey, fileList) {
         const reading = mode.readCell(cellImg);
         rows.push({
           key: `${file.name}:${cell.row}:${cell.col}`,
-          thumb: cellThumbnail(canvas, cell, mode),
+          thumb: cellThumbnail(canvas, cell),
           fingerprint: cellFp,
           cardId: verdict.confident ? verdict.bestId : "",
           top3: ranked,
@@ -491,7 +491,7 @@ function renderImportRow(mode, row, itemsById, sortedItems) {
   return `
     <tr class="import-row import-row-${status.kind}">
       <td><input type="checkbox" data-import-field="include" data-import-key="${escapeHtml(row.key)}" ${row.include ? "checked" : ""} ${status.kind === "unknown" ? "disabled" : ""}></td>
-      <td><img class="import-cell-thumb" src="${row.thumb}" alt="captured cell"></td>
+      <td><img class="import-cell-thumb" src="${row.thumb}" alt="captured cell" title="Click to enlarge" data-import-preview="${escapeHtml(row.key)}"></td>
       <td class="import-match-cell">
         ${item ? `<img class="import-ref-thumb" src="${escapeHtml(resolveMediaAssetSrc(mode.displaySrc(item)))}" alt="">` : ""}
         ${renderRowMatchSelect(row, itemsById, sortedItems)}
@@ -577,6 +577,67 @@ function findRow(modeKey, key) {
   return importState(modeKey).results.find((row) => row.key === key) || null;
 }
 
+// --- Enlarged preview overlay (visual verification) ---
+// Click a captured-cell thumbnail to see it big, side by side with the image
+// of the currently matched card (the full illustration for supports, the
+// in-game icon for umas when covered, the stand art otherwise).
+
+function closeImportPreview() {
+  document.getElementById("importPreviewOverlay")?.remove();
+  document.removeEventListener("keydown", onImportPreviewKeydown);
+}
+
+function onImportPreviewKeydown(event) {
+  if (event.key === "Escape") {
+    closeImportPreview();
+  }
+}
+
+function previewReferenceSrc(modeKey, item) {
+  const mode = IMPORT_MODES[modeKey];
+  if (modeKey === "characters") {
+    const covered = importState(modeKey).fingerprints?.has(String(item.id));
+    return covered ? mode.referenceSrc(item) : (item?.media?.portrait?.src || "");
+  }
+  return mode.referenceSrc(item);
+}
+
+function openImportPreview(modeKey, row) {
+  closeImportPreview();
+  const itemsById = getItemsById(IMPORT_MODES[modeKey]);
+  const item = row.cardId ? itemsById.get(row.cardId) : null;
+  const refSrc = item ? previewReferenceSrc(modeKey, item) : "";
+  const matchLabel = item ? `${item.title}${item.subtitle ? ` ${item.subtitle}` : ""}` : "No card selected yet";
+
+  const overlay = document.createElement("div");
+  overlay.id = "importPreviewOverlay";
+  overlay.className = "import-preview-overlay";
+  overlay.innerHTML = `
+    <div class="import-preview-panel">
+      <button type="button" class="import-preview-close" aria-label="Close preview">&times;</button>
+      <div class="import-preview-images">
+        <figure>
+          <img src="${row.thumb}" alt="captured cell">
+          <figcaption>Your capture</figcaption>
+        </figure>
+        ${refSrc ? `
+          <figure>
+            <img src="${escapeHtml(resolveMediaAssetSrc(refSrc))}" alt="">
+            <figcaption>${escapeHtml(matchLabel)}</figcaption>
+          </figure>
+        ` : `<p class="import-preview-empty">${escapeHtml(matchLabel)}</p>`}
+      </div>
+    </div>
+  `;
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay || event.target.closest(".import-preview-close")) {
+      closeImportPreview();
+    }
+  });
+  document.body.appendChild(overlay);
+  document.addEventListener("keydown", onImportPreviewKeydown);
+}
+
 function attachImportListeners(modeKey) {
   const mode = IMPORT_MODES[modeKey];
   const fileInput = document.getElementById("importFileInput");
@@ -619,6 +680,15 @@ function attachImportListeners(modeKey) {
       requestRenderPreservingScroll();
     });
   }
+
+  listEl.querySelectorAll("[data-import-preview]").forEach((img) => {
+    img.addEventListener("click", () => {
+      const row = findRow(modeKey, img.dataset.importPreview);
+      if (row) {
+        openImportPreview(modeKey, row);
+      }
+    });
+  });
 
   listEl.querySelectorAll("[data-import-field]").forEach((input) => {
     input.addEventListener("change", () => {
