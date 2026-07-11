@@ -181,11 +181,40 @@ y compris une correction de valeurs saisies a la main auparavant),
 re-import de la meme capture -> **28 "already up to date", 0 selectionnee**
 (idempotence), zero erreur console.
 
+### Apprentissage des associations manuelles — LIVRE
+
+Demande utilisateur apres la phase E: quand une carte non reconnue est
+associee manuellement puis appliquee, l'outil memorise l'association.
+
+Principe: l'empreinte de la cellule (le rendu in-game exact de l'appareil de
+l'utilisateur — une reference *meilleure* que n'importe quel asset externe)
+est stockee sous l'id choisi. Au matching suivant, les empreintes apprises
+**ecrasent** la reference pour le meme id -> match a distance ~0. C'est ce
+qui couvre progressivement les 126 variantes umas absentes de la source
+d'icones, et les futures nouvelles cartes avant toute mise a jour de source.
+
+- apprentissage **au moment d'Apply uniquement** (pas au changement de
+  dropdown): on ne memorise que ce que l'utilisateur a confirme
+- stockage `localStorage` par mode (`umaSupportImportLearned` /
+  `umaCharacterImportLearned`), **non versionne** par `generated_at` (le
+  rendu du jeu ne change pas avec les updates GameTora); perdu si les
+  donnees navigateur sont videes (persistance serveur = evolution possible)
+- le dropdown de correction offre desormais le **catalogue complet** (top-3
+  puis separateur puis toutes les cartes triees) — prealable indispensable:
+  pour une variante non couverte, la bonne reponse n'etait dans aucun top-3
+- garde-fous: note "matched from your earlier correction" sur les lignes
+  matchees par apprentissage (une association fausse serait sinon une erreur
+  confiante recurrente et invisible), bouton "Forget N learned match(es)"
+- verifie en navigateur (cycle complet): association manuelle d'une cellule
+  incertaine -> Apply ("Memorized 1 manual match(es)") -> re-import -> la
+  cellule matche automatiquement avec la note, "3 to review" passe a 2,
+  statut Unchanged (idempotent), zero erreur console
+
 ### Phase D — polissage guide par l'usage reel
 
 Seulement apres un premier import complet reel: tolerance d'echelle si
-l'utilisateur change de telephone, umas si une source d'asset apparait,
-raccourcis UX. Ne rien pre-construire ici.
+l'utilisateur change de telephone, glyphes 6-9 des niveaux supports (des
+qu'une capture en contient), raccourcis UX. Ne rien pre-construire ici.
 
 ### Phase E — import des umas — LIVREE
 

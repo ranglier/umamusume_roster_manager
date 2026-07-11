@@ -3618,6 +3618,13 @@ body.route-wizard .profile-gate::after {
   color: var(--accent-4);
 }
 
+.import-learned-note {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.78rem;
+  color: var(--accent);
+}
+
 .import-row-unknown {
   background: rgba(255, 139, 102, 0.04);
 }

@@ -42,6 +42,7 @@ const IMPORT_MODES = {
     entityKey: "supports",
     noun: "support card",
     storageKey: "umaSupportImportFingerprints",
+    learnedKey: "umaSupportImportLearned",
     grid: SUPPORT_GRID,
     thumbHeight: 88,
     intro: "Drop screenshots of the in-game Support Card List (portrait, full screen). Cards are identified locally — nothing leaves this machine.",
@@ -108,6 +109,7 @@ const IMPORT_MODES = {
     entityKey: "characters",
     noun: "umamusume",
     storageKey: "umaCharacterImportFingerprints",
+    learnedKey: "umaCharacterImportLearned",
     grid: UMA_GRID,
     thumbHeight: 84,
     intro: "Drop screenshots of the in-game Trainee Umamusume list (portrait, full screen). Variants not covered by the icon set show as Unknown — pick them from the dropdown.",
@@ -231,6 +233,44 @@ function saveFingerprintsToStorage(mode, version, fingerprints) {
   }
 }
 
+// Learned associations: when the user manually assigns a card to a cell and
+// applies it, the cell's own fingerprint (their device's exact in-game
+// rendering — a better reference than any external asset) is memorized under
+// that id. Unlike the reference cache this is NOT keyed by the reference
+// generated_at: game renderings do not change with GameTora updates.
+function ensureLearnedFingerprints(modeKey) {
+  const current = importState(modeKey);
+  if (current.learned) {
+    return current.learned;
+  }
+  const mode = IMPORT_MODES[modeKey];
+  const map = new Map();
+  try {
+    const raw = window.localStorage.getItem(mode.learnedKey);
+    if (raw) {
+      for (const [id, entry] of Object.entries(JSON.parse(raw).cards || {})) {
+        map.set(id, deserializeFingerprint(entry));
+      }
+    }
+  } catch {
+    // Unreadable store: start fresh; the next apply rewrites it.
+  }
+  current.learned = map;
+  return map;
+}
+
+function saveLearnedToStorage(mode, learned) {
+  try {
+    const cards = {};
+    for (const [id, fp] of learned) {
+      cards[id] = serializeFingerprint(fp);
+    }
+    window.localStorage.setItem(mode.learnedKey, JSON.stringify({ cards }));
+  } catch {
+    // Quota or private mode: the in-memory map still works for this session.
+  }
+}
+
 async function ensureReferenceFingerprints(modeKey) {
   const mode = IMPORT_MODES[modeKey];
   const version = getLoadedReferenceGeneratedAt();
@@ -310,7 +350,10 @@ export async function processImportFiles(modeKey, fileList) {
 
   try {
     const fingerprints = await ensureReferenceFingerprints(modeKey);
-    const refEntries = [...fingerprints.entries()];
+    const learned = ensureLearnedFingerprints(modeKey);
+    // Learned fingerprints win over the reference for the same id: they come
+    // from this device's exact in-game rendering.
+    const refEntries = [...new Map([...fingerprints, ...learned]).entries()];
     const rows = [];
 
     for (const file of files) {
@@ -319,15 +362,19 @@ export async function processImportFiles(modeKey, fileList) {
       const cells = gridCells(imageData.width, imageData.height, mode.grid);
       for (const cell of cells) {
         const cellImg = cropImage(imageData, cell.x, cell.y, cell.width, cell.height);
-        const ranked = rankCandidates(mode.makeCellFingerprint(cellImg), refEntries, 3);
+        const cellFp = mode.makeCellFingerprint(cellImg);
+        const ranked = rankCandidates(cellFp, refEntries, 3);
         const verdict = assessMatch(ranked);
         const reading = mode.readCell(cellImg);
         rows.push({
           key: `${file.name}:${cell.row}:${cell.col}`,
           thumb: cellThumbnail(canvas, cell, mode),
+          fingerprint: cellFp,
           cardId: verdict.confident ? verdict.bestId : "",
           top3: ranked,
           matchConfident: verdict.confident,
+          learned: verdict.confident && learned.has(verdict.bestId),
+          manualMatch: false,
           distance: ranked[0]?.distance ?? Infinity,
           gap: verdict.gap,
           values: reading.values,
@@ -405,7 +452,7 @@ function rowDiffStatus(mode, row, itemsById) {
   return { kind: "unchanged", label: "Unchanged" };
 }
 
-function renderRowMatchSelect(row, itemsById) {
+function renderRowMatchSelect(row, itemsById, sortedItems) {
   const options = [`<option value="">— pick a card —</option>`];
   const seen = new Set();
   for (const candidate of row.top3) {
@@ -417,19 +464,26 @@ function renderRowMatchSelect(row, itemsById) {
     const label = `${item.title}${item.subtitle ? ` ${item.subtitle}` : ""} (d=${candidate.distance})`;
     options.push(`<option value="${escapeHtml(candidate.id)}" ${row.cardId === candidate.id ? "selected" : ""}>${escapeHtml(label)}</option>`);
   }
-  if (row.cardId && !seen.has(row.cardId)) {
-    const item = itemsById.get(row.cardId);
-    options.push(`<option value="${escapeHtml(row.cardId)}" selected>${escapeHtml(item ? item.title : row.cardId)}</option>`);
+  // Full catalog after the candidates: uncovered variants are not in the
+  // top-3 at all, and a manual pick here is what feeds the learning store.
+  options.push(`<option value="" disabled>——— all cards ———</option>`);
+  for (const item of sortedItems) {
+    const id = String(item.id);
+    if (seen.has(id)) {
+      continue;
+    }
+    const label = `${item.title}${item.subtitle ? ` ${item.subtitle}` : ""}`;
+    options.push(`<option value="${escapeHtml(id)}" ${row.cardId === id ? "selected" : ""}>${escapeHtml(label)}</option>`);
   }
   return `<select data-import-field="cardId" data-import-key="${escapeHtml(row.key)}">${options.join("")}</select>`;
 }
 
-function renderImportRow(mode, row, itemsById) {
+function renderImportRow(mode, row, itemsById, sortedItems) {
   const status = rowDiffStatus(mode, row, itemsById);
   const item = row.cardId ? itemsById.get(row.cardId) : null;
 
   const warnings = [];
-  if (!row.matchConfident && row.cardId) {
+  if (!row.matchConfident && row.cardId && !row.manualMatch) {
     warnings.push(`match to confirm (d=${row.distance}, gap=${Number.isFinite(row.gap) ? row.gap.toFixed(1) : "-"})`);
   }
   warnings.push(...mode.warnings(row, item));
@@ -440,11 +494,12 @@ function renderImportRow(mode, row, itemsById) {
       <td><img class="import-cell-thumb" src="${row.thumb}" alt="captured cell"></td>
       <td class="import-match-cell">
         ${item ? `<img class="import-ref-thumb" src="${escapeHtml(resolveMediaAssetSrc(mode.displaySrc(item)))}" alt="">` : ""}
-        ${renderRowMatchSelect(row, itemsById)}
+        ${renderRowMatchSelect(row, itemsById, sortedItems)}
       </td>
       ${mode.renderValueCells(row)}
       <td>
         <span class="import-status import-status-${status.kind}">${escapeHtml(status.label)}</span>
+        ${row.learned ? `<span class="import-learned-note">matched from your earlier correction</span>` : ""}
         ${warnings.length ? `<span class="import-warnings">${escapeHtml(warnings.join(" · "))}</span>` : ""}
       </td>
     </tr>
@@ -456,6 +511,8 @@ export function renderRosterImportPanel(entityKey) {
   const mode = IMPORT_MODES[modeKey];
   const current = importState(modeKey);
   const itemsById = getItemsById(mode);
+  const sortedItems = [...itemsById.values()].sort((a, b) => String(a.title).localeCompare(String(b.title)));
+  const learnedCount = ensureLearnedFingerprints(modeKey).size;
   const statusText = current.status.message || mode.intro;
 
   const rows = current.results;
@@ -484,6 +541,7 @@ export function renderRosterImportPanel(entityKey) {
             <input id="importFileInput" type="file" accept="image/*" multiple hidden>
           </label>
           ${rows.length ? `<button type="button" class="button-secondary" id="importClearButton">Clear results</button>` : ""}
+          ${learnedCount ? `<button type="button" class="button-secondary" id="importForgetButton" title="Drop the fingerprints memorized from your manual corrections">Forget ${learnedCount} learned match(es)</button>` : ""}
         </div>
       </div>
       ${rows.length ? `
@@ -494,7 +552,7 @@ export function renderRosterImportPanel(entityKey) {
         <div class="import-table-wrap">
           <table class="import-table">
             <thead>${tableHead}</thead>
-            <tbody>${visible.map((row) => renderImportRow(mode, row, itemsById)).join("")}</tbody>
+            <tbody>${visible.map((row) => renderImportRow(mode, row, itemsById, sortedItems)).join("")}</tbody>
           </table>
         </div>
         ${unchangedRows.length ? `
@@ -503,7 +561,7 @@ export function renderRosterImportPanel(entityKey) {
             <div class="import-table-wrap">
               <table class="import-table">
                 <thead>${tableHead}</thead>
-                <tbody>${unchangedRows.map((row) => renderImportRow(mode, row, itemsById)).join("")}</tbody>
+                <tbody>${unchangedRows.map((row) => renderImportRow(mode, row, itemsById, sortedItems)).join("")}</tbody>
               </table>
             </div>
           </details>
@@ -551,6 +609,17 @@ function attachImportListeners(modeKey) {
     });
   }
 
+  const forgetButton = document.getElementById("importForgetButton");
+  if (forgetButton) {
+    forgetButton.addEventListener("click", () => {
+      const emptied = new Map();
+      importState(modeKey).learned = emptied;
+      saveLearnedToStorage(mode, emptied);
+      setImportStatus(modeKey, "saved", "Learned matches forgotten.");
+      requestRenderPreservingScroll();
+    });
+  }
+
   listEl.querySelectorAll("[data-import-field]").forEach((input) => {
     input.addEventListener("change", () => {
       const row = findRow(modeKey, input.dataset.importKey);
@@ -563,6 +632,9 @@ function attachImportListeners(modeKey) {
       } else if (field === "cardId") {
         row.cardId = String(input.value || "");
         row.matchConfident = Boolean(row.cardId);
+        // A manual pick is what feeds the learning store on apply.
+        row.manualMatch = Boolean(row.cardId);
+        row.learned = false;
         if (!row.cardId) {
           row.include = false;
         }
@@ -598,7 +670,27 @@ async function applySelectedRows(modeKey) {
     }
     setRosterEntry(mode.entityKey, item, entry);
   }
+
+  // Learn the manual associations the user just confirmed by applying them:
+  // the cell's no-jitter hash + histogram become the reference fingerprint
+  // for that id (overwriting any earlier learned entry).
+  const learned = ensureLearnedFingerprints(modeKey);
+  let memorized = 0;
+  for (const row of selected) {
+    if (row.manualMatch && row.fingerprint) {
+      learned.set(row.cardId, { hash: row.fingerprint.hashes[0], hist: row.fingerprint.hist });
+      memorized += 1;
+    }
+  }
+  if (memorized) {
+    saveLearnedToStorage(mode, learned);
+  }
+
   await persistRosterDocument(`Imported ${selected.length} ${mode.noun}(s) from screenshots.`);
-  setImportStatus(modeKey, "saved", `Applied ${selected.length} ${mode.noun}(s) to the roster.`);
+  setImportStatus(
+    modeKey,
+    "saved",
+    `Applied ${selected.length} ${mode.noun}(s) to the roster.${memorized ? ` Memorized ${memorized} manual match(es) for next imports.` : ""}`,
+  );
   requestRenderPreservingScroll();
 }
