@@ -1,38 +1,178 @@
-﻿// Screenshot-based support import: browser orchestration + reconciliation UI.
-// The pure CV engine lives in roster_import_cv.js; this module owns file
-// decoding (canvas), the reference fingerprint cache (localStorage, keyed by
-// the reference generated_at), the reconciliation table rendered in place of
-// the roster/supports list, and applying the reviewed rows to the roster via
-// the existing PUT flow. See docs/ROSTER_IMPORT_PLAN.md.
+﻿// Screenshot-based roster import: browser orchestration + reconciliation UI.
+// Two modes share the same pipeline and table: "supports" (level + limit
+// break, matched against the local full illustrations) and "characters"
+// (stars + Potential Lvl/awakening, matched against the in-game per-variant
+// icons fetched by scripts/fetch_chara_icons.py). The pure CV engine lives in
+// roster_import_cv.js; this module owns file decoding (canvas), the reference
+// fingerprint caches (localStorage, keyed by the reference generated_at), the
+// reconciliation table rendered in place of the roster list, and applying the
+// reviewed rows through the existing PUT roster flow.
+// See docs/ROSTER_IMPORT_PLAN.md.
 import { getEntityItems, getLoadedReferenceGeneratedAt, getSupportLevelCap, listEl, state } from "./core.js";
 import { clampNumber, escapeHtml, resolveMediaAssetSrc } from "./dom-utils.js";
 import {
+  SUPPORT_GRID,
+  UMA_GRID,
   assessMatch,
   cellFingerprint,
-  cropImage,
   deserializeFingerprint,
+  cropImage,
   gridCells,
   rankCandidates,
   readLevel,
   readLimitBreak,
-  reconcile,
+  readUmaPotential,
+  readUmaStars,
   referenceFingerprint,
   serializeFingerprint,
+  umaCellFingerprint,
+  umaReferenceFingerprint,
 } from "./roster_import_cv.js";
 import { getRosterEntry, setRosterEntry } from "./roster.js";
 import { persistRosterDocument, requestRenderPreservingScroll } from "../app.js";
 
-const FINGERPRINT_STORAGE_KEY = "umaSupportImportFingerprints";
 const FETCH_CONCURRENCY = 8;
 const THUMB_WIDTH = 66;
-const THUMB_HEIGHT = 88;
-// A digit read below this agreement score is treated as unreliable; the level
-// field stays editable either way (measured: correct reads >= 0.96, the known
-// bad reads sit at ~0.5-0.6, and missing 6-9 glyphs surface down there too).
+// Level digits read below this agreement are unreliable (correct reads sit
+// >= 0.96, known-bad ones ~0.5-0.6, missing 6-9 glyph reads land there too).
 const LEVEL_CONFIDENCE_FLOOR = 0.9;
 
-function setImportStatus(kind, message) {
-  state.supportImport.status = { kind, message };
+const IMPORT_MODES = {
+  supports: {
+    entityKey: "supports",
+    noun: "support card",
+    storageKey: "umaSupportImportFingerprints",
+    grid: SUPPORT_GRID,
+    thumbHeight: 88,
+    intro: "Drop screenshots of the in-game Support Card List (portrait, full screen). Cards are identified locally — nothing leaves this machine.",
+    referenceSrc: (item) => item?.media?.cover?.src || "",
+    displaySrc: (item) => item?.media?.icon?.src || item?.media?.cover?.src || "",
+    makeReferenceFingerprint: referenceFingerprint,
+    makeCellFingerprint: cellFingerprint,
+    readCell(cellImg) {
+      const level = readLevel(cellImg);
+      const limitBreak = readLimitBreak(cellImg);
+      return {
+        values: { level: level.level, limitBreak: limitBreak.limitBreak },
+        flags: {
+          levelConfident: level.level != null && level.confidence >= LEVEL_CONFIDENCE_FLOOR,
+          lbConfident: limitBreak.confident,
+        },
+        readingConfidence: level.confidence,
+      };
+    },
+    // [valueKey, rosterKey] pairs; getRosterEntry() merges defaults so the
+    // diff never trips on pruned default values (level 1 / limit_break 0).
+    diffFields: [["level", "level"], ["limitBreak", "limit_break"]],
+    diffLabels: { level: "level", limit_break: "LB" },
+    renderValueCells(row) {
+      return `
+        <td><input class="import-level-input" type="number" min="1" max="50" step="1" data-import-field="level" data-import-key="${escapeHtml(row.key)}" value="${Number.isInteger(row.values.level) ? row.values.level : ""}" placeholder="?"></td>
+        <td>
+          <select data-import-field="limitBreak" data-import-key="${escapeHtml(row.key)}">
+            ${[0, 1, 2, 3, 4].map((lb) => `<option value="${lb}" ${row.values.limitBreak === lb ? "selected" : ""}>LB ${lb}</option>`).join("")}
+          </select>
+        </td>
+      `;
+    },
+    valueHeaders: ["Level", "Limit break"],
+    onFieldChange(row, field, input) {
+      if (field === "level") {
+        const raw = String(input.value || "").trim();
+        row.values.level = raw === "" ? null : clampNumber(raw, 1, 50, 1);
+        row.flags.levelConfident = raw !== "";
+      } else if (field === "limitBreak") {
+        row.values.limitBreak = clampNumber(input.value, 0, 4, 0);
+        row.flags.lbConfident = true;
+      }
+    },
+    warnings(row, item) {
+      const notes = [];
+      if (row.values.level == null) {
+        notes.push("level unread");
+      } else if (!row.flags.levelConfident) {
+        notes.push("level to confirm");
+      }
+      if (!row.flags.lbConfident) {
+        notes.push("LB unclear");
+      }
+      const rarity = item?.detail?.rarity;
+      const cap = item ? getSupportLevelCap(rarity, row.values.limitBreak ?? 0) : null;
+      if (item && Number.isInteger(row.values.level) && cap != null && row.values.level > cap) {
+        notes.push(`level ${row.values.level} exceeds the LB${row.values.limitBreak} cap (${cap})`);
+      }
+      return notes;
+    },
+  },
+  characters: {
+    entityKey: "characters",
+    noun: "umamusume",
+    storageKey: "umaCharacterImportFingerprints",
+    grid: UMA_GRID,
+    thumbHeight: 84,
+    intro: "Drop screenshots of the in-game Trainee Umamusume list (portrait, full screen). Variants not covered by the icon set show as Unknown — pick them from the dropdown.",
+    referenceSrc: (item) => (item?.id ? `./media/reference/characters/icons/${item.id}.png` : ""),
+    displaySrc: (item) => item?.media?.icon?.src || item?.media?.portrait?.src || "",
+    makeReferenceFingerprint: umaReferenceFingerprint,
+    makeCellFingerprint: umaCellFingerprint,
+    readCell(cellImg) {
+      const stars = readUmaStars(cellImg);
+      const potential = readUmaPotential(cellImg);
+      return {
+        values: { stars: stars.stars, potential: potential.potential },
+        flags: {
+          starsObscured: stars.obscured,
+          starsConfident: stars.confident,
+          potentialConfident: potential.confident,
+        },
+        readingConfidence: potential.score,
+      };
+    },
+    diffFields: [["stars", "stars"], ["potential", "awakening"]],
+    diffLabels: { stars: "stars", awakening: "awakening" },
+    renderValueCells(row) {
+      return `
+        <td><input class="import-level-input" type="number" min="1" max="5" step="1" data-import-field="stars" data-import-key="${escapeHtml(row.key)}" value="${Number.isInteger(row.values.stars) ? row.values.stars : ""}" placeholder="?"></td>
+        <td>
+          <select data-import-field="potential" data-import-key="${escapeHtml(row.key)}">
+            ${[1, 2, 3, 4, 5].map((p) => `<option value="${p}" ${row.values.potential === p ? "selected" : ""}>Potential ${p}</option>`).join("")}
+          </select>
+        </td>
+      `;
+    },
+    valueHeaders: ["Stars", "Awakening"],
+    onFieldChange(row, field, input) {
+      if (field === "stars") {
+        const raw = String(input.value || "").trim();
+        row.values.stars = raw === "" ? null : clampNumber(raw, 1, 5, 1);
+        row.flags.starsConfident = raw !== "";
+        row.flags.starsObscured = false;
+      } else if (field === "potential") {
+        row.values.potential = clampNumber(input.value, 1, 5, 1);
+        row.flags.potentialConfident = true;
+      }
+    },
+    warnings(row) {
+      const notes = [];
+      if (row.flags.starsObscured) {
+        notes.push("stars hidden by the overlay bar — rescroll and recapture, or type them");
+      } else if (!row.flags.starsConfident) {
+        notes.push("stars to confirm");
+      }
+      if (!row.flags.potentialConfident) {
+        notes.push("awakening to confirm");
+      }
+      return notes;
+    },
+  },
+};
+
+function importState(modeKey) {
+  return state.rosterImport[modeKey];
+}
+
+function setImportStatus(modeKey, kind, message) {
+  importState(modeKey).status = { kind, message };
 }
 
 function decodeBlobToCanvas(blob) {
@@ -51,25 +191,17 @@ function canvasImageData(canvas) {
   return canvas.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, canvas.width, canvas.height);
 }
 
-function supportCoverSrc(item) {
-  return item?.media?.cover?.src || "";
-}
-
-function supportIconSrc(item) {
-  return item?.media?.icon?.src || supportCoverSrc(item);
-}
-
-function getSupportItemsById() {
+function getItemsById(mode) {
   const byId = new Map();
-  for (const item of getEntityItems("supports")) {
+  for (const item of getEntityItems(mode.entityKey)) {
     byId.set(String(item.id), item);
   }
   return byId;
 }
 
-function loadFingerprintsFromStorage(version) {
+function loadFingerprintsFromStorage(mode, version) {
   try {
-    const raw = window.localStorage.getItem(FINGERPRINT_STORAGE_KEY);
+    const raw = window.localStorage.getItem(mode.storageKey);
     if (!raw) {
       return null;
     }
@@ -87,33 +219,34 @@ function loadFingerprintsFromStorage(version) {
   }
 }
 
-function saveFingerprintsToStorage(version, fingerprints) {
+function saveFingerprintsToStorage(mode, version, fingerprints) {
   try {
     const cards = {};
     for (const [id, fp] of fingerprints) {
       cards[id] = serializeFingerprint(fp);
     }
-    window.localStorage.setItem(FINGERPRINT_STORAGE_KEY, JSON.stringify({ version, cards }));
+    window.localStorage.setItem(mode.storageKey, JSON.stringify({ version, cards }));
   } catch {
     // Quota or private mode: the in-memory map still works for this session.
   }
 }
 
-async function ensureReferenceFingerprints() {
+async function ensureReferenceFingerprints(modeKey) {
+  const mode = IMPORT_MODES[modeKey];
   const version = getLoadedReferenceGeneratedAt();
-  const current = state.supportImport;
+  const current = importState(modeKey);
   if (current.fingerprints && current.fingerprintsVersion === version) {
     return current.fingerprints;
   }
 
-  const cached = loadFingerprintsFromStorage(version);
+  const cached = loadFingerprintsFromStorage(mode, version);
   if (cached && cached.size) {
     current.fingerprints = cached;
     current.fingerprintsVersion = version;
     return cached;
   }
 
-  const items = getEntityItems("supports").filter((item) => supportCoverSrc(item));
+  const items = getEntityItems(mode.entityKey).filter((item) => mode.referenceSrc(item));
   const fingerprints = new Map();
   current.building = true;
   let done = 0;
@@ -123,18 +256,18 @@ async function ensureReferenceFingerprints() {
     while (queue.length) {
       const item = queue.shift();
       try {
-        const response = await fetch(resolveMediaAssetSrc(supportCoverSrc(item)));
+        const response = await fetch(resolveMediaAssetSrc(mode.referenceSrc(item)));
         if (!response.ok) {
-          continue;
+          continue; // e.g. uma variant not covered by the icon set
         }
         const canvas = await decodeBlobToCanvas(await response.blob());
-        fingerprints.set(String(item.id), referenceFingerprint(canvasImageData(canvas)));
+        fingerprints.set(String(item.id), mode.makeReferenceFingerprint(canvasImageData(canvas)));
       } catch {
-        // A missing/corrupt illustration only removes one candidate.
+        // A missing/corrupt reference image only removes one candidate.
       } finally {
         done += 1;
         if (done % 25 === 0 || done === items.length) {
-          setImportStatus("saving", `Preparing card fingerprints... ${done}/${items.length}`);
+          setImportStatus(modeKey, "saving", `Preparing fingerprints... ${done}/${items.length}`);
           requestRenderPreservingScroll();
         }
       }
@@ -145,15 +278,15 @@ async function ensureReferenceFingerprints() {
   current.building = false;
   current.fingerprints = fingerprints;
   current.fingerprintsVersion = version;
-  saveFingerprintsToStorage(version, fingerprints);
+  saveFingerprintsToStorage(mode, version, fingerprints);
   return fingerprints;
 }
 
-function cellThumbnail(sourceCanvas, cell) {
+function cellThumbnail(sourceCanvas, cell, mode) {
   const canvas = document.createElement("canvas");
   canvas.width = THUMB_WIDTH;
-  canvas.height = THUMB_HEIGHT;
-  canvas.getContext("2d").drawImage(sourceCanvas, cell.x, cell.y, cell.width, cell.height, 0, 0, THUMB_WIDTH, THUMB_HEIGHT);
+  canvas.height = mode.thumbHeight;
+  canvas.getContext("2d").drawImage(sourceCanvas, cell.x, cell.y, cell.width, cell.height, 0, 0, THUMB_WIDTH, mode.thumbHeight);
   return canvas.toDataURL("image/jpeg", 0.75);
 }
 
@@ -161,55 +294,53 @@ function betterRow(a, b) {
   if (a.matchConfident !== b.matchConfident) {
     return a.matchConfident ? a : b;
   }
-  return (a.levelConfidence || 0) >= (b.levelConfidence || 0) ? a : b;
+  return (a.readingConfidence || 0) >= (b.readingConfidence || 0) ? a : b;
 }
 
-export async function processImportFiles(fileList) {
+export async function processImportFiles(modeKey, fileList) {
+  const mode = IMPORT_MODES[modeKey];
   const files = [...fileList].filter((file) => file.type.startsWith("image/"));
   if (!files.length) {
     return;
   }
-  const importState = state.supportImport;
-  importState.processing = true;
-  setImportStatus("saving", "Preparing card fingerprints...");
+  const current = importState(modeKey);
+  current.processing = true;
+  setImportStatus(modeKey, "saving", "Preparing fingerprints...");
   requestRenderPreservingScroll();
 
   try {
-    const fingerprints = await ensureReferenceFingerprints();
+    const fingerprints = await ensureReferenceFingerprints(modeKey);
     const refEntries = [...fingerprints.entries()];
     const rows = [];
 
     for (const file of files) {
       const canvas = await decodeBlobToCanvas(file);
       const imageData = canvasImageData(canvas);
-      const cells = gridCells(imageData.width, imageData.height);
+      const cells = gridCells(imageData.width, imageData.height, mode.grid);
       for (const cell of cells) {
         const cellImg = cropImage(imageData, cell.x, cell.y, cell.width, cell.height);
-        const ranked = rankCandidates(cellFingerprint(cellImg), refEntries, 3);
+        const ranked = rankCandidates(mode.makeCellFingerprint(cellImg), refEntries, 3);
         const verdict = assessMatch(ranked);
-        const level = readLevel(cellImg);
-        const limitBreak = readLimitBreak(cellImg);
+        const reading = mode.readCell(cellImg);
         rows.push({
           key: `${file.name}:${cell.row}:${cell.col}`,
-          thumb: cellThumbnail(canvas, cell),
+          thumb: cellThumbnail(canvas, cell, mode),
           cardId: verdict.confident ? verdict.bestId : "",
           top3: ranked,
           matchConfident: verdict.confident,
           distance: ranked[0]?.distance ?? Infinity,
           gap: verdict.gap,
-          level: level.level,
-          levelConfidence: level.confidence,
-          levelConfident: level.level != null && level.confidence >= LEVEL_CONFIDENCE_FLOOR,
-          limitBreak: limitBreak.limitBreak,
-          lbConfident: limitBreak.confident,
+          values: reading.values,
+          flags: reading.flags,
+          readingConfidence: reading.readingConfidence,
           include: false,
         });
       }
     }
 
-    // Merge with previous results, dedup by picked card id (scroll overlap
-    // between screenshots); rows without a confident id all stay visible.
-    const merged = [...importState.results];
+    // Merge with previous results, dedup by picked id (scroll overlap between
+    // screenshots); rows without a confident id all stay visible for review.
+    const merged = [...current.results];
     for (const row of rows) {
       if (!row.cardId) {
         merged.push(row);
@@ -224,63 +355,49 @@ export async function processImportFiles(fileList) {
     }
 
     // Default inclusion: confident rows whose application would change the
-    // roster. Unknown/unchanged rows start unchecked. reconcile() compares
-    // raw values, so feed it defaults-normalized entries (pruned roster
-    // entries omit level 1 / limit_break 0).
-    const currentSupports = state.rosterDocument?.supports || {};
-    const normalizedCurrent = {};
-    for (const [id, entry] of Object.entries(currentSupports)) {
-      normalizedCurrent[id] = normalizedSupportEntry(entry);
-    }
-    const diff = reconcile(
-      normalizedCurrent,
-      merged.filter((row) => row.cardId).map((row) => ({ cardId: row.cardId, level: row.level, limitBreak: row.limitBreak })),
-    );
-    const actionable = new Set([...diff.added.map((entry) => entry.id), ...diff.changed.map((entry) => entry.id)]);
+    // roster. Unknown/unchanged rows start unchecked.
+    const itemsById = getItemsById(mode);
     for (const row of merged) {
-      row.include = Boolean(row.cardId) && row.matchConfident && actionable.has(row.cardId);
+      const status = rowDiffStatus(mode, row, itemsById);
+      row.include = Boolean(row.cardId) && row.matchConfident && (status.kind === "new" || status.kind === "changed");
     }
 
-    importState.results = merged;
+    current.results = merged;
     const uncertain = merged.filter((row) => !row.cardId).length;
     setImportStatus(
+      modeKey,
       "saved",
-      `Read ${rows.length} cells from ${files.length} screenshot(s) — ${merged.length} distinct cards${uncertain ? `, ${uncertain} to review` : ""}.`,
+      `Read ${rows.length} cells from ${files.length} screenshot(s) — ${merged.length} distinct ${mode.noun}s${uncertain ? `, ${uncertain} to review` : ""}.`,
     );
   } catch (error) {
-    setImportStatus("error", error.message || "Could not process the screenshots.");
+    setImportStatus(modeKey, "error", error.message || "Could not process the screenshots.");
   } finally {
-    importState.processing = false;
+    current.processing = false;
     requestRenderPreservingScroll();
   }
 }
 
-// The persisted roster prunes fields equal to their defaults (supports:
-// level 1, limit_break 0 — see pruneRosterEntry), so a stored entry may omit
-// them. Diffing against the raw entry would flag every default-valued card as
-// changed on re-import; normalize first.
-function normalizedSupportEntry(entry) {
-  return {
-    owned: entry?.owned === true,
-    level: Number.isInteger(entry?.level) ? entry.level : 1,
-    limit_break: Number.isInteger(entry?.limit_break) ? entry.limit_break : 0,
-  };
-}
-
-function rowDiffStatus(row, currentSupports) {
+// getRosterEntry merges entity defaults (supports: level 1 / limit_break 0,
+// characters: stars = base rarity / awakening 0), so the diff never re-flags
+// pruned default values on re-import.
+function rowDiffStatus(mode, row, itemsById) {
   if (!row.cardId) {
     return { kind: "unknown", label: "Unknown card" };
   }
-  const current = normalizedSupportEntry(currentSupports[row.cardId]);
-  if (!current.owned) {
+  const item = itemsById.get(row.cardId);
+  if (!item) {
+    return { kind: "unknown", label: "Not in reference" };
+  }
+  const current = getRosterEntry(mode.entityKey, item);
+  if (current.owned !== true) {
     return { kind: "new", label: "New" };
   }
   const changes = [];
-  if (Number.isInteger(row.level) && current.level !== row.level) {
-    changes.push(`level ${current.level} -> ${row.level}`);
-  }
-  if (Number.isInteger(row.limitBreak) && current.limit_break !== row.limitBreak) {
-    changes.push(`LB ${current.limit_break} -> ${row.limitBreak}`);
+  for (const [valueKey, rosterKey] of mode.diffFields) {
+    const next = row.values[valueKey];
+    if (Number.isInteger(next) && current[rosterKey] !== next) {
+      changes.push(`${mode.diffLabels[rosterKey]} ${current[rosterKey] ?? "-"} -> ${next}`);
+    }
   }
   if (changes.length) {
     return { kind: "changed", label: changes.join(", ") };
@@ -307,43 +424,25 @@ function renderRowMatchSelect(row, itemsById) {
   return `<select data-import-field="cardId" data-import-key="${escapeHtml(row.key)}">${options.join("")}</select>`;
 }
 
-function renderImportRow(row, itemsById, currentSupports) {
-  const status = rowDiffStatus(row, currentSupports);
+function renderImportRow(mode, row, itemsById) {
+  const status = rowDiffStatus(mode, row, itemsById);
   const item = row.cardId ? itemsById.get(row.cardId) : null;
-  const rarity = item?.detail?.rarity;
-  const cap = item ? getSupportLevelCap(rarity, row.limitBreak ?? 0) : null;
-  const overCap = item && Number.isInteger(row.level) && cap != null && row.level > cap;
 
   const warnings = [];
   if (!row.matchConfident && row.cardId) {
     warnings.push(`match to confirm (d=${row.distance}, gap=${Number.isFinite(row.gap) ? row.gap.toFixed(1) : "-"})`);
   }
-  if (row.level == null) {
-    warnings.push("level unread");
-  } else if (!row.levelConfident) {
-    warnings.push(`level to confirm (${Math.round((row.levelConfidence || 0) * 100)}%)`);
-  }
-  if (!row.lbConfident) {
-    warnings.push("LB unclear");
-  }
-  if (overCap) {
-    warnings.push(`level ${row.level} exceeds the LB${row.limitBreak} cap (${cap})`);
-  }
+  warnings.push(...mode.warnings(row, item));
 
   return `
     <tr class="import-row import-row-${status.kind}">
       <td><input type="checkbox" data-import-field="include" data-import-key="${escapeHtml(row.key)}" ${row.include ? "checked" : ""} ${status.kind === "unknown" ? "disabled" : ""}></td>
       <td><img class="import-cell-thumb" src="${row.thumb}" alt="captured cell"></td>
       <td class="import-match-cell">
-        ${item ? `<img class="import-ref-thumb" src="${escapeHtml(resolveMediaAssetSrc(supportIconSrc(item)))}" alt="">` : ""}
+        ${item ? `<img class="import-ref-thumb" src="${escapeHtml(resolveMediaAssetSrc(mode.displaySrc(item)))}" alt="">` : ""}
         ${renderRowMatchSelect(row, itemsById)}
       </td>
-      <td><input class="import-level-input" type="number" min="1" max="50" step="1" data-import-field="level" data-import-key="${escapeHtml(row.key)}" value="${Number.isInteger(row.level) ? row.level : ""}" placeholder="?"></td>
-      <td>
-        <select data-import-field="limitBreak" data-import-key="${escapeHtml(row.key)}">
-          ${[0, 1, 2, 3, 4].map((lb) => `<option value="${lb}" ${row.limitBreak === lb ? "selected" : ""}>LB ${lb}</option>`).join("")}
-        </select>
-      </td>
+      ${mode.renderValueCells(row)}
       <td>
         <span class="import-status import-status-${status.kind}">${escapeHtml(status.label)}</span>
         ${warnings.length ? `<span class="import-warnings">${escapeHtml(warnings.join(" · "))}</span>` : ""}
@@ -352,16 +451,16 @@ function renderImportRow(row, itemsById, currentSupports) {
   `;
 }
 
-export function renderSupportImportPanel() {
-  const importState = state.supportImport;
-  const itemsById = getSupportItemsById();
-  const currentSupports = state.rosterDocument?.supports || {};
-  const statusText = importState.status.message
-    || "Drop screenshots of the in-game Support Card List (portrait, full screen). Cards are identified locally — nothing leaves this machine.";
+export function renderRosterImportPanel(entityKey) {
+  const modeKey = entityKey === "characters" ? "characters" : "supports";
+  const mode = IMPORT_MODES[modeKey];
+  const current = importState(modeKey);
+  const itemsById = getItemsById(mode);
+  const statusText = current.status.message || mode.intro;
 
-  const rows = importState.results;
-  const visible = rows.filter((row) => rowDiffStatus(row, currentSupports).kind !== "unchanged");
-  const unchangedRows = rows.filter((row) => rowDiffStatus(row, currentSupports).kind === "unchanged");
+  const rows = current.results;
+  const visible = rows.filter((row) => rowDiffStatus(mode, row, itemsById).kind !== "unchanged");
+  const unchangedRows = rows.filter((row) => rowDiffStatus(mode, row, itemsById).kind === "unchanged");
   const selectedCount = rows.filter((row) => row.include && row.cardId).length;
 
   const tableHead = `
@@ -369,8 +468,7 @@ export function renderSupportImportPanel() {
       <th scope="col" title="Apply this row"></th>
       <th scope="col">Capture</th>
       <th scope="col">Matched card</th>
-      <th scope="col">Level</th>
-      <th scope="col">Limit break</th>
+      ${mode.valueHeaders.map((label) => `<th scope="col">${escapeHtml(label)}</th>`).join("")}
       <th scope="col">Status</th>
     </tr>
   `;
@@ -378,7 +476,7 @@ export function renderSupportImportPanel() {
   listEl.innerHTML = `
     <div class="support-import">
       <div class="import-dropzone" id="importDropzone">
-        <p><strong>Import support cards from screenshots</strong></p>
+        <p><strong>Import ${escapeHtml(mode.noun)}s from screenshots</strong></p>
         <p class="source-note">${escapeHtml(statusText)}</p>
         <div class="roster-actions">
           <label class="button-strong import-file-label">
@@ -391,21 +489,21 @@ export function renderSupportImportPanel() {
       ${rows.length ? `
         <div class="import-apply-bar">
           <strong>${selectedCount}</strong> row(s) selected
-          <button type="button" class="button-strong" id="importApplyButton" ${selectedCount && !importState.processing ? "" : "disabled"}>Apply to my roster</button>
+          <button type="button" class="button-strong" id="importApplyButton" ${selectedCount && !current.processing ? "" : "disabled"}>Apply to my roster</button>
         </div>
         <div class="import-table-wrap">
           <table class="import-table">
             <thead>${tableHead}</thead>
-            <tbody>${visible.map((row) => renderImportRow(row, itemsById, currentSupports)).join("")}</tbody>
+            <tbody>${visible.map((row) => renderImportRow(mode, row, itemsById)).join("")}</tbody>
           </table>
         </div>
         ${unchangedRows.length ? `
           <details class="import-unchanged">
-            <summary>${unchangedRows.length} card(s) already up to date</summary>
+            <summary>${unchangedRows.length} ${escapeHtml(mode.noun)}(s) already up to date</summary>
             <div class="import-table-wrap">
               <table class="import-table">
                 <thead>${tableHead}</thead>
-                <tbody>${unchangedRows.map((row) => renderImportRow(row, itemsById, currentSupports)).join("")}</tbody>
+                <tbody>${unchangedRows.map((row) => renderImportRow(mode, row, itemsById)).join("")}</tbody>
               </table>
             </div>
           </details>
@@ -414,18 +512,19 @@ export function renderSupportImportPanel() {
     </div>
   `;
 
-  attachImportListeners();
+  attachImportListeners(modeKey);
 }
 
-function findRow(key) {
-  return state.supportImport.results.find((row) => row.key === key) || null;
+function findRow(modeKey, key) {
+  return importState(modeKey).results.find((row) => row.key === key) || null;
 }
 
-function attachImportListeners() {
+function attachImportListeners(modeKey) {
+  const mode = IMPORT_MODES[modeKey];
   const fileInput = document.getElementById("importFileInput");
   if (fileInput) {
     fileInput.addEventListener("change", async () => {
-      await processImportFiles(fileInput.files || []);
+      await processImportFiles(modeKey, fileInput.files || []);
     });
   }
 
@@ -439,22 +538,22 @@ function attachImportListeners() {
     dropzone.addEventListener("drop", async (event) => {
       event.preventDefault();
       dropzone.classList.remove("import-dropzone-active");
-      await processImportFiles(event.dataTransfer?.files || []);
+      await processImportFiles(modeKey, event.dataTransfer?.files || []);
     });
   }
 
   const clearButton = document.getElementById("importClearButton");
   if (clearButton) {
     clearButton.addEventListener("click", () => {
-      state.supportImport.results = [];
-      setImportStatus("idle", "");
+      importState(modeKey).results = [];
+      setImportStatus(modeKey, "idle", "");
       requestRenderPreservingScroll();
     });
   }
 
   listEl.querySelectorAll("[data-import-field]").forEach((input) => {
     input.addEventListener("change", () => {
-      const row = findRow(input.dataset.importKey);
+      const row = findRow(modeKey, input.dataset.importKey);
       if (!row) {
         return;
       }
@@ -467,14 +566,8 @@ function attachImportListeners() {
         if (!row.cardId) {
           row.include = false;
         }
-      } else if (field === "level") {
-        const raw = String(input.value || "").trim();
-        row.level = raw === "" ? null : clampNumber(raw, 1, 50, 1);
-        row.levelConfident = raw !== "";
-        row.levelConfidence = raw === "" ? 0 : 1;
-      } else if (field === "limitBreak") {
-        row.limitBreak = clampNumber(input.value, 0, 4, 0);
-        row.lbConfident = true;
+      } else {
+        mode.onFieldChange(row, field, input);
       }
       requestRenderPreservingScroll();
     });
@@ -483,29 +576,29 @@ function attachImportListeners() {
   const applyButton = document.getElementById("importApplyButton");
   if (applyButton) {
     applyButton.addEventListener("click", async () => {
-      await applySelectedRows();
+      await applySelectedRows(modeKey);
     });
   }
 }
 
-async function applySelectedRows() {
-  const itemsById = getSupportItemsById();
-  const selected = state.supportImport.results.filter((row) => row.include && row.cardId && itemsById.has(row.cardId));
+async function applySelectedRows(modeKey) {
+  const mode = IMPORT_MODES[modeKey];
+  const itemsById = getItemsById(mode);
+  const selected = importState(modeKey).results.filter((row) => row.include && row.cardId && itemsById.has(row.cardId));
   if (!selected.length) {
     return;
   }
   for (const row of selected) {
     const item = itemsById.get(row.cardId);
-    const entry = { ...getRosterEntry("supports", item), owned: true };
-    if (Number.isInteger(row.level)) {
-      entry.level = row.level;
+    const entry = { ...getRosterEntry(mode.entityKey, item), owned: true };
+    for (const [valueKey, rosterKey] of mode.diffFields) {
+      if (Number.isInteger(row.values[valueKey])) {
+        entry[rosterKey] = row.values[valueKey];
+      }
     }
-    if (Number.isInteger(row.limitBreak)) {
-      entry.limit_break = row.limitBreak;
-    }
-    setRosterEntry("supports", item, entry);
+    setRosterEntry(mode.entityKey, item, entry);
   }
-  await persistRosterDocument(`Imported ${selected.length} support card(s) from screenshots.`);
-  setImportStatus("saved", `Applied ${selected.length} card(s) to the roster.`);
+  await persistRosterDocument(`Imported ${selected.length} ${mode.noun}(s) from screenshots.`);
+  setImportStatus(modeKey, "saved", `Applied ${selected.length} ${mode.noun}(s) to the roster.`);
   requestRenderPreservingScroll();
 }

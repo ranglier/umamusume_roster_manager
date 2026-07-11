@@ -1,0 +1,150 @@
+{
+  "note": "Fixtures umas: cellules 180x230 de la capture reelle 1080x2392 (grille Trainee: origine 45,299, pas 202x242) + icones par variante (source pretty-derby, reduites 128x140). RGBA brut.",
+  "cells": [
+    {
+      "file": "uma_cell_0_0.rgba",
+      "width": 180,
+      "height": 230,
+      "row": 0,
+      "col": 0,
+      "variant_id": "100201",
+      "stars": 3,
+      "potential": 5,
+      "stars_obscured": false
+    },
+    {
+      "file": "uma_cell_0_1.rgba",
+      "width": 180,
+      "height": 230,
+      "row": 0,
+      "col": 1,
+      "variant_id": "100402",
+      "stars": 4,
+      "potential": 5,
+      "stars_obscured": false
+    },
+    {
+      "file": "uma_cell_0_2.rgba",
+      "width": 180,
+      "height": 230,
+      "row": 0,
+      "col": 2,
+      "variant_id": "103101",
+      "stars": 3,
+      "potential": 4,
+      "stars_obscured": false
+    },
+    {
+      "file": "uma_cell_1_0.rgba",
+      "width": 180,
+      "height": 230,
+      "row": 1,
+      "col": 0,
+      "variant_id": "100302",
+      "stars": 3,
+      "potential": 3,
+      "stars_obscured": false
+    },
+    {
+      "file": "uma_cell_3_0.rgba",
+      "width": 180,
+      "height": 230,
+      "row": 3,
+      "col": 0,
+      "variant_id": "103701",
+      "stars": 3,
+      "potential": 2,
+      "stars_obscured": false
+    },
+    {
+      "file": "uma_cell_3_2.rgba",
+      "width": 180,
+      "height": 230,
+      "row": 3,
+      "col": 2,
+      "variant_id": null,
+      "stars": 3,
+      "potential": 1,
+      "stars_obscured": false,
+      "expect_uncertain": true
+    },
+    {
+      "file": "uma_cell_6_2.rgba",
+      "width": 180,
+      "height": 230,
+      "row": 6,
+      "col": 2,
+      "variant_id": "103201",
+      "stars": null,
+      "potential": 1,
+      "stars_obscured": true
+    },
+    {
+      "file": "uma_cell_3_3.rgba",
+      "width": 180,
+      "height": 230,
+      "row": 3,
+      "col": 3,
+      "variant_id": "100102",
+      "stars": 3,
+      "potential": 1,
+      "stars_obscured": false
+    }
+  ],
+  "refs": [
+    {
+      "id": "100201",
+      "file": "uma_icon_100201.rgba",
+      "width": 256,
+      "height": 280
+    },
+    {
+      "id": "100402",
+      "file": "uma_icon_100402.rgba",
+      "width": 256,
+      "height": 280
+    },
+    {
+      "id": "103101",
+      "file": "uma_icon_103101.rgba",
+      "width": 256,
+      "height": 280
+    },
+    {
+      "id": "100302",
+      "file": "uma_icon_100302.rgba",
+      "width": 256,
+      "height": 280
+    },
+    {
+      "id": "103701",
+      "file": "uma_icon_103701.rgba",
+      "width": 256,
+      "height": 280
+    },
+    {
+      "id": "100102",
+      "file": "uma_icon_100102.rgba",
+      "width": 256,
+      "height": 280
+    },
+    {
+      "id": "103201",
+      "file": "uma_icon_103201.rgba",
+      "width": 256,
+      "height": 280
+    },
+    {
+      "id": "101301",
+      "file": "uma_icon_101301.rgba",
+      "width": 256,
+      "height": 280
+    },
+    {
+      "id": "105201",
+      "file": "uma_icon_105201.rgba",
+      "width": 256,
+      "height": 280
+    }
+  ]
+}

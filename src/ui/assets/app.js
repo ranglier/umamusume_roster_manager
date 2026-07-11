@@ -7,7 +7,7 @@ import { attachRosterFormListeners, collectRosterFormData, getDefaultRosterEntry
 import { attachLegacyFormListeners, getCharacterRosterDefaults, getLegacyCharacterOptions, renderLegacyDetailBody, renderLegacyEditor, renderLegacyPreview, renderLegacySimulatorList } from "./js/legacy.js";
 import { attachBuildFormListeners, createEmptyBuildEntry, renderBuildEditor, startSeededBuildDraft } from "./js/builds.js";
 import { loadBuildsForProfile, loadLegacyForProfile, loadRunsForProfile, openProfile, refreshAdminData, renderAdminPage, renderProfilesPage, renderWizardPage, runAdminJob, wizardNeedsReferenceBuild } from "./js/admin.js";
-import { renderSupportImportPanel } from "./js/roster_import.js";
+import { renderRosterImportPanel } from "./js/roster_import.js";
 
 
 export function syncToolbarMetrics() {
@@ -531,7 +531,7 @@ export function renderBrowseActions(route, filteredItems) {
 
   const isBatch = localState.presentation === "batch";
   const isImport = localState.presentation === "import";
-  const supportsImport = route.entityKey === "supports";
+  const supportsImport = route.entityKey === "supports" || route.entityKey === "characters";
   browseActionsEl.hidden = false;
   browseActionsEl.innerHTML = `
     <div class="presentation-switch">
@@ -623,8 +623,8 @@ export function renderList(mode, entityKey, filteredItems) {
     renderLegacySimulatorList();
     return;
   }
-  if (mode === "roster" && entityKey === "supports" && localState.presentation === "import") {
-    renderSupportImportPanel();
+  if (mode === "roster" && (entityKey === "supports" || entityKey === "characters") && localState.presentation === "import") {
+    renderRosterImportPanel(entityKey);
     return;
   }
   if (mode === "roster" && localState.presentation === "batch") {

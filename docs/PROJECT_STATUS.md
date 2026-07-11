@@ -625,8 +625,16 @@ bout en bout (phases A puis B+C):
   confiantes + 2 proposees en tete de leur top-3), idempotence verifiee
   (re-import -> 28 "already up to date", 0 selectionnee), l'import ne retire
   jamais une possession
-- les umas restent hors perimetre (pas d'asset public au cadrage de l'icone
-  in-game, ~40-50% top-1 au spike — decision documentee)
+- **umas livrees aussi (phase E)** apres deblocage de la source d'asset
+  (icones in-game par variante du depot pretty-derby, 132/258 couvertes,
+  `scripts/fetch_chara_icons.py`; chasse aux sources documentee dans
+  `EXTERNAL_SOURCES_PLAN.md`): meme flux sur roster/characters, lecture des
+  etoiles (runs de colonnes dorees + detection de la barre qui masque la
+  derniere rangee) et du "Potential Lvl" (= awakening, NCC niveaux de gris +
+  prefiltre par teinte du texte qui encode le palier). Verifie en navigateur:
+  32/35 confiants (parite avec le spike), variantes alt distinguees,
+  application de 32 umas verifiee cote serveur, idempotence, zero erreur
+  console. Les variantes non couvertes sortent "Unknown" -> dropdown
 
 ## Choix techniques et justification
 
@@ -904,7 +912,7 @@ Cote frontend, une suite existe aussi dans `tests/js/` (stdlib `node:test` + `no
 - `admin.js`: `wizardNeedsReferenceBuild`, `getWizardProgress`, `getTimedProgress`, `getUpdateProgress`
 - `visualizer.js` (Race Skill Visualizer, voir section 11/11bis/11ter): `parseConditionString`, `resolveStaticZones`, `describeDynamicTermHuman`, `buildTrackSvg` (dont le comportement multi-groupes/multi-couleurs), `getFilteredSkillPickerOptions` (multi-selection, epinglage dans l'ordre de selection)
 - `runs.js` (run_results, voir section 15): `seedRunFromBuild` (snapshot du plan + non-aliasing des objets imbriques), `computeRunDelta` (deltas de stats signes, skills requis non appris, extras hors plan, changements d'aptitude)
-- `roster_import_cv.js` (import screenshots, voir section 16): teste sur des fixtures RGBA reelles (`tests/js/fixtures/roster-import/`) — primitives (dhash/hamming/histogramme/crop/resize), decoupe de grille, matching d'identite (dont paires confusables Suzuka/Teio SSR vs R), lecture niveau/LB, serialisation des empreintes, dedupe et reconcile (jamais de retrait de possession). Module pur sans DOM: c'est le premier fichier de test qui n'a pas besoin du domshim
+- `roster_import_cv.js` (import screenshots, voir section 16): teste sur des fixtures RGBA reelles (`tests/js/fixtures/roster-import/`) — primitives (dhash/hamming/histogramme/crop/resize/ncc), decoupe de grille (supports et umas), matching d'identite (paires confusables Suzuka/Teio SSR vs R cote supports; variantes par icone cote umas, dont la fixture "variante non couverte -> incertain, jamais mal matche"), lecture niveau/LB (supports) et etoiles/Potential avec detection de rangee masquee (umas), serialisation des empreintes, dedupe, reconcile et reconcileFields (jamais de retrait de possession). Module pur sans DOM: c'est le premier fichier de test qui n'a pas besoin du domshim
 
 Lancer la suite (Node 22 installe et verifie dans cet environnement de dev; sur Windows, utiliser explicitement le glob, la forme repertoire seule echoue avec `ERR_MODULE_NOT_FOUND` — voir `CLAUDE.md`):
 

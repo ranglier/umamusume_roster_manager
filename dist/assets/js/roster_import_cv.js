@@ -230,18 +230,18 @@ export function assessMatch(ranked, { maxDistance = MATCH_MAX_DISTANCE, minGap =
 
 // --- Grid slicing ---
 
-export function gridCells(width, height) {
-  const scale = width / SUPPORT_GRID.baseWidth;
+export function gridCells(width, height, grid = SUPPORT_GRID) {
+  const scale = width / grid.baseWidth;
   const cells = [];
-  for (let row = 0; row < SUPPORT_GRID.maxRows; row += 1) {
-    const y = Math.round((SUPPORT_GRID.originY + row * SUPPORT_GRID.pitchY) * scale);
-    const cellH = Math.round(SUPPORT_GRID.cellHeight * scale);
+  for (let row = 0; row < grid.maxRows; row += 1) {
+    const y = Math.round((grid.originY + row * grid.pitchY) * scale);
+    const cellH = Math.round(grid.cellHeight * scale);
     if (y + cellH > height) {
       break;
     }
-    for (let col = 0; col < SUPPORT_GRID.columns; col += 1) {
-      const x = Math.round((SUPPORT_GRID.originX + col * SUPPORT_GRID.pitchX) * scale);
-      cells.push({ row, col, x, y, width: Math.round(SUPPORT_GRID.cellWidth * scale), height: cellH });
+    for (let col = 0; col < grid.columns; col += 1) {
+      const x = Math.round((grid.originX + col * grid.pitchX) * scale);
+      cells.push({ row, col, x, y, width: Math.round(grid.cellWidth * scale), height: cellH });
     }
   }
   return cells;
@@ -602,4 +602,304 @@ export function reconcile(currentSupports, extracted) {
     }
   }
   return { added, changed, unchanged };
+}
+
+// Generic variant of reconcile for other entity types (uma import uses
+// stars/awakening). `fields` maps extracted keys to roster entry keys, e.g.
+// [["stars", "stars"], ["potential", "awakening"]]. Same contract: proposals
+// only, never removes ownership; caller passes defaults-normalized entries.
+export function reconcileFields(currentEntries, extracted, fields) {
+  const added = [];
+  const changed = [];
+  const unchanged = [];
+  const sorted = [...extracted].sort((a, b) => String(a.cardId).localeCompare(String(b.cardId)));
+  for (const entry of sorted) {
+    const id = String(entry.cardId);
+    const to = { owned: true };
+    for (const [fromKey, toKey] of fields) {
+      if (Number.isInteger(entry[fromKey])) {
+        to[toKey] = entry[fromKey];
+      }
+    }
+    const current = currentEntries?.[id];
+    if (!current || current.owned !== true) {
+      added.push({ id, to });
+      continue;
+    }
+    const diffFields = [];
+    for (const [, toKey] of fields) {
+      if (to[toKey] != null && current[toKey] !== to[toKey]) {
+        diffFields.push(toKey);
+      }
+    }
+    if (diffFields.length) {
+      const from = {};
+      for (const [, toKey] of fields) {
+        from[toKey] = current[toKey];
+      }
+      changed.push({ id, fields: diffFields, from, to });
+    } else {
+      unchanged.push(id);
+    }
+  }
+  return { added, changed, unchanged };
+}
+
+// --- Uma (trainee) grid: identity + stars + Potential Lvl -----------------
+// See docs/ROSTER_IMPORT_PLAN.md phase E and EXTERNAL_SOURCES_PLAN.md ("Umas
+// debloquees"). References are the in-game per-variant icons (256x280,
+// fetched by scripts/fetch_chara_icons.py). The in-game grid cell renders a
+// fixed zoomed crop of that icon; both boxes below were calibrated by brute
+// force on a real capture (dHash distance 0 on the calibration pair).
+
+export const UMA_GRID = Object.freeze({
+  baseWidth: 1080,
+  originX: 45,
+  originY: 299,
+  cellWidth: 180,
+  cellHeight: 230,
+  pitchX: 202,
+  pitchY: 242,
+  columns: 5,
+  maxRows: 7,
+});
+
+// icon.crop(28,46,238,227) on a 256x280 icon == cell art (8,8,172,150) on a
+// 180x180 art square — expressed as fractions so any input size works.
+const UMA_ICON_ART = Object.freeze({ left: 28 / 256, top: 46 / 280, right: 238 / 256, bottom: 227 / 280 });
+const UMA_CELL_ART = Object.freeze({ left: 8 / 180, top: 8 / 230, right: 172 / 180, bottom: 150 / 230 });
+const UMA_CELL_JITTERS = Object.freeze([
+  [0, 0],
+  [3, 0],
+  [-3, 0],
+  [0, 3],
+  [0, -3],
+]);
+
+function cropFractional(img, frac, dxPx = 0, dyPx = 0) {
+  const x0 = Math.max(0, Math.floor(img.width * frac.left) + dxPx);
+  const y0 = Math.max(0, Math.floor(img.height * frac.top) + dyPx);
+  const x1 = Math.min(img.width, Math.floor(img.width * frac.right) + dxPx);
+  const y1 = Math.min(img.height, Math.floor(img.height * frac.bottom) + dyPx);
+  return cropImage(img, x0, y0, x1 - x0, y1 - y0);
+}
+
+// The icons have transparent rounded corners; under alpha=0 the RGB values
+// are arbitrary and differ between decoders (canvas yields black, Pillow
+// keeps palette remnants). Flatten deterministically before fingerprinting.
+export function flattenAlpha(img, r = 255, g = 255, b = 255) {
+  const out = new Uint8Array(img.data.length);
+  for (let i = 0; i < img.data.length; i += 4) {
+    const a = img.data[i + 3] / 255;
+    out[i] = Math.round(img.data[i] * a + r * (1 - a));
+    out[i + 1] = Math.round(img.data[i + 1] * a + g * (1 - a));
+    out[i + 2] = Math.round(img.data[i + 2] * a + b * (1 - a));
+    out[i + 3] = 255;
+  }
+  return { width: img.width, height: img.height, data: out };
+}
+
+export function umaReferenceFingerprint(iconImg) {
+  const art = cropFractional(flattenAlpha(iconImg), UMA_ICON_ART);
+  return { hash: dhash64(art), hist: colorHistogram(art) };
+}
+
+export function umaCellFingerprint(cellImg) {
+  const sx = cellImg.width / UMA_GRID.cellWidth;
+  const hashes = UMA_CELL_JITTERS.map(([dx, dy]) =>
+    dhash64(cropFractional(cellImg, UMA_CELL_ART, Math.round(dx * sx), Math.round(dy * sx))));
+  const hist = colorHistogram(cropFractional(cellImg, UMA_CELL_ART));
+  return { hashes, hist };
+}
+
+// Stars: gold star run counting in the band under the "Potential Lvl" banner.
+// Positions vary too much for fixed centers; counting runs of gold columns
+// (>=10px wide at base scale) is robust and needs no empty-slot positions.
+// The bottom screenshot row can be covered by the "Filters/Held" overlay bar:
+// detected via the band's bright-pixel ratio and reported as obscured.
+
+const STAR_BAND = Object.freeze({ x0: 8, x1: 175, y0: 180, y1: 202 });
+
+export function readUmaStars(cellImg) {
+  const sx = cellImg.width / UMA_GRID.cellWidth;
+  const sy = cellImg.height / UMA_GRID.cellHeight;
+  const x0 = Math.round(STAR_BAND.x0 * sx);
+  const x1 = Math.min(Math.round(STAR_BAND.x1 * sx), cellImg.width);
+  const y0 = Math.round(STAR_BAND.y0 * sy);
+  const y1 = Math.min(Math.round(STAR_BAND.y1 * sy), cellImg.height);
+  const minGoldPerColumn = Math.max(2, Math.round(4 * sy));
+  const minRunWidth = Math.max(4, Math.round(10 * sx));
+
+  let bright = 0;
+  let total = 0;
+  const goldColumns = [];
+  for (let x = x0; x < x1; x += 1) {
+    let gold = 0;
+    for (let y = y0; y < y1; y += 1) {
+      const i = (y * cellImg.width + x) * 4;
+      const r = cellImg.data[i];
+      const g = cellImg.data[i + 1];
+      const b = cellImg.data[i + 2];
+      if (luminance(r, g, b) > 170) {
+        bright += 1;
+      }
+      total += 1;
+      if (r > 220 && g > 150 && b < 130) {
+        gold += 1;
+      }
+    }
+    goldColumns.push(gold >= minGoldPerColumn);
+  }
+
+  const obscured = total > 0 && bright / total < 0.5;
+  let stars = 0;
+  let width = 0;
+  for (const on of [...goldColumns, false]) {
+    if (on) {
+      width += 1;
+    } else {
+      if (width >= minRunWidth) {
+        stars += 1;
+      }
+      width = 0;
+    }
+  }
+  return { stars: obscured ? null : stars, obscured, confident: !obscured };
+}
+
+// "Potential Lvl X" (X = awakening tier 1-5): the digit sits in a fixed box
+// (the label prefix is constant-width). The text tint encodes the tier family
+// (orange for 3-5, blue/silver for 1-2) and is used to halve the candidate
+// set; the digit itself is matched by NCC on the grayscale box against
+// templates captured from a real device screenshot. Binarized masks do NOT
+// work here: the banner is translucent and the art bleeds through it.
+
+const UMA_TIER_BAND = Object.freeze({ x0: 14, y0: 148, x1: 166, y1: 170 });
+const UMA_DIGIT_BOX = Object.freeze({ x0: 138, y0: 148, x1: 166, y1: 170 });
+const UMA_DIGIT_W = UMA_DIGIT_BOX.x1 - UMA_DIGIT_BOX.x0;
+const UMA_DIGIT_H = UMA_DIGIT_BOX.y1 - UMA_DIGIT_BOX.y0;
+export const UMA_POTENTIAL_MIN_NCC = 0.6;
+export const UMA_POTENTIAL_MIN_MARGIN = 0.15;
+
+// 28x22 luminance templates, 3 digits per pixel, row-major (see
+// docs/ROSTER_IMPORT_PLAN.md phase E for provenance).
+const UMA_DIGIT_TEMPLATES_RAW = Object.freeze({
+  1: "255250250250255254236234232230227252255255255255255255255255245233234220186153204238252203203208255255246233230228228252255253252252252252254255246234234220186153204238249168168177255255254230228226244253254220192192192192239255252241226220186151205238249165165174255255253229229228250255255205167167167167231255255244232220184147208238249162162171255255253229229228249254255206169166164164231255255244232218184147208238249159159168255255253229229228237253255234217187161161230255255244227214184147208238249155155165255255253228228229228252255255255202157157229255255241221214177142207240249152152162255255253228229229230245254255255201154154228255255240221214177142207240249149149159255255253229229229232234251255255199151151227255255239221214177142207240248146146157255255253229231232234234251255255197148148227255255238220212178141206240248143143154255255252230234234234234251255255195145145225255255239220212178140206240248140140151255255252212206207220232251255255194141141225255255239220211178140206244247137137148255255251214226226218204246255255192138138224255255239221211178140206244247134134145255255250182186201218239250255255190135135223255255239223211177140206244247131131142255255250182181180180193247255255189132132222255255239226214177140206244247128128140255255250182181180179178240255255187128128222255255240232215177140206244247125125137255255251178177176180179240255255185125125220255255243221202159168215245246122122134255255253192177176179178240255255183122122218255255243220194150180236246251197196202255255252232205181176175203250255223197197239255249235218168154211246246255253253254255255252251248227198178177247255255253253253255247224183148189236245245226250255255254254252253253253246194177226232242255255239244228187146157227245245245142189252252248248247246246246241222180178170185216230200187169144163203238245245245",
+  2: "248255253250250253255251236233231232248255255255255255255255255255251237230215169167253255243203204233255253243232230235255255255251240235237246254255255252233215169167255255235168168217255255248230230245255251221193186182183190219255255255248214169167255255234165165216255255248229234255255246183167167167167167168197254255255214167168255255235162162215255255247228234255254244180168178184179166164164228255255234167168255255234159159213255255247228233249253246195218245254244196161161199254255249171168255255233155156212255255247228230237255252244255255255255244160157188252255250171163216247233152153210255255247228229236253244252255255255255251158154187252255249170163180248232149150209255255247229230234238237250249255255254215151151198254255246163163198254231146147207255255247229232233235236242253255255236158148148227255255230160162230255231143144206255255248233235234235238252255255250179145145187251255254212160161254255230140140205255255249236235234236248255255255189142141166251255255244206160161255255230137137204255255249235235234244255255252202138138153230255255252225206160161255255229134134202255255249235235240254255255220146135153225255255255248241213160161255255228131131201255255250235236250255255236149132139219255255255255255254219160161255255228128128199255255250235240255255250166128128167209207205203210252255234169161255255226125125198255255249235245255255216130125125125125125125125149248255250178184255255225122122197255255249234251255254154122122122122122122122122147248255250173205250255240197196229255253239231239246252199196197197196196197197195206252252210175229217255249253252255255250228227230250255253253253253253253253253253254255253175210241171185207255254245248243228229232247247252255255255255255255255255252232221188245245143140143198207212222222219219219221221242242244244244244243239230209156182218245245",
+  3: "198255248241242249255243141107128230254255255255255255255255255255252243236217183177255255237190190226255255227149132206255255254235224219225243255255255249231217183177255255237188188226255255230194208252255245199189189189189189212249255255222206180177255255239184184224255255207153226255255240191187188190186187187210254255248191166177255255239182182223255255204095209248250239197222236238224186183184243255254227181177255255239179180222255255206093167223255252252255255255255219181181233255255213173175247253238176176221255255207090118207245234255255255255254216178178234255255197136172211248237174174219255255208089082170197210255253241237225182175180246255255239172172201253236171171218255255208089074120187241247247201184178172176223255255255255183172221255236168168217255255208092084108180251255250190169169169178233255255255252190171246255235166166216255255209094084098160232241242206193186172167167232255255254190171255255235163163214255255209094090112142214255255255255249217167164197253255255195171255255234160160214255255209094102192195231255254255255255251178161182251255255198171255255234157158213255255210096105222251251255255255255255252173158181251255255196171255255233155155211255255210103177225254211225243249251243208156155190253255254189171255255232152152210255255210101216246243189158178192196180152152152218255255244177176255255230149149209255255207088215255255191150150150150150150150194250255255216168191255255229147147208255255204070141253255229164147147147147149206253255255247177159217233255249241240249255224092059070224255255252229214212224250255255255236173148182231203249251255254255255217062063068188250255255255255255255255255255214124126154209238140140149255254181127112065063061107137209253255255255255255233141112136163208235240143154143153141116106104097090087115132154201231237238234224196148150179211243244240",
+  4: "254236236238255254224235240238238237237238244255255255255255255255250230200162208232251189189196255255253217234238237237237238252255255241232232250255252235200162208233250187187193255255255217232234237237237246255255251201188188239255255241188162208234250184184191255255255230210231237237240255255255221186186186239255255241187162208234250181181189255255255245222219232239250255255244184184183183238255255241187162208234250179179186255255255249238215210218254255253211179196181180238255255241189158207235250176176184255255255251250246230248255255241185178216179177237255255239190156206236250173173181255255255249250251251255255254198174184235175174236255255239190156206236250170170178255255255249249249254255255229171172229237173171235255255239190156207236250167167176255255255250249252255255250190168190255233169169235255255241191154207236249165165174255255255250249255255255225170169224255229167166235255255251197154207236249162162171255255255250250255255249176163181250255228163163234255255255199154207236249159159169255255254246252255255205160160181196195184161160185210252253233162207236249157157166255255253226255255255186157157157157157157157157157184251255251166207236249154154164255255250187247254255197173173173173173168154155168196251252238164207236249151151161255255252197183252255243239239239239239213152152219244254255194166210238249148148159255255252214238250248253255255255255255223150149231255255254178170227239250169169177255254241216220243220232248251254255255229170170236255254240171201239239255246246245255250173215216218231209192191197245255252246246249255246180172227239239250255255253255249147170185204224229204171167217255255255255250255223165199239240240142217255250170163147153154184223225232209171162158216254255207181168195234240241241150153197195167161155135133145187187200204182151152165184176167163221232247241241242",
+  5: "222255248236236246255239166140138135248255255255255255255255255255255255246225183177255255238189189226255255222140141170255255242232232232232232232232249255248229183177255255238187187225255255222139137243255255213188188188188188188188242255255232172177255255240184184224255255222140141253255254205186186186186186186186241255255231172177255255239181181223255255222141151255255252199183203226226226226226249255247226172177255255238179179222255255222142162255255248194180222255255255255255255255240220173174239251238176176221255255221143172255255245188177205220224236252255255254238219174172203249237173173219255255221139182255255242182174177177179184210254255255248220174172203255236170170218255255220135191255255238176172172171171171171193254255255224174172226255236167167217255255220135189238255237189203212208191173169169228255255241174171249255235165165216255255220133144198255250246255255255249212168166198253255251180171255255235162162214255255221132132207253244254255255255255249178163186251255252188171255255234159159213255255221136138219202222255255255255255252180160181251255252192171255255234157157212255255222137143226255253255255255255254235164157187252255252187171255255233154154211255255221141187235255223216238246241219174155155205255255245171171255255232151151210255255229133219248246198158168172169160152152158240255255197163179255255232148149209255255250182219255255199149149149149149149158233255255246137155195255255236169170218255255253250237251252215169160157157163179237255255253181142163221254255253246246251255254251252254252255254245229221223234252255255254207142151186233255239255255255255255254252252250253255255255255255255255255255252187146152174225239152140157251255254253253252252251252255254255255255255254249194152146151171226240240143166142181223219219219218215214214214214217218189179165141140152159172222241240240",
+});
+
+const UMA_DIGIT_TEMPLATES = Object.entries(UMA_DIGIT_TEMPLATES_RAW).map(([value, raw]) => {
+  const pixels = new Float64Array(raw.length / 3);
+  for (let i = 0; i < pixels.length; i += 1) {
+    pixels[i] = Number(raw.slice(i * 3, i * 3 + 3));
+  }
+  return { value: Number(value), pixels };
+});
+
+export function nccVector(a, b) {
+  const n = a.length;
+  let ma = 0;
+  let mb = 0;
+  for (let i = 0; i < n; i += 1) {
+    ma += a[i];
+    mb += b[i];
+  }
+  ma /= n;
+  mb /= n;
+  let num = 0;
+  let da = 0;
+  let db = 0;
+  for (let i = 0; i < n; i += 1) {
+    const x = a[i] - ma;
+    const y = b[i] - mb;
+    num += x * y;
+    da += x * x;
+    db += y * y;
+  }
+  const denom = Math.sqrt(da) * Math.sqrt(db);
+  return denom ? num / denom : 0;
+}
+
+function grayVector(img) {
+  const out = new Float64Array(img.width * img.height);
+  for (let i = 0; i < out.length; i += 1) {
+    const o = i * 4;
+    out[i] = luminance(img.data[o], img.data[o + 1], img.data[o + 2]);
+  }
+  return out;
+}
+
+function digitBoxVector(cellImg, dx, dy) {
+  const sx = cellImg.width / UMA_GRID.cellWidth;
+  const sy = cellImg.height / UMA_GRID.cellHeight;
+  const x0 = Math.max(0, Math.round(UMA_DIGIT_BOX.x0 * sx) + dx);
+  const y0 = Math.max(0, Math.round(UMA_DIGIT_BOX.y0 * sy) + dy);
+  const w = Math.round((UMA_DIGIT_BOX.x1 - UMA_DIGIT_BOX.x0) * sx);
+  const h = Math.round((UMA_DIGIT_BOX.y1 - UMA_DIGIT_BOX.y0) * sy);
+  let box = cropImage(cellImg, x0, y0, Math.min(w, cellImg.width - x0), Math.min(h, cellImg.height - y0));
+  if (box.width !== UMA_DIGIT_W || box.height !== UMA_DIGIT_H) {
+    box = resizeImage(box, UMA_DIGIT_W, UMA_DIGIT_H);
+  }
+  return grayVector(box);
+}
+
+function tierIsOrange(cellImg) {
+  const sx = cellImg.width / UMA_GRID.cellWidth;
+  const sy = cellImg.height / UMA_GRID.cellHeight;
+  const x0 = Math.round(UMA_TIER_BAND.x0 * sx);
+  const x1 = Math.min(Math.round(UMA_TIER_BAND.x1 * sx), cellImg.width);
+  const y0 = Math.round(UMA_TIER_BAND.y0 * sy);
+  const y1 = Math.min(Math.round(UMA_TIER_BAND.y1 * sy), cellImg.height);
+  let orange = 0;
+  let total = 0;
+  for (let y = y0; y < y1; y += 1) {
+    for (let x = x0; x < x1; x += 1) {
+      const i = (y * cellImg.width + x) * 4;
+      const r = cellImg.data[i];
+      const g = cellImg.data[i + 1];
+      const b = cellImg.data[i + 2];
+      if (r > 200 && r - b > 80 && g > 100) {
+        orange += 1;
+      }
+      total += 1;
+    }
+  }
+  return total > 0 && orange / total > 0.09;
+}
+
+export function readUmaPotential(cellImg) {
+  const family = tierIsOrange(cellImg) ? [3, 4, 5] : [1, 2];
+  const sx = cellImg.width / UMA_GRID.cellWidth;
+  const jitter = Math.max(1, Math.round(2 * sx));
+  let best = { value: null, score: -2 };
+  let second = -2;
+  for (let dy = -jitter; dy <= jitter; dy += 1) {
+    for (let dx = -jitter; dx <= jitter; dx += 1) {
+      const vec = digitBoxVector(cellImg, dx, dy);
+      for (const template of UMA_DIGIT_TEMPLATES) {
+        if (!family.includes(template.value)) {
+          continue;
+        }
+        const score = nccVector(vec, template.pixels);
+        if (score > best.score) {
+          if (best.value !== template.value) {
+            second = best.score;
+          }
+          best = { value: template.value, score };
+        } else if (template.value !== best.value && score > second) {
+          second = score;
+        }
+      }
+    }
+  }
+  const margin = best.score - second;
+  return {
+    potential: best.value,
+    score: best.score,
+    margin,
+    confident: best.score >= UMA_POTENTIAL_MIN_NCC && margin >= UMA_POTENTIAL_MIN_MARGIN,
+  };
 }

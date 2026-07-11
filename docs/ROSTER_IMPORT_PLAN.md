@@ -187,31 +187,48 @@ Seulement apres un premier import complet reel: tolerance d'echelle si
 l'utilisateur change de telephone, umas si une source d'asset apparait,
 raccourcis UX. Ne rien pre-construire ici.
 
-### Phase E — import des umas (debloquee, a implementer)
+### Phase E — import des umas — LIVREE
 
-La source d'asset manquante a ete trouvee (icones in-game par variante du
-depot `wrrwrr111/pretty-derby` + transformation de crop calibree — verdict
-complet et risques dans `EXTERNAL_SOURCES_PLAN.md`, "Umas debloquees").
-Valide sur la capture reelle: 32/35 confiants, discrimination par variante.
+Source d'asset: icones in-game par variante du depot `wrrwrr111/pretty-derby`
++ transformation de crop calibree (verdict complet et risques dans
+`EXTERNAL_SOURCES_PLAN.md`, "Umas debloquees").
+`scripts/fetch_chara_icons.py` telecharge les 132 icones couvertes vers
+`dist/media/reference/characters/icons/` (manifest de provenance, validation
+de signature PNG, idempotent, separe de `update_reference.py`).
 
-Travail:
+Livre:
 
-- `scripts/fetch_chara_icons.py` (fait): telecharge les icones couvertes
-  vers `dist/media/reference/characters/icons/<variante>.png` + manifest de
-  provenance/couverture. Fetch one-shot separe de `update_reference.py`
-  (source differente de GameTora, cadence differente); valide la signature
-  PNG (le depot peut servir des fichiers corrompus)
-- moteur (`roster_import_cv.js`): constantes umas — grille 7x5 (origine
-  45,299, carte 180x~200 dont art 180x180, pas 202x242), boites calibrees
-  `UMA_ICON_BOX = (28,46,238,227)` / `UMA_CELL_BOX = (8,8,172,150)`,
-  lecture des **etoiles** (rangee sous le bandeau) et du **"Potential Lvl
-  X"** (= awakening 1-5, OCR de glyphe, un seul chiffre, nouvelle police a
-  extraire d'une capture)
-- UI: toggle supports/umas dans la presentation Import (ou detection auto
-  du type de grille via le header de la capture), reconciliation identique,
-  application sur `characters` (`stars`/`awakening`)
-- variantes non couvertes par la source (126/258): "Unknown" -> dropdown,
-  comme les cas incertains supports
+- moteur (`roster_import_cv.js`, +9 tests sur fixtures reelles): `UMA_GRID`
+  (7x5, origine 45,299, carte 180x230, pas 202x242), `gridCells` parametree
+  par grille, boites calibrees en fractions (`icone(28,46,238,227)/256x280`
+  <-> `cellule(8,8,172,150)/180x180`), `flattenAlpha` (les coins
+  transparents des icones donnaient des RGB arbitraires differents entre
+  decodeurs — aplatis deterministiquement avant empreinte),
+  `readUmaStars` (comptage de **runs de colonnes dorees** — les centres
+  fixes etaient trop fragiles — + detection "masquee par la barre
+  Filters/Held" via le ratio de pixels clairs de la bande),
+  `readUmaPotential` (= awakening 1-5: **NCC en niveaux de gris** sur boite
+  fixe — les masques binarises echouent, l'art saigne a travers la bande
+  translucide — avec prefiltre par **teinte du texte** qui encode la
+  famille de palier: orange={3,4,5}, bleu-argent={1,2}; gate
+  `ncc>=0.6 && marge>=0.15` -> zero erreur confiante mesuree),
+  `reconcileFields` (diff generique stars/awakening)
+- decouverte de verite terrain en ecrivant les tests: la cellule (3,2) de
+  la capture etait une variante NON couverte (mal etiquetee au depart) —
+  devenue la fixture qui pinne le comportement "non couvert -> incertain,
+  jamais mal matche avec confiance"
+- UI (`roster_import.js` refactorise en **config par mode**): presentation
+  "Import" sur roster/characters comme sur roster/supports, meme table de
+  reconciliation (colonnes Stars / Awakening), application sur
+  `characters.stars`/`characters.awakening` via le PUT roster existant —
+  `getRosterEntry` fournit les defauts par item (stars = rarete de base),
+  donc le diff ne re-signale pas les valeurs elaguees
+- verifie en navigateur sur la capture reelle (35 cellules): 32 matchs
+  confiants + 3 "a verifier" (top-3 plausibles), variantes alt distinguees
+  (Maruzensky ete, les deux McQueen), 1 rangee etoiles masquee detectee et
+  signalee, application de 32 umas verifiee cote serveur, re-import ->
+  **32 "already up to date", 0 selectionnee** (idempotence), zero erreur
+  console. Empreintes: ~46 Ko en localStorage, construites en ~13s une fois
 
 ## Risques connus
 

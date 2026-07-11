@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import {
   MATCH_MAX_DISTANCE,
   MATCH_MIN_GAP,
+  UMA_GRID,
   assessMatch,
   cellFingerprint,
   colorHistogram,
@@ -22,14 +23,20 @@ import {
   gridCells,
   hamming64,
   histIntersect,
+  nccVector,
   popcount32,
   rankCandidates,
   readLevel,
   readLimitBreak,
+  readUmaPotential,
+  readUmaStars,
   reconcile,
+  reconcileFields,
   referenceFingerprint,
   resizeImage,
   serializeFingerprint,
+  umaCellFingerprint,
+  umaReferenceFingerprint,
 } from "../../src/ui/assets/js/roster_import_cv.js";
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "roster-import");
@@ -163,6 +170,107 @@ test("readLevel reads the expected level on every fixture cell", () => {
     assert.equal(result.level, cell.level, `cellule (${cell.row},${cell.col})`);
     assert.ok(result.confidence > 0.85, `(${cell.row},${cell.col}) confiance faible: ${result.confidence.toFixed(2)}`);
   }
+});
+
+// --- uma (trainee) grid: identity, stars, potential ---
+
+const umaManifest = JSON.parse(readFileSync(join(FIXTURES, "uma_manifest.json"), "utf-8"));
+const umaCells = umaManifest.cells.map((entry) => ({ ...entry, img: loadRgba(entry) }));
+const umaRefFingerprints = umaManifest.refs.map((entry) => [entry.id, umaReferenceFingerprint(loadRgba(entry))]);
+
+test("uma gridCells yields 35 cells at the native capture size", () => {
+  const grid = gridCells(1080, 2392, UMA_GRID);
+  assert.equal(grid.length, 35);
+  assert.deepEqual(
+    { x: grid[0].x, y: grid[0].y, width: grid[0].width, height: grid[0].height },
+    { x: 45, y: 299, width: 180, height: 230 },
+  );
+  const last = grid[grid.length - 1];
+  assert.equal(last.row, 6);
+  assert.equal(last.y, 299 + 6 * 242);
+});
+
+test("every covered uma fixture cell matches its expected variant, confidently", () => {
+  for (const cell of umaCells.filter((entry) => entry.variant_id)) {
+    const ranked = rankCandidates(umaCellFingerprint(cell.img), umaRefFingerprints, 3);
+    assert.equal(ranked[0].id, cell.variant_id, `cellule (${cell.row},${cell.col})`);
+    const verdict = assessMatch(ranked);
+    assert.ok(
+      verdict.confident,
+      `(${cell.row},${cell.col}) devrait etre confiant: d=${ranked[0].distance} gap=${verdict.gap.toFixed(2)}`,
+    );
+  }
+});
+
+test("an uncovered uma variant is flagged uncertain, not mismatched confidently", () => {
+  const uncovered = umaCells.find((entry) => entry.expect_uncertain);
+  assert.ok(uncovered, "fixture du cas non couvert absente");
+  const ranked = rankCandidates(umaCellFingerprint(uncovered.img), umaRefFingerprints, 3);
+  assert.equal(assessMatch(ranked).confident, false, `d=${ranked[0].distance}`);
+});
+
+test("readUmaStars counts gold stars and flags the overlay-obscured row", () => {
+  for (const cell of umaCells) {
+    const result = readUmaStars(cell.img);
+    if (cell.stars_obscured) {
+      assert.equal(result.obscured, true, `(${cell.row},${cell.col}) devrait etre masquee`);
+      assert.equal(result.confident, false);
+      assert.equal(result.stars, null);
+    } else {
+      assert.equal(result.obscured, false, `(${cell.row},${cell.col}) ne devrait pas etre masquee`);
+      assert.equal(result.stars, cell.stars, `cellule (${cell.row},${cell.col})`);
+    }
+  }
+});
+
+test("readUmaPotential reads the awakening tier on every fixture cell", () => {
+  for (const cell of umaCells) {
+    const result = readUmaPotential(cell.img);
+    assert.equal(result.potential, cell.potential, `cellule (${cell.row},${cell.col})`);
+    assert.ok(result.confident, `(${cell.row},${cell.col}) score=${result.score.toFixed(2)} marge=${result.margin.toFixed(2)}`);
+  }
+});
+
+test("nccVector is 1 on identical vectors and symmetric", () => {
+  const a = [1, 5, 9, 3, 7];
+  const b = [2, 4, 8, 1, 9];
+  assert.ok(Math.abs(nccVector(a, a) - 1) < 1e-12);
+  assert.ok(Math.abs(nccVector(a, b) - nccVector(b, a)) < 1e-12);
+});
+
+test("reconcileFields diffs stars/awakening and never removes ownership", () => {
+  const current = {
+    100201: { owned: true, stars: 3, awakening: 5 },
+    100302: { owned: true, stars: 3, awakening: 3 },
+    103101: { owned: false },
+  };
+  const { added, changed, unchanged } = reconcileFields(
+    current,
+    [
+      { cardId: "100201", stars: 4, potential: 5 }, // stars up -> changed
+      { cardId: "100302", stars: 3, potential: 3 }, // identical -> unchanged
+      { cardId: "103101", stars: 3, potential: 4 }, // owned:false -> added
+      { cardId: "103701", stars: 3, potential: 2 }, // absent -> added
+    ],
+    [["stars", "stars"], ["potential", "awakening"]],
+  );
+  assert.deepEqual(unchanged, ["100302"]);
+  assert.deepEqual(added.map((e) => e.id), ["103101", "103701"]);
+  assert.equal(added[0].to.awakening, 4);
+  assert.equal(changed.length, 1);
+  assert.deepEqual(changed[0].fields, ["stars"]);
+  assert.equal(changed[0].from.stars, 3);
+  assert.equal(changed[0].to.stars, 4);
+});
+
+test("reconcileFields skips fields whose reading is missing", () => {
+  const { added } = reconcileFields(
+    {},
+    [{ cardId: "103201", stars: null, potential: 1 }],
+    [["stars", "stars"], ["potential", "awakening"]],
+  );
+  assert.equal(added[0].to.stars, undefined);
+  assert.equal(added[0].to.awakening, 1);
 });
 
 // --- fingerprint cache serialization ---
