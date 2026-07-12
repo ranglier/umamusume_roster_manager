@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import {
   MATCH_MAX_DISTANCE,
   MATCH_MIN_GAP,
+  SUPPORT_GRID,
   UMA_GRID,
   assessMatch,
   cellFingerprint,
@@ -23,7 +24,6 @@ import {
   gridCells,
   hamming64,
   histIntersect,
-  nccVector,
   popcount32,
   rankCandidates,
   readLevel,
@@ -112,6 +112,18 @@ test("gridCells drops rows that fall outside the image", () => {
   const grid = gridCells(1080, 800);
   // Only row 0 fits (295 + 240 <= 800; row 1 starts at 570, 570+240 > 800).
   assert.equal(grid.length, 5);
+});
+
+test("gridCells applies a scroll offset and keeps rows below the header", () => {
+  const shifted = gridCells(1080, 2392, SUPPORT_GRID, -31);
+  assert.equal(shifted[0].y, 295 - 31);
+  assert.equal(shifted[5].y, 295 - 31 + 275);
+  // A large negative offset pushing row 0 above the header drops that row:
+  // 295 - 70 = 225 < 235 (top-safe bound), so the first kept row starts one
+  // pitch lower, and row indices restart at 0 from there.
+  const above = gridCells(1080, 2392, SUPPORT_GRID, -70);
+  assert.equal(above[0].row, 0);
+  assert.equal(above[0].y, 295 - 70 + 275);
 });
 
 // --- identity matching on real fixtures ---
@@ -229,13 +241,6 @@ test("readUmaPotential reads the awakening tier on every fixture cell", () => {
     assert.equal(result.potential, cell.potential, `cellule (${cell.row},${cell.col})`);
     assert.ok(result.confident, `(${cell.row},${cell.col}) score=${result.score.toFixed(2)} marge=${result.margin.toFixed(2)}`);
   }
-});
-
-test("nccVector is 1 on identical vectors and symmetric", () => {
-  const a = [1, 5, 9, 3, 7];
-  const b = [2, 4, 8, 1, 9];
-  assert.ok(Math.abs(nccVector(a, a) - 1) < 1e-12);
-  assert.ok(Math.abs(nccVector(a, b) - nccVector(b, a)) < 1e-12);
 });
 
 test("reconcileFields diffs stars/awakening and never removes ownership", () => {

@@ -408,7 +408,9 @@ body.legacy-detail-expanded.legacy-create-active .app-layout {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  max-width: 1200px;
+  max-width: 1560px;
+  margin-inline: auto;
+  width: 100%;
 }
 
 .home-hero {
@@ -3490,10 +3492,12 @@ body.route-wizard .profile-gate::after {
   text-align: left;
 }
 
-/* Screenshot-based support import (roster/supports "Import" presentation) */
+/* Screenshot-based roster import ("Import" presentation) */
 .support-import {
   display: grid;
   gap: 14px;
+  /* #list is a multi-column card grid; the import panel takes the full row. */
+  grid-column: 1 / -1;
 }
 
 .import-dropzone {

@@ -226,6 +226,32 @@ Livre a la demande:
   resolution native de cellule (~10 Ko/ligne) au lieu de 66px, la table les
   reduit en CSS
 
+Premiere session d'usage reel (retours utilisateur, tous corriges):
+
+- **detection du decalage de scroll par capture** (`detectGridOffsetY`): les
+  captures d'une liste scrollee ne tombent pas sur l'origine calibree — la
+  grille fixe lisait du garbage sur les fichiers `_02` (29 lignes "a
+  verifier" sur 2 captures umas). Detection par identite: minimiser la
+  distance dHash des cellules de la premiere rangee contre les references
+  (correct par construction; un scoreur "bande claire vs inter-cartes" a
+  ete essaye et ecarte — biaise par la luminosite de l'art). Mesure sur les
+  10 captures reelles: offsets -1..-31 detectes, distances moyennes 4-11.
+  Resultat: 2 captures umas -> "46 distinct, 7 to review" (contre 63/29)
+- **lecture du "Potential Lvl" reecrite en NCC masquee par template**: le
+  bandeau est translucide et l'art saigne au travers — la NCC pleine boite
+  variait de +/-0.3 selon l'art derriere (lectures fausses parfois
+  confiantes, ex. "3" lu 4/5 — le bug signale par l'utilisateur). Chaque
+  template porte le masque de ses pixels de TEXTE (contour blanc opaque +
+  remplissage teinte par famille) et la comparaison ne porte que sur eux.
+  Mesure sur 68 cellules reelles: 66/68 top-1, zero erreur confiante, tout
+  echec gate. Les masques binarises purs et la NCC sur cartes de contours
+  ont ete essayes et ecartes (39/68 et 36/68)
+- **vocabulaire**: "Potential" partout dans l'UI d'import (le champ roster
+  reste `awakening`, meme chose — nom historique de l'app)
+- **layout**: le panneau d'import s'etend sur toute la largeur
+  (`grid-column: 1/-1` dans la grille de #list) et le dashboard home passe
+  a 1560px centre (la moitie de l'ecran restait vide)
+
 ### Phase E — import des umas — LIVREE
 
 Source d'asset: icones in-game par variante du depot `wrrwrr111/pretty-derby`

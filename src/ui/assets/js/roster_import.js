@@ -16,6 +16,7 @@ import {
   assessMatch,
   cellFingerprint,
   deserializeFingerprint,
+  detectGridOffsetY,
   cropImage,
   gridCells,
   rankCandidates,
@@ -127,8 +128,10 @@ const IMPORT_MODES = {
         readingConfidence: potential.score,
       };
     },
+    // The in-game label is "Potential Lvl"; the roster field is `awakening`
+    // (same thing — the app's historical name for it).
     diffFields: [["stars", "stars"], ["potential", "awakening"]],
-    diffLabels: { stars: "stars", awakening: "awakening" },
+    diffLabels: { stars: "stars", awakening: "potential" },
     renderValueCells(row) {
       return `
         <td><input class="import-level-input" type="number" min="1" max="5" step="1" data-import-field="stars" data-import-key="${escapeHtml(row.key)}" value="${Number.isInteger(row.values.stars) ? row.values.stars : ""}" placeholder="?"></td>
@@ -139,7 +142,7 @@ const IMPORT_MODES = {
         </td>
       `;
     },
-    valueHeaders: ["Stars", "Awakening"],
+    valueHeaders: ["Stars", "Potential"],
     onFieldChange(row, field, input) {
       if (field === "stars") {
         const raw = String(input.value || "").trim();
@@ -159,7 +162,7 @@ const IMPORT_MODES = {
         notes.push("stars to confirm");
       }
       if (!row.flags.potentialConfident) {
-        notes.push("awakening to confirm");
+        notes.push("potential to confirm");
       }
       return notes;
     },
@@ -359,7 +362,10 @@ export async function processImportFiles(modeKey, fileList) {
     for (const file of files) {
       const canvas = await decodeBlobToCanvas(file);
       const imageData = canvasImageData(canvas);
-      const cells = gridCells(imageData.width, imageData.height, mode.grid);
+      // Screenshots of a scrolled list do not land on the calibrated grid
+      // origin: measure each file's vertical offset before slicing.
+      const detection = detectGridOffsetY(imageData, mode.grid, refEntries, mode.makeCellFingerprint);
+      const cells = gridCells(imageData.width, imageData.height, mode.grid, detection.offsetY);
       for (const cell of cells) {
         const cellImg = cropImage(imageData, cell.x, cell.y, cell.width, cell.height);
         const cellFp = mode.makeCellFingerprint(cellImg);
