@@ -1066,3 +1066,80 @@ export function teamStyleSpread(styleKeys) {
   if (!hasFront) reasons.push("No front runner - an opponent Pace Chaser may get a large lead buff; a pacer up front helps.");
   return { distinct, size: distinct.length, hasFront, clash: distinct.length === 1, reasons };
 }
+
+// buildAutoPrepTeamPlan(target, rosterData, options) - the CM TRIO. Ace = the
+// full single-uma plan (buildAutoPrepPlan). Debuffer and Pacer are the best
+// OWNED umas for each role among the rest (owned-roster-first: the debuffer gets
+// a kitBonus for already having debuff skills), each with a role sub-plan
+// (role stat target + role skills). The three umas are DISTINCT and the running
+// styles are assessed for spread. Serializable; reasons[] everywhere. `weights`
+// (meta) flows to the ace via rosterData like Auto Prep.
+export function buildAutoPrepTeamPlan(target, rosterData = {}, options = {}) {
+  const detail = target?.detail || target || {};
+  const profile = targetProfileFromCmDetail(detail);
+  const { characters = [], buildSkillPool = null } = rosterData;
+
+  const acePlan = buildAutoPrepPlan(target, rosterData, options);
+  if (!acePlan.selected) {
+    return {
+      target: acePlan.target,
+      targetProfile: profile,
+      roles: { ace: null, debuffer: null, pacer: null },
+      strategy: null,
+      reasons: acePlan.reasons,
+    };
+  }
+
+  const usedIds = new Set([acePlan.selected.characterId]);
+  const kitDebuffCount = (characterId) => {
+    if (!buildSkillPool) return 0;
+    return (buildSkillPool(characterId, []) || []).filter((item) => categorizeSkillEffect(item) === "debuff").length;
+  };
+
+  const pickRole = (role) => {
+    const candidates = characters
+      .filter((item) => !usedIds.has(String(item?.id || "")))
+      .map((item) => {
+        const kitBonus = role === "debuffer" ? Math.min(kitDebuffCount(String(item.id)), 3) * 0.1 : 0;
+        return scoreCharacterForRole(item, profile, role, { kitBonus });
+      })
+      .filter((candidate) => candidate.roleScore > 0)
+      .sort((a, b) => b.roleScore - a.roleScore);
+    return candidates[0] || null;
+  };
+
+  const buildRolePlan = (candidate, role) => {
+    if (!candidate) return null;
+    usedIds.add(candidate.characterId);
+    const pool = buildSkillPool ? (buildSkillPool(candidate.characterId, acePlan.deck?.deck || []) || []) : [];
+    const skills = role === "debuffer" ? recommendDebufferSkills(pool, profile) : recommendSkillsForBuild(pool, profile);
+    const stats = roleStatTarget(profile, role, candidate.bestStyle);
+    const reasons = [
+      `${candidate.title}: ${candidate.surfaceGrade || "-"}/${candidate.distanceGrade || "-"} survives ${profile.distanceCategory || "?"}, runs ${candidate.bestStyle}.`,
+    ];
+    if (role === "debuffer" && skills.guidance) reasons.push(skills.guidance);
+    if (role === "pacer") reasons.push("Front pacer: grabs the lead to set the pace and deny opponents a free front.");
+    return { ...candidate, style: candidate.bestStyle, stats, skills, reasons };
+  };
+
+  const debuffer = buildRolePlan(pickRole("debuffer"), "debuffer");
+  const pacer = buildRolePlan(pickRole("pacer"), "pacer");
+
+  const styles = [acePlan.style?.key, debuffer?.style, pacer?.style].filter(Boolean);
+  const styleSpread = teamStyleSpread(styles);
+
+  return {
+    target: acePlan.target,
+    targetProfile: profile,
+    roles: {
+      ace: { characterId: acePlan.selected.characterId, title: acePlan.selected.title, role: "ace", style: acePlan.style?.key, plan: acePlan },
+      debuffer,
+      pacer,
+    },
+    strategy: { styleSpread, styles, reasons: styleSpread.reasons },
+    reasons: [
+      `Ace ${acePlan.selected.title} to win; debuffer ${debuffer?.title || "none available"}; pacer ${pacer?.title || "none available"}.`,
+      ...styleSpread.reasons,
+    ],
+  };
+}

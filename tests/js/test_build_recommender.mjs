@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   buildAutoPrepPlan,
+  buildAutoPrepTeamPlan,
   categorizeSkillEffect,
   debufferDistanceGuidance,
   getRecommendedTypeDistribution,
@@ -605,4 +606,52 @@ test("teamStyleSpread flags a full clash, partial spread, and a missing front ru
   const noFront = teamStyleSpread(["leader", "betweener", "chaser"]);
   assert.equal(noFront.hasFront, false);
   assert.match(noFront.reasons.join(" "), /front runner/i);
+});
+
+// --- CM Team: the trio assembler ---
+
+test("buildAutoPrepTeamPlan assigns three distinct role umas with spread styles", () => {
+  // Ace: all-A long turf leader. Debuffer-suited: survives long turf, chaser.
+  // Pacer-suited: runner. All owned.
+  const debufferUma = makeChar("deb", {
+    surface: { turf: "A" }, distance: { long: "B" },
+    style: { runner: "G", leader: "C", betweener: "B", chaser: "A" },
+  }, "Narita Brian");
+  const pacerUma = makeChar("pac", {
+    surface: { turf: "A" }, distance: { long: "B" },
+    style: { runner: "A", leader: "B", betweener: "G", chaser: "G" },
+  }, "Sakura Bakushin O");
+  const pool = { deb: [makeSkill("d1", [21], 3, "Debuff A"), makeSkill("d2", [13], 2, "Debuff B")] };
+  const roster = planRoster({
+    characters: [STAYER, debufferUma, pacerUma],
+    buildSkillPool: (charId) => pool[charId] || [],
+  });
+  const plan = buildAutoPrepTeamPlan(LONG_TURF_TARGET, roster);
+
+  const ids = [plan.roles.ace.characterId, plan.roles.debuffer.characterId, plan.roles.pacer.characterId];
+  assert.equal(new Set(ids).size, 3); // three DISTINCT umas
+  assert.equal(plan.roles.ace.characterId, "stayer"); // best fit is the ace
+  assert.ok(["betweener", "chaser"].includes(plan.roles.debuffer.style)); // debuffer runs late
+  assert.equal(plan.roles.pacer.style, "runner"); // pacer runs front
+  // debuffer build: Wit-heavy stats + debuff skills + distance guidance
+  assert.equal(plan.roles.debuffer.stats.stats.wit, 1200);
+  assert.ok(plan.roles.debuffer.skills.required.includes("d1"));
+  assert.match(plan.roles.debuffer.skills.guidance, /Stamina debuffs/); // long distance
+  // team strategy + full serializability
+  assert.ok(plan.strategy.styleSpread.size >= 2);
+  assert.doesNotThrow(() => JSON.parse(JSON.stringify(plan)));
+});
+
+test("buildAutoPrepTeamPlan degrades to just the ace when the roster is thin", () => {
+  const plan = buildAutoPrepTeamPlan(LONG_TURF_TARGET, planRoster({ characters: [STAYER] }));
+  assert.equal(plan.roles.ace.characterId, "stayer");
+  assert.equal(plan.roles.debuffer, null);
+  assert.equal(plan.roles.pacer, null);
+  assert.match(plan.reasons[0], /none available/);
+});
+
+test("buildAutoPrepTeamPlan returns an empty team on an empty roster", () => {
+  const plan = buildAutoPrepTeamPlan(LONG_TURF_TARGET, { characters: [], supportSummaries: [] });
+  assert.equal(plan.roles.ace, null);
+  assert.match(plan.reasons[0], /No owned characters/);
 });
