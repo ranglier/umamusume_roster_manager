@@ -19,6 +19,8 @@ import {
   detectGridOffsetY,
   cropImage,
   gridCells,
+  hamming64,
+  histIntersect,
   rankCandidates,
   readLevel,
   readLimitBreak,
@@ -341,6 +343,21 @@ function betterRow(a, b) {
   return (a.readingConfidence || 0) >= (b.readingConfidence || 0) ? a : b;
 }
 
+// Two grid cells captured on the same device showing the same card render
+// with near-identical pixels; different cards sit far apart (hash distance
+// >= 8 across the whole catalog, typically 15+). Used to dedupe unmatched
+// rows across overlapping screenshots, where no card id is available yet.
+const SAME_CELL_MAX_DISTANCE = 6;
+const SAME_CELL_MIN_INTERSECT = 0.85;
+
+function sameCellFingerprint(a, b) {
+  if (!a?.hashes?.length || !b?.hashes?.length) {
+    return false;
+  }
+  return hamming64(a.hashes[0], b.hashes[0]) <= SAME_CELL_MAX_DISTANCE
+    && histIntersect(a.hist, b.hist) >= SAME_CELL_MIN_INTERSECT;
+}
+
 export async function processImportFiles(modeKey, fileList) {
   const mode = IMPORT_MODES[modeKey];
   const files = [...fileList].filter((file) => file.type.startsWith("image/"));
@@ -396,15 +413,24 @@ export async function processImportFiles(modeKey, fileList) {
     // screenshots); rows without a confident id all stay visible for review.
     const merged = [...current.results];
     for (const row of rows) {
-      if (!row.cardId) {
-        merged.push(row);
+      if (row.cardId) {
+        const existingIndex = merged.findIndex((entry) => entry.cardId === row.cardId);
+        if (existingIndex === -1) {
+          merged.push(row);
+        } else {
+          merged[existingIndex] = betterRow(merged[existingIndex], row);
+        }
         continue;
       }
-      const existingIndex = merged.findIndex((entry) => entry.cardId === row.cardId);
-      if (existingIndex === -1) {
+      // Unmatched rows have no id to dedupe on, but overlapping screenshots
+      // render the exact same cell pixels: near-identical fingerprints mean
+      // "same card seen twice". Merge into the existing row (which keeps its
+      // id if the user already assigned one) instead of stacking duplicates.
+      const twinIndex = merged.findIndex((entry) => entry.fingerprint && sameCellFingerprint(entry.fingerprint, row.fingerprint));
+      if (twinIndex === -1) {
         merged.push(row);
-      } else {
-        merged[existingIndex] = betterRow(merged[existingIndex], row);
+      } else if (!merged[twinIndex].cardId) {
+        merged[twinIndex] = betterRow(merged[twinIndex], row);
       }
     }
 

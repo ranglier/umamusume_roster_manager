@@ -248,6 +248,15 @@ Premiere session d'usage reel (retours utilisateur, tous corriges):
   ont ete essayes et ecartes (39/68 et 36/68)
 - **vocabulaire**: "Potential" partout dans l'UI d'import (le champ roster
   reste `awakening`, meme chose — nom historique de l'app)
+- **dedup des lignes inconnues par empreinte** (bug utilisateur "doublons
+  entre captures qui se chevauchent"): la dedup par id ne couvrait que les
+  matchs confiants; les lignes Unknown (variantes non couvertes) etaient
+  empilees a chaque capture. Deux cellules du meme appareil montrant la
+  meme carte ont des empreintes quasi identiques (d<=6 + intersection
+  d'histogrammes >=0.85, les cartes differentes etant a d>=8) -> fusion,
+  en preservant un id deja assigne manuellement. Verifie: meme fichier
+  importe 2x = zero ligne ajoutee; deux captures chevauchantes = 44
+  distinctes pour 70 cellules lues, zero doublon
 - **lignes figees dans leur section** (bug utilisateur "la ligne
   disparait"): l'appartenance table principale / section repliee "already up
   to date" est figee au traitement (startedUnchanged) — editer une ligne
