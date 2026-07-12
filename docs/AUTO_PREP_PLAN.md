@@ -283,8 +283,19 @@ suggere Unity Cup (confiance basse), plus jamais L'Arc. Regenerer les donnees
 via `scripts/update_reference.py` pour que `start_en` arrive dans
 `reference-data.js` (gitignore).
 
-Reste du chantier: Phase 3 (boucle reelle `run_results`), Phase 4 (meta/uma.moe
-via les `weights?`), cadrees separement.
+### Phase 3 — boucle reelle — LIVREE (13/07/2026)
+
+Section **"Past runs on this target"** sur la page de plan: filtre les
+`run_results` par `target_id` (`getRunsForTarget` dans core.js) et affiche, du
+plus recent au plus ancien, chaque run reel (issue Win/Loss/Untested, uma, style,
+stats finales, notes). Helper pur teste `summarizeTargetRuns` (prep.js). Section
+absente s'il n'y a aucun run pour la cible. Lien retour: l'onglet Runs de
+l'editeur gagne un bouton **"Compare in CM Prep"** (-> `#/prep/:target_id`).
+Verifie en navigateur (motif net-zero: build+run cobaye crees via l'API,
+section confirmee, puis supprimes).
+
+Reste: Phase 4 (meta/uma.moe via les `weights?`), cadree separement (spike
+couverture Global d'abord).
 
 ## Estimation
 
