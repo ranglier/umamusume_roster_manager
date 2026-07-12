@@ -1007,3 +1007,62 @@ export function roleStatTarget(targetProfile, role, styleKey = "leader") {
     },
   };
 }
+
+// Running styles a role wants to run. Ace: whatever fits best (win). Debuffer:
+// mid/late positions (betweener/chaser) so it sits among opponents to land
+// debuffs. Pacer: front (runner) to grab and control the pace.
+const ROLE_STYLE_KEYS = {
+  ace: RUNNING_STYLE_KEYS,
+  debuffer: ["betweener", "chaser"],
+  pacer: ["runner"],
+};
+
+// Best aptitude fit for a role, restricted to that role's styles. Same exact
+// game modifiers as styleFitScore. A support uma that can't survive the
+// surface/distance (all-zero modifiers) scores ~0 and ranks last. `kitBonus`
+// (added by the assembler) rewards an owned uma that already has a role-fitting
+// kit - e.g. debuff skills for the debuffer (the user's "owned-roster-first").
+export function scoreCharacterForRole(charItem, targetProfile, role, { kitBonus = 0 } = {}) {
+  const aptitudes = charItem?.detail?.aptitudes || {};
+  const styleKeys = ROLE_STYLE_KEYS[role] || RUNNING_STYLE_KEYS;
+  let bestStyle = null;
+  let bestScore = -Infinity;
+  for (const styleKey of styleKeys) {
+    const score = styleFitScore(aptitudes, targetProfile, styleKey);
+    if (score > bestScore) {
+      bestScore = score;
+      bestStyle = styleKey;
+    }
+  }
+  const surfaceGrade = aptitudes.surface?.[targetProfile.surfaceKey] || "";
+  const distanceGrade = aptitudes.distance?.[targetProfile.distanceKey] || "";
+  const fit = Math.round(bestScore * 10000) / 10000;
+  return {
+    characterId: String(charItem?.id || ""),
+    title: charItem?.title || String(charItem?.id || ""),
+    role,
+    bestStyle,
+    styleGrade: aptitudes.style?.[bestStyle] || "",
+    surfaceGrade,
+    distanceGrade,
+    fitScore: fit,
+    roleScore: Math.round((fit + kitBonus) * 10000) / 10000,
+    verdict: gradeVerdict(surfaceGrade, distanceGrade),
+  };
+}
+
+// Evaluate a trio's running-style spread against the two real team mechanics:
+// (1) covering distinct positions avoids self-clash; (2) having a front runner
+// matters ("zero front runners -> a random opponent Pace Chaser gets a big lead
+// buff"). Returns a labeled assessment the assembler surfaces as strategy.
+export function teamStyleSpread(styleKeys) {
+  const styles = (styleKeys || []).filter(Boolean);
+  const distinct = [...new Set(styles)];
+  const hasFront = distinct.includes("runner");
+  const reasons = [];
+  if (distinct.length >= 3) reasons.push("Good style spread - covers front, mid and late positions.");
+  else if (distinct.length === 2) reasons.push("Partial style spread - a third distinct style would cover more positions.");
+  else reasons.push("All umas share a running style - they will clash for position; diversify.");
+  if (!hasFront) reasons.push("No front runner - an opponent Pace Chaser may get a large lead buff; a pacer up front helps.");
+  return { distinct, size: distinct.length, hasFront, clash: distinct.length === 1, reasons };
+}

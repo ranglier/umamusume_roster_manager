@@ -7,6 +7,8 @@ import {
   debufferDistanceGuidance,
   getRecommendedTypeDistribution,
   recommendDebufferSkills,
+  scoreCharacterForRole,
+  teamStyleSpread,
   roleStatTarget,
   proposeTargetStats,
   rankOwnedCharactersForTarget,
@@ -575,4 +577,32 @@ test("roleStatTarget: ace reuses the win-oriented target, pacer is speed-forward
   assert.ok(ace.stats.stamina > 0 && ace.basis.staminaFrom); // proposeTargetStats shape
   const pacer = roleStatTarget(MEDIUM_TURF, "pacer");
   assert.ok(pacer.stats.speed >= 800 && pacer.stats.wit < 800);
+});
+
+test("scoreCharacterForRole restricts styles per role and rewards a fitting kit", () => {
+  // Front-only aptitude uma: great as a pacer (runner), poor as a debuffer.
+  const frontUma = makeChar("front", {
+    surface: { turf: "A" }, distance: { medium: "A" },
+    style: { runner: "A", leader: "C", betweener: "G", chaser: "G" },
+  });
+  const asPacer = scoreCharacterForRole(frontUma, MEDIUM_TURF, "pacer");
+  const asDebuffer = scoreCharacterForRole(frontUma, MEDIUM_TURF, "debuffer");
+  assert.equal(asPacer.bestStyle, "runner");
+  assert.ok(["betweener", "chaser"].includes(asDebuffer.bestStyle)); // debuffer never runs front
+  assert.ok(asPacer.roleScore > asDebuffer.roleScore); // front uma fits the pacer role better
+  // kit bonus lifts the role score (owned-roster-first: has debuff skills).
+  const boosted = scoreCharacterForRole(frontUma, MEDIUM_TURF, "debuffer", { kitBonus: 5 });
+  assert.ok(boosted.roleScore > asDebuffer.roleScore);
+});
+
+test("teamStyleSpread flags a full clash, partial spread, and a missing front runner", () => {
+  const clash = teamStyleSpread(["chaser", "chaser", "chaser"]);
+  assert.equal(clash.clash, true);
+  assert.match(clash.reasons.join(" "), /clash/);
+  const good = teamStyleSpread(["runner", "betweener", "chaser"]);
+  assert.equal(good.size, 3);
+  assert.equal(good.hasFront, true);
+  const noFront = teamStyleSpread(["leader", "betweener", "chaser"]);
+  assert.equal(noFront.hasFront, false);
+  assert.match(noFront.reasons.join(" "), /front runner/i);
 });
