@@ -686,3 +686,133 @@ export function recommendScenario(targetProfile) {
     reasons,
   };
 }
+
+// --- Phase 1e (Auto Prep): the aggregator. buildAutoPrepPlan orchestrates every
+// Phase-1 piece into ONE serializable plan object (no functions in the output),
+// with reasons[] on every section and clickable uma alternatives. This is the
+// single API the UI consumes and the object seeded into the build editor. It is
+// kept pure/testable: all data and the two injectable hooks (skill pool + zone
+// resolution) arrive through `rosterData`, so nothing here touches DOM or the
+// reference singletons. ---
+
+// rosterData:
+//   characters: owned character items ([{ id, title, detail.aptitudes }])
+//   supportSummaries: [{ id, type, rarity, limitBreak, effectiveEffects, title }]
+//   buildSkillPool(characterId, deckIds) -> skill items for recommendSkillsForBuild
+//   course: the single resolved racetrack detail, or null (the Phase-1d gate)
+//   resolveStaticZones: visualizer.resolveStaticZones, or null
+//   weights: meta-injection weights ({} by default)
+// options: { alternatives = 3, selectedCharacterId = null }
+export function buildAutoPrepPlan(target, rosterData = {}, options = {}) {
+  const detail = target?.detail || target || {};
+  const profile = targetProfileFromCmDetail(detail);
+  const {
+    characters = [],
+    supportSummaries = [],
+    buildSkillPool = null,
+    course = null,
+    resolveStaticZones = null,
+    weights = {},
+  } = rosterData;
+  const { alternatives: altCount = 3, selectedCharacterId = null } = options;
+
+  const targetSummary = {
+    name: detail?.name || profile.raceName || "",
+    surface: profile.surface,
+    distanceCategory: profile.distanceCategory,
+    distanceM: profile.distanceM,
+    racetrackResolved: Boolean(course),
+  };
+
+  const ranked = rankOwnedCharactersForTarget(characters, profile);
+  if (!ranked.length) {
+    return {
+      target: targetSummary,
+      targetProfile: profile,
+      selected: null,
+      alternatives: [],
+      reasons: ["No owned characters to build from - import your roster first."],
+    };
+  }
+
+  const charById = new Map(characters.map((item) => [String(item?.id || ""), item]));
+  const withReasons = (candidate) => ({
+    ...candidate,
+    reasons: [
+      `${candidate.surfaceGrade || "-"}/${candidate.distanceGrade || "-"} on ${profile.surface || "?"} ${profile.distanceCategory || "?"}, ${candidate.verdict} fit (score ${candidate.fitScore})`,
+    ],
+  });
+
+  // Retain the requested uma if given and owned, else the top-ranked; keep the
+  // rest as clickable alternatives that re-generate the plan.
+  let selectedIndex = 0;
+  if (selectedCharacterId) {
+    const idx = ranked.findIndex((c) => c.characterId === String(selectedCharacterId));
+    if (idx >= 0) selectedIndex = idx;
+  }
+  const selectedRanked = withReasons(ranked[selectedIndex]);
+  const alternatives = ranked
+    .filter((_, idx) => idx !== selectedIndex)
+    .slice(0, altCount)
+    .map(withReasons);
+
+  const bestStyle = selectedRanked.bestStyle;
+  const style = {
+    key: bestStyle,
+    grade: selectedRanked.styleGrade,
+    reason: `Best aptitude fit runs ${bestStyle} (${selectedRanked.styleGrade || "-"}).`,
+  };
+
+  const statProposal = proposeTargetStats(profile, bestStyle);
+  const stats = {
+    ...statProposal,
+    reasons: [
+      `Stamina: ${statProposal.basis.staminaFrom}.`,
+      `Guts: ${statProposal.basis.gutsFrom}.`,
+      "Heuristic starting point, not a verified optimum - refine in the editor.",
+    ],
+  };
+
+  const deck = recommendSupportDeck(profile.distanceKey, supportSummaries, { targetProfile: profile, weights });
+  const deckReasons = [];
+  if (deck.shortfall) deckReasons.push(`Roster only fills ${deck.filled}/6 of the recommended mix.`);
+  const projectedCount = deck.picks.filter((p) => p.hasProjection).length;
+  deckReasons.push(projectedCount === deck.picks.length
+    ? "Scored on real effective values at each card's actual level/LB."
+    : `${projectedCount}/${deck.picks.length} cards scored on real values; the rest fell back to rarity+LB.`);
+
+  const courseZoneCounter = course && resolveStaticZones ? makeSkillZoneCounter(course, resolveStaticZones) : null;
+  const pool = buildSkillPool ? (buildSkillPool(selectedRanked.characterId, deck.deck) || []) : [];
+  const skills = recommendSkillsForBuild(pool, profile, { courseZoneCounter });
+  const skillReasons = [
+    skills.courseAware
+      ? "Course-aware: skills that fire in a zone on this track are boosted (single-track target)."
+      : "No single track resolved - skills ranked by effect category only.",
+  ];
+
+  // Parent white skill sparks = the chosen build's skills (required + optional).
+  const chosenSkillIds = new Set([...skills.required, ...skills.optional]);
+  const buildSkillsForParents = skills.entries.filter((entry) => chosenSkillIds.has(entry.id)).map((entry) => ({ id: entry.id, title: entry.title }));
+  const selectedItem = charById.get(selectedRanked.characterId) || { detail: { aptitudes: {} }, title: selectedRanked.title };
+  const parents = recommendParentSpec(profile, selectedItem, buildSkillsForParents);
+
+  const scenario = recommendScenario(profile);
+
+  return {
+    target: targetSummary,
+    targetProfile: profile,
+    selected: selectedRanked,
+    alternatives,
+    style,
+    stats,
+    deck: { ...deck, reasons: deckReasons },
+    skills: { ...skills, reasons: skillReasons },
+    scenario,
+    parents,
+    meta: { courseAware: skills.courseAware, weightsApplied: Object.keys(weights || {}).length > 0 },
+    reasons: [
+      `Retained ${selectedRanked.title}: ${selectedRanked.reasons[0]}.`,
+      `${alternatives.length} alternative uma${alternatives.length === 1 ? "" : "s"} available.`,
+    ],
+  };
+}

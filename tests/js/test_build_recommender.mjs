@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  buildAutoPrepPlan,
   categorizeSkillEffect,
   getRecommendedTypeDistribution,
   proposeTargetStats,
@@ -383,4 +384,86 @@ test("recommendSkillsForBuild applies the gated zone bonus only when a counter i
   const noTrack = recommendSkillsForBuild(pool, MEDIUM_TURF);
   assert.equal(noTrack.courseAware, false);
   assert.equal(noTrack.entries.every((e) => e.zones === 0), true);
+});
+
+// --- Phase 1e: the aggregator (one serializable plan) ---
+
+// A CM target detail as targetProfileFromCmDetail reads it.
+const LONG_TURF_TARGET = {
+  detail: {
+    name: "Tenno Sho (Spring)",
+    race_profile: { surface: "Turf", surface_slug: "turf", distance_m: 3200, distance_category: "Long", distance_category_slug: "long" },
+    related_races: [{ id: "r1", title: "Tenno Sho (Spring)" }],
+  },
+};
+
+const STAYER = makeChar("stayer", {
+  surface: { turf: "A", dirt: "G" },
+  distance: { short: "F", mile: "C", medium: "A", long: "B" }, // long B -> pink gap
+  style: { runner: "G", leader: "A", betweener: "A", chaser: "C" },
+}, "Gold Ship");
+
+const SPRINTER = makeChar("sprinter", {
+  surface: { turf: "B" },
+  distance: { short: "A", mile: "A", medium: "C", long: "E" },
+  style: { runner: "A", leader: "B", betweener: "C", chaser: "D" },
+}, "Sakura Bakushin O");
+
+function planRoster(extra = {}) {
+  return {
+    characters: [STAYER, SPRINTER],
+    supportSummaries: [
+      { id: "sp1", type: "speed", rarity: 3, limitBreak: 4, title: "Kitasan", effectiveEffects: [eff(1, 30), eff(8, 15)] },
+      { id: "st1", type: "stamina", rarity: 3, limitBreak: 4, title: "Super Creek", effectiveEffects: [eff(1, 25)] },
+      { id: "w1", type: "intelligence", rarity: 3, limitBreak: 4, title: "FS", effectiveEffects: [eff(31, 4)] },
+      { id: "p1", type: "power", rarity: 3, limitBreak: 2, title: "Vodka", effectiveEffects: [eff(15, 10)] },
+    ],
+    ...extra,
+  };
+}
+
+test("buildAutoPrepPlan returns one serializable plan with reasons on every section", () => {
+  const plan = buildAutoPrepPlan(LONG_TURF_TARGET, planRoster());
+  // top-ranked long-turf uma is the stayer.
+  assert.equal(plan.selected.characterId, "stayer");
+  assert.ok(plan.selected.reasons[0].length > 0);
+  assert.equal(plan.alternatives[0].characterId, "sprinter");
+  assert.equal(plan.style.key, "leader");
+  assert.ok(plan.stats.stats.stamina > 0);
+  assert.ok(plan.deck.deck.length > 0);
+  assert.ok(plan.deck.reasons.length >= 1);
+  // long turf -> confident L'Arc scenario, parent pinks LONG (stayer is Long B).
+  assert.equal(plan.scenario.recommended.slug, "scenario-larc");
+  assert.equal(plan.parents.parents[0].pink.label, "LONG");
+  // fully serializable (no functions survive a JSON round-trip).
+  assert.doesNotThrow(() => JSON.parse(JSON.stringify(plan)));
+});
+
+test("buildAutoPrepPlan honors a selected alternative uma", () => {
+  const plan = buildAutoPrepPlan(LONG_TURF_TARGET, planRoster(), { selectedCharacterId: "sprinter" });
+  assert.equal(plan.selected.characterId, "sprinter");
+  assert.ok(plan.alternatives.some((a) => a.characterId === "stayer"));
+});
+
+test("buildAutoPrepPlan gates the course-aware skill bonus and wires the injected pool", () => {
+  const pool = [makeSkill("a1", [31], 1, "Zone Skill")];
+  const roster = planRoster({
+    buildSkillPool: () => pool,
+    course: { length_m: 3200 },
+    resolveStaticZones: () => ({ zones: [{}, {}] }), // fires on 2 zones
+  });
+  const plan = buildAutoPrepPlan(LONG_TURF_TARGET, roster);
+  assert.equal(plan.skills.courseAware, true);
+  assert.equal(plan.meta.courseAware, true);
+  const zoneSkill = plan.skills.entries.find((e) => e.id === "a1");
+  assert.equal(zoneSkill.zones, 2);
+  // the build's skills feed the parent white sparks.
+  assert.ok(plan.parents.whiteSparks.skills.some((s) => s.id === "a1"));
+});
+
+test("buildAutoPrepPlan degrades cleanly with an empty roster", () => {
+  const plan = buildAutoPrepPlan(LONG_TURF_TARGET, { characters: [], supportSummaries: [] });
+  assert.equal(plan.selected, null);
+  assert.equal(plan.alternatives.length, 0);
+  assert.match(plan.reasons[0], /No owned characters/);
 });
