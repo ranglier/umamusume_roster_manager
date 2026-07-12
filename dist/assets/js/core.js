@@ -372,6 +372,12 @@ export const state = {
   runsDocument: { version: 1, updated_at: "", entries: [] },
   runsProfileId: null,
   runsStatus: { kind: "idle", message: "" },
+  // Meta / Insights snapshot (Phase 4): a dated community popularity snapshot
+  // loaded best-effort from a static file (data/meta/latest.json), never a
+  // runtime dependency. null = none loaded; `metaSnapshotLoaded` guards the
+  // one-shot best-effort fetch (a 404 is normal - the app works without it).
+  metaSnapshot: null,
+  metaSnapshotLoaded: false,
   // One-shot seed for a pre-filled build draft, set by the CM-target
   // recommendation flow (build_recommender) before routing to "__new__".
   // createEmptyBuildEntry() consumes and clears it.

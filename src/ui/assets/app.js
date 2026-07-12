@@ -401,6 +401,7 @@ function renderPrepDeckCard(pick, titleById, benchByType) {
       <div class="prep-deck-head">
         <span class="prep-deck-type" data-type="${escapeHtml(pick.type || "")}">${escapeHtml(RECO_TYPE_LABELS_APP[pick.type] || pick.type || "?")}</span>
         <strong>${escapeHtml(title)}</strong>
+        ${Number(pick.metaBonus) > 0 ? `<span class="prep-badge prep-badge-meta" title="Community meta snapshot">meta +${escapeHtml(String(pick.metaBonus))}</span>` : ""}
         <span class="prep-deck-score">${escapeHtml(String(pick.score ?? 0))}</span>
       </div>
       <ul class="prep-deck-reasons">${reasons}</ul>
@@ -488,7 +489,7 @@ function renderPrepPlanSections(plan, targetId) {
 
   return `
     <section class="prep-section prep-section-uma">
-      <div class="prep-section-head"><h2>Retained uma</h2><span class="prep-badge prep-badge-${PREP_VERDICT_TONE[selected.verdict] || "neutral"}">${escapeHtml(selected.verdict)}</span></div>
+      <div class="prep-section-head"><h2>Retained uma</h2><span class="prep-badge prep-badge-${PREP_VERDICT_TONE[selected.verdict] || "neutral"}">${escapeHtml(selected.verdict)}</span>${selected.metaLabel ? `<span class="prep-badge prep-badge-meta" title="Community meta snapshot">meta: ${escapeHtml(selected.metaLabel)}</span>` : ""}</div>
       <div class="prep-uma-main">
         <strong class="prep-uma-name">${escapeHtml(selected.title)}</strong>
         <span class="prep-uma-meta">${escapeHtml(PREP_STYLE_LABELS[plan.style?.key] || plan.style?.key || "-")} · ${escapeHtml(selected.surfaceGrade || "-")}/${escapeHtml(selected.distanceGrade || "-")} · fit ${escapeHtml(String(selected.fitScore))}</span>
@@ -602,6 +603,7 @@ export function renderPrepPage(route) {
         <div class="prep-header-copy">
           <p class="home-eyebrow">Auto Prep</p>
           <h1 class="home-title">Prepare a Champions Meeting</h1>
+          ${plan?.meta?.applied && plan.meta.snapshot ? `<p class="prep-meta-note">Weighted by community meta · ${escapeHtml(plan.meta.snapshot.source)}${plan.meta.snapshot.generatedAt ? ` · ${escapeHtml(String(plan.meta.snapshot.generatedAt).slice(0, 10))}` : ""}</p>` : ""}
         </div>
         <div class="prep-target-row">
           <label class="field-stack">
@@ -1950,6 +1952,24 @@ export async function resetRosterEntry(entityKey, item) {
   await persistRosterDocument("Owned roster entry reset to defaults.");
 }
 
+// Best-effort load of the dated community meta snapshot (Phase 4). A 404 is
+// normal - the app is fully functional without it; this only enriches Auto Prep
+// with popularity weights. One-shot, never blocks or errors the render.
+async function loadMetaSnapshot() {
+  if (state.metaSnapshotLoaded) {
+    return;
+  }
+  state.metaSnapshotLoaded = true;
+  try {
+    const res = await fetch("data/meta/latest.json", { cache: "no-store" });
+    if (res.ok) {
+      state.metaSnapshot = await res.json();
+    }
+  } catch (error) {
+    // best-effort: Auto Prep works identically without a meta snapshot.
+  }
+}
+
 export async function render() {
   const token = ++state.renderToken;
 
@@ -2053,6 +2073,13 @@ export async function render() {
     await loadLegacyForProfile(state.activeProfileId, false);
     await loadBuildsForProfile(state.activeProfileId, false);
     await loadRunsForProfile(state.activeProfileId, false);
+    if (token !== state.renderToken) {
+      return;
+    }
+  }
+
+  if (route.page === "prep") {
+    await loadMetaSnapshot();
     if (token !== state.renderToken) {
       return;
     }

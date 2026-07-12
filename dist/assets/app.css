@@ -5432,3 +5432,13 @@ code {
   color: var(--text-soft);
   font-size: 0.82rem;
 }
+
+.prep-badge-meta {
+  color: var(--accent-5);
+  border-color: rgba(185, 143, 255, 0.45);
+}
+.prep-meta-note {
+  margin: 4px 0 0;
+  font-size: 0.8rem;
+  color: var(--accent-5);
+}

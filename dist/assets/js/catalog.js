@@ -11,6 +11,7 @@ import {
   SKILL_HIGHLIGHT_CLASSES,
 } from "./visualizer.js";
 import { buildAutoPrepPlan, recommendBuildForTarget, recommendSkillsForBuild, recommendSupportDeck, targetProfileFromCmDetail } from "./build_recommender.js";
+import { buildMetaWeights } from "./meta.js";
 import { getBuildTargetRacetrack, getSkillReferenceItem, getSupportOwnedSummary, startSeededBuildDraft } from "./builds.js";
 import { getOwnedSupportOptions } from "./core.js";
 import { requestRenderPreservingScroll, requestRenderPreservingScrollAndFocus } from "../app.js";
@@ -84,6 +85,9 @@ export function getCmTargetRecommendations(detail) {
 export function buildAutoPrepPlanForDetail(detail, { selectedCharacterId = null, weights = {}, pinnedDeckIds = [], excludedDeckIds = [] } = {}) {
   const targetItem = { detail };
   const racetrack = getBuildTargetRacetrack(targetItem);
+  // Fold the loaded meta snapshot (if any) into the weights the engine consumes.
+  // No snapshot -> empty supportMeta/characterMeta -> identical to before.
+  const effectiveWeights = { ...buildMetaWeights(state.metaSnapshot), ...weights };
   const rosterData = {
     characters: getOwnedCharacterItems(),
     supportSummaries: getOwnedSupportSummariesForDeck(),
@@ -94,7 +98,7 @@ export function buildAutoPrepPlanForDetail(detail, { selectedCharacterId = null,
     },
     course: racetrack?.detail || null,
     resolveStaticZones,
-    weights,
+    weights: effectiveWeights,
     availableScenarios: getGlobalAvailableScenarios(),
   };
   return buildAutoPrepPlan(targetItem, rosterData, { selectedCharacterId, pinnedDeckIds, excludedDeckIds });
