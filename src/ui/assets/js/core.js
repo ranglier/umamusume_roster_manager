@@ -405,6 +405,7 @@ export const state = {
       building: false,
       processing: false,
       results: [],
+      unchangedOpen: false,
     },
     characters: {
       status: { kind: "idle", message: "" },
@@ -414,6 +415,7 @@ export const state = {
       building: false,
       processing: false,
       results: [],
+      unchangedOpen: false,
     },
   },
   profilesApiStatus: { kind: "idle", message: "" },

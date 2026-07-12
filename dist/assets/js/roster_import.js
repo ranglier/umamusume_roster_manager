@@ -539,6 +539,7 @@ function renderImportRow(mode, row, itemsById, sortedItems) {
         ${row.learned ? `<span class="import-learned-note">matched from your earlier correction</span>` : ""}
         ${warnings.length ? `<span class="import-warnings">${escapeHtml(warnings.join(" · "))}</span>` : ""}
       </td>
+      <td><button type="button" class="import-remove-button" title="Remove this row from the import" data-import-action="remove" data-import-key="${escapeHtml(row.key)}">&times;</button></td>
     </tr>
   `;
 }
@@ -566,6 +567,7 @@ export function renderRosterImportPanel(entityKey) {
       <th scope="col">Matched card</th>
       ${mode.valueHeaders.map((label) => `<th scope="col">${escapeHtml(label)}</th>`).join("")}
       <th scope="col">Status</th>
+      <th scope="col" title="Remove this row from the import"></th>
     </tr>
   `;
 
@@ -595,7 +597,7 @@ export function renderRosterImportPanel(entityKey) {
           </table>
         </div>
         ${unchangedRows.length ? `
-          <details class="import-unchanged">
+          <details class="import-unchanged" id="importUnchangedDetails" ${current.unchangedOpen ? "open" : ""}>
             <summary>${unchangedRows.length} ${escapeHtml(mode.noun)}(s) already up to date</summary>
             <div class="import-table-wrap">
               <table class="import-table">
@@ -719,6 +721,23 @@ function attachImportListeners(modeKey) {
       requestRenderPreservingScroll();
     });
   }
+
+  const unchangedDetails = document.getElementById("importUnchangedDetails");
+  if (unchangedDetails) {
+    // Persist the open state across the re-renders triggered by row edits —
+    // without this, editing inside the collapsed section snapped it shut.
+    unchangedDetails.addEventListener("toggle", () => {
+      importState(modeKey).unchangedOpen = unchangedDetails.open;
+    });
+  }
+
+  listEl.querySelectorAll("[data-import-action='remove']").forEach((button) => {
+    button.addEventListener("click", () => {
+      const current = importState(modeKey);
+      current.results = current.results.filter((row) => row.key !== button.dataset.importKey);
+      requestRenderPreservingScroll();
+    });
+  });
 
   listEl.querySelectorAll("[data-import-preview]").forEach((img) => {
     img.addEventListener("click", () => {

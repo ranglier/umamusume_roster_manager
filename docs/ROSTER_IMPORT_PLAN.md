@@ -248,6 +248,13 @@ Premiere session d'usage reel (retours utilisateur, tous corriges):
   ont ete essayes et ecartes (39/68 et 36/68)
 - **vocabulaire**: "Potential" partout dans l'UI d'import (le champ roster
   reste `awakening`, meme chose — nom historique de l'app)
+- **section "already up to date" persistante + suppression de ligne**
+  (retours utilisateur): l'etat ouvert/replie du details survit aux
+  re-renders declenches par l'edition (importState.unchangedOpen, meme
+  pattern que filtersOpen), et chaque ligne a un bouton "x" pour la retirer
+  de l'import. Les 17 entrees historiques sans unique_level (sequelles des
+  sauvegardes perdues) ont ete reparees en one-shot via un PUT valide
+  (unique = stars stockees ou rarete de base)
 - **resync sur echec + statut scope** (bug utilisateur "characters.
   unique_level... affiche sur un panneau support"): persistRosterDocument
   resynchronise desormais le document depuis le serveur quand le PUT echoue
