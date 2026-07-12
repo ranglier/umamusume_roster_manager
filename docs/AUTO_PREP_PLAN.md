@@ -194,6 +194,53 @@ Cadrage detaille: `EXTERNAL_SOURCES_PLAN.md` (brique Meta/Insights).
   fiche cm_targets restent fonctionnelles pendant la transition; l'ecran
   Auto Prep les remplace comme entree par defaut, il ne casse rien.
 
+## Journal de livraison
+
+### Phase 1 — moteur pur + tests — LIVREE (13/07/2026)
+
+Tout dans `src/ui/assets/js/build_recommender.js` (pur, teste), zero UI. Suite
+`node --test tests/js/*.mjs` verte (204), backend inchange.
+
+- **1a** `scoreSupportForTarget(summary, targetProfile, weights?)` : score sur
+  les `effective_effects` de la projection roster-view (valeur au niveau reel).
+  Modele = `SUPPORT_FAMILY_WEIGHTS` (friendship 100, training 85, specialty 55,
+  wisdomRecovery 45, statGain 35, bond 30... documentes dans le module) x
+  `current_value / SUPPORT_EFFECT_REFERENCE[effect_id]` (magnitude "strong
+  maxed" calibree sur les `max_value` du dataset). Modulation distance mineure
+  et etiquetee (familles energie/recuperation x1.2 en long). Sortie
+  `{score, reasons[]}`, `weights?` = hook meta (phase 4) qui override familles
+  ou references. `recommendSupportDeck` classe desormais par ce score (le mix de
+  types devient une contrainte de composition), garde le proxy rarete+LB en
+  fallback ETIQUETE quand une carte n'a pas de projection, et expose `picks[]`
+  avec `{score, reasons[], hasProjection}` par carte. `catalog.js` fournit
+  `effectiveEffects` depuis `derived.effective_effects`.
+- **1b** `recommendParentSpec(targetProfile, charItem, buildSkills)` : rose =
+  aptitudes cible ou le perso est < A (priorite distance > surface > style ;
+  1 gap = les deux parents le chassent, 2 gaps = repartis), bleu = 2 stats les
+  plus contraintes (heuristique distance->stamina, comme Feasibility), blancs =
+  `related_races` (portes par `targetProfileFromCmDetail`) + skills du build.
+  Sortie 2 specs + gaps + shopping list blancs + `reasons[]`. **Spec, jamais de
+  parents concrets** (decision figee).
+- **1c** `SCENARIO_NOTES` (table curee, source "curated") + `recommendScenario`
+  (confiance "curated-match" seulement si distance+surface matchent, ex L'Arc en
+  long turf ; sinon "low" + "pick your most practiced"). Remplacee par la meta
+  en phase 4.
+- **1d** `recommendSkillsForBuild` accepte un `courseZoneCounter` optionnel ;
+  `makeSkillZoneCounter(course, resolveStaticZonesFn)` reutilise
+  `resolveStaticZones` du visualizer par injection (module pur, zero DOM). Bonus
+  GATED : applique uniquement si la cible resout UNE piste (garde-fou
+  `getBuildTargetRacetrack`, comme Feasibility). Raison : "activates on N zones".
+- **1e** `buildAutoPrepPlan(target, rosterData, options?)` : UN objet plan
+  serialisable (uma retenue + alternatives, style, stats, deck, skills, scenario,
+  spec parents), `reasons[]` partout, hooks (`buildSkillPool`, `course`,
+  `resolveStaticZones`, `weights`) passes via `rosterData`. API unique pour l'UI.
+  Verifie par un spike sur donnees reelles (p_001 : 42 umas, 167 supports tous
+  projetes, cible Gemini Cup Long Turf) : deck coherent sur valeurs reelles,
+  L'Arc curated-match, parents honnetes (pas de pink quand deja A en long).
+
+Poids du deck : choisis a la main, documentes dans le module, a confronter aux
+premiers usages reels puis a la meta. Pas de pretention d'optimum.
+
 ## Estimation
 
 - Phase 1: le gros morceau (~2-3 sessions), surtout 1a et 1e
