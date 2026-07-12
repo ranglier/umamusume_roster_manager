@@ -636,6 +636,41 @@ bout en bout (phases A puis B+C):
   application de 32 umas verifiee cote serveur, idempotence, zero erreur
   console. Les variantes non couvertes sortent "Unknown" -> dropdown
 
+#### 16bis. Durcissement par l'usage reel
+
+L'utilisateur a fait son import complet reel (167 supports, ~45 umas — le
+frein #1 d'adoption est leve) sur une semaine de sessions qui a revele et
+corrige une serie de problemes invisibles en test (detail par item dans
+`ROSTER_IMPORT_PLAN.md`, corrections datees):
+
+- **apprentissage des associations manuelles**: une cellule non reconnue
+  associee a la main puis appliquee memorise l'empreinte de la cellule (le
+  rendu exact de l'appareil — meilleur que tout asset externe) sous cet id;
+  couvre progressivement les 126 variantes umas sans icone et les futures
+  cartes. Memorise uniquement apres sauvegarde confirmee; dropdown etendu au
+  catalogue complet (prealable indispensable); badge "matched from your
+  earlier correction" + bouton d'oubli
+- **robustesse de lecture**: detection du decalage de scroll par capture
+  (signal "etoiles dorees aux positions attendues" — les captures scrollees
+  etaient illisibles), tier du potential par **cadre dore** (regle du jeu
+  fournie par l'utilisateur: or = potential>=3; l'ancienne teinte du texte
+  souffrait de l'art saignant a travers le bandeau translucide), defauts
+  surs (etoiles hors 1-5 -> 3 flagge; potential sous seuil -> 1),
+  unique_level = etoiles (regle du jeu) + reparation one-shot des sequelles
+- **integrite des donnees**: echec de sauvegarde honnete ("NOT saved" au
+  lieu d'un faux succes), resync depuis le serveur en cas d'echec (une
+  mutation rejetee empoisonnait toutes les sauvegardes suivantes du
+  document entier), **anti-resurrection** (le PUT document entier = dernier
+  ecrivain gagnant: un onglet perime ressuscitait les suppressions — tous
+  les flux de mutation rafraichissent desormais avant de muter), statut de
+  sauvegarde scope au formulaire declencheur
+- **UX de reconciliation**: dedup inter-captures par empreinte (le
+  chevauchement de captures est desormais recommande), apercu agrandi
+  capture/carte cote a cote, lignes figees dans leur section, section
+  "already up to date" qui reste ouverte, suppression de ligne d'import,
+  layouts pleine largeur, batch compact 3 colonnes avec suppression
+  multiple cochable
+
 ## Choix techniques et justification
 
 ### Manifest + JSON versionnes plutot que scraping HTML
