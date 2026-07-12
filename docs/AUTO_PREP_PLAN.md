@@ -305,7 +305,35 @@ du jeu = les notres, supports et persos), **API publique joignable** (`/api/heal
 `/api/stats`, `/api/v3/search` en 200) mais **rate-limitee** sur `/api/v4/rankings/*`
 (429) -> snapshots locaux dates obligatoires (ce qui etait deja l'archi visee).
 GO pour construire la brique Meta en snapshots + injection via les `weights?`.
-L'implementation Phase 4 elle-meme n'est pas commencee.
+
+### Phase 4 — implementation meta — LIVREE (13/07/2026)
+
+Brique `Meta / Insights` posee, en snapshots locaux dates, injectee via les
+hooks `weights?` (aucune dependance runtime a uma.moe). Suite verte (225 JS,
+Python OK). Verifie en navigateur sur donnees reelles.
+
+- **`meta.js`** (pur, teste): `buildMetaWeights(snapshot)` -> `weights`
+  (`supportMeta` bonus par carte **borne** a `META_SUPPORT_BONUS_MAX=40`, bien
+  sous le poids Friendship 100; `characterMeta` popularite; source/date). Meta
+  = additif, borne, **toujours etiquete** -> raffine sans jamais renverser la
+  formule verifiee. IDs = identite (uma.moe = IDs du jeu = les notres).
+- **Moteur**: `scoreSupportForTarget` ajoute le bonus meta + une raison
+  `{ family: "meta" }` (`metaBonus`); `buildAutoPrepPlan` utilise `characterMeta`
+  uniquement comme **tiebreaker a fit egal** (le fit d'aptitude reste la verite
+  primaire) + note; expose `plan.meta.snapshot/applied`.
+- **Wiring/UI**: `loadMetaSnapshot()` charge best-effort `data/meta/latest.json`
+  (un 404 est normal -> app identique sans meta); `buildAutoPrepPlanForDetail`
+  plie le snapshot dans les weights. UI: note "Weighted by community meta",
+  puce "META: <label>" sur l'uma, badge "meta +N" sur les cartes boostees.
+- **Acquisition**: `scripts/fetch_meta_snapshot.py` (offline, poli: `--pages`,
+  `--delay`, backoff 429) agrege `/api/v3/search`, ecrit
+  `data/meta/uma_moe/<date>.json` + `latest.json` (+ copie dist). `data/meta/`
+  gitignore. Snapshot reel valide: top supports Fine Motion/Kitasan/Super Creek,
+  top umas Nishino Flower/Gold Ship/Oguri Cap — mapping identite confirme en
+  reel. Relancer avec plus de `--pages` pour une distribution plus fine.
+
+Chantier Auto Prep: **Phases 1-4 livrees.** Suites (M2 avancees) possibles:
+meta scenario, snapshots plus larges/planifies, badge meta plus riche.
 
 ## Estimation
 
