@@ -4,7 +4,10 @@ import assert from "node:assert/strict";
 import {
   buildAutoPrepPlan,
   categorizeSkillEffect,
+  debufferDistanceGuidance,
   getRecommendedTypeDistribution,
+  recommendDebufferSkills,
+  roleStatTarget,
   proposeTargetStats,
   rankOwnedCharactersForTarget,
   recommendBuildForTarget,
@@ -535,4 +538,41 @@ test("buildAutoPrepPlan degrades cleanly with an empty roster", () => {
   assert.equal(plan.selected, null);
   assert.equal(plan.alternatives.length, 0);
   assert.match(plan.reasons[0], /No owned characters/);
+});
+
+// --- CM Team: role sub-planners ---
+
+test("recommendDebufferSkills prioritizes debuffs (keeps them) unlike a self-build", () => {
+  const pool = [
+    makeSkill("accel1", [31], 3),   // acceleration
+    makeSkill("debuff1", [21], 3),  // debuff
+    makeSkill("debuff2", [13], 2),  // debuff
+    makeSkill("recov1", [9], 2),    // recovery
+  ];
+  const result = recommendDebufferSkills(pool, MEDIUM_TURF);
+  assert.ok(result.required.includes("debuff1") && result.required.includes("debuff2"));
+  assert.ok(!result.required.includes("accel1")); // win skills are not the job
+  assert.ok(result.optional.includes("recov1"));  // a little survival
+  assert.equal(result.byCategory.debuff, 2);
+});
+
+test("recommendDebufferSkills returns labeled distance guidance instead of auto-filtering", () => {
+  assert.match(recommendDebufferSkills([], { distanceKey: "mile" }).guidance, /Speed debuffs/);
+  assert.match(recommendDebufferSkills([], { distanceKey: "long" }).guidance, /Stamina debuffs/);
+  assert.match(debufferDistanceGuidance("short"), /Speed/);
+  assert.match(debufferDistanceGuidance("medium"), /Stamina/);
+});
+
+test("roleStatTarget makes the debuffer Wit-heavy with minimal racing stats", () => {
+  const debuffer = roleStatTarget(MEDIUM_TURF, "debuffer");
+  assert.equal(debuffer.stats.wit, 1200);
+  assert.ok(debuffer.stats.speed <= 400 && debuffer.stats.stamina <= 700);
+  assert.match(debuffer.basis.witFrom, /activate/);
+});
+
+test("roleStatTarget: ace reuses the win-oriented target, pacer is speed-forward", () => {
+  const ace = roleStatTarget(MEDIUM_TURF, "ace", "leader");
+  assert.ok(ace.stats.stamina > 0 && ace.basis.staminaFrom); // proposeTargetStats shape
+  const pacer = roleStatTarget(MEDIUM_TURF, "pacer");
+  assert.ok(pacer.stats.speed >= 800 && pacer.stats.wit < 800);
 });

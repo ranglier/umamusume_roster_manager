@@ -907,3 +907,103 @@ export function buildAutoPrepPlan(target, rosterData = {}, options = {}) {
     ],
   };
 }
+
+// --- CM Team (docs/CM_TEAM_PLAN.md): role sub-planners. A Champions Meeting is
+// 3v3v3 and only your first finisher counts, so a prep is a TRIO of roles, not
+// one uma: the Ace tries to win (= buildAutoPrepPlan), the Debuffer sabotages
+// opponents (racing stats stop mattering, debuffs become the point), the Pacer
+// controls the front. These sub-planners flip the ace's assumptions. All
+// heuristic and labeled; no opponent/position simulation (Tier 3, out of scope). ---
+
+export const TEAM_ROLES = ["ace", "debuffer", "pacer"];
+
+// Debuffer skill priority INVERTS recommendSkillsForBuild: debuffs are the whole
+// job; a little recovery to survive the race; win skills (accel/speed) are
+// near-useless (the debuffer never tries to place). The speed-vs-stamina debuff
+// split can't be read from our data (skill effect types 8/13/21 carry no target
+// stat), so the distance advice is returned as labeled `guidance` text rather
+// than auto-filtering - honest, no false precision.
+const DEBUFFER_CATEGORY_WEIGHT = { debuff: 100, recovery: 30, other: 5, accel: 5, speed: 5 };
+
+export function debufferDistanceGuidance(distanceKey) {
+  if (distanceKey === "short" || distanceKey === "mile") return "Prioritize Speed debuffs (Sprint/Mile are won on raw speed).";
+  if (distanceKey === "medium" || distanceKey === "long") return "Prioritize Stamina debuffs (endurance races punish stamina loss).";
+  return "Prioritize debuffs matching the race's limiting factor.";
+}
+
+// poolSkillItems: resolved reference skill items (same shape as
+// recommendSkillsForBuild). Returns debuff-first required/optional lists + a
+// distance guidance string. Debuffs are KEPT (not dropped like a self-build).
+export function recommendDebufferSkills(poolSkillItems, targetProfile, { requiredLimit = 5, optionalLimit = 5 } = {}) {
+  const seen = new Set();
+  const scored = [];
+  for (const item of poolSkillItems || []) {
+    const id = String(item?.id || item?.detail?.skill_id || "");
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    const category = categorizeSkillEffect(item);
+    const weight = DEBUFFER_CATEGORY_WEIGHT[category] ?? 0;
+    const rarity = Number(item?.detail?.rarity) || 0;
+    scored.push({ id, title: item.title || id, category, score: weight + rarity * 3, reasons: [`${category} skill`] });
+  }
+  scored.sort((a, b) => b.score - a.score);
+
+  const required = [];
+  const optional = [];
+  for (const entry of scored) {
+    if (entry.category === "debuff" && required.length < requiredLimit) {
+      required.push(entry);
+    } else if (optional.length < optionalLimit) {
+      optional.push(entry);
+    }
+  }
+
+  const byCategory = {};
+  for (const entry of [...required, ...optional]) {
+    byCategory[entry.category] = (byCategory[entry.category] || 0) + 1;
+  }
+
+  return {
+    required: required.map((entry) => entry.id),
+    optional: optional.map((entry) => entry.id),
+    byCategory,
+    poolSize: scored.length,
+    entries: scored,
+    guidance: debufferDistanceGuidance(targetProfile?.distanceKey),
+  };
+}
+
+// Survival stamina for a non-winning support uma by distance: just enough to
+// finish, not to place. Labeled heuristic, deliberately low.
+const SUPPORT_SURVIVAL_STAMINA = { short: 350, mile: 450, medium: 550, long: 700 };
+
+// roleStatTarget(targetProfile, role, styleKey) -> { stats, basis }.
+// - ace: the full win-oriented target (proposeTargetStats).
+// - debuffer: Wit-heavy (skills must fire), racing stats minimal (placement is
+//   irrelevant) - see the CM debuffer meta.
+// - pacer: Speed/Power to grab and hold the front early; low stamina (often
+//   sacrificial). All labeled heuristics, not verified optima.
+export function roleStatTarget(targetProfile, role, styleKey = "leader") {
+  if (role === "ace") {
+    return proposeTargetStats(targetProfile, styleKey);
+  }
+  const survival = SUPPORT_SURVIVAL_STAMINA[targetProfile?.distanceKey] ?? 500;
+  if (role === "debuffer") {
+    return {
+      stats: { speed: 300, stamina: survival, power: 400, guts: 300, wit: 1200 },
+      basis: {
+        witFrom: "1200 Wit so debuff skills activate reliably (800 is the floor)",
+        staminaFrom: `${survival} = just survive the ${targetProfile?.distanceCategory || "race"}; placement is irrelevant`,
+        note: "Racing stats are deliberately minimal - a debuffer never tries to win.",
+      },
+    };
+  }
+  // pacer
+  return {
+    stats: { speed: 900, stamina: Math.round(survival * 0.9), power: 700, guts: 300, wit: 600 },
+    basis: {
+      staminaFrom: "low stamina - a front pacer spends early and does not need to finish high",
+      note: "Speed/Power to grab and hold the front and set the pace.",
+    },
+  };
+}
