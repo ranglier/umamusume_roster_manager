@@ -241,6 +241,38 @@ Tout dans `src/ui/assets/js/build_recommender.js` (pur, teste), zero UI. Suite
 Poids du deck : choisis a la main, documentes dans le module, a confronter aux
 premiers usages reels puis a la meta. Pas de pretention d'optimum.
 
+### Phase 2 — UI Auto Prep — LIVREE (13/07/2026)
+
+Route `#/prep[/:targetId]` (gate-like, sidebar visible), branchee via
+`currentRouteState`/`setPrepHash`, la section sidebar "CM Prep" et le CTA home.
+Rendu dans `#profileGate` par `renderPrepPage` (app.js). Verifie en navigateur
+de bout en bout sur le roster reel p_001. Suite JS verte (211).
+
+- **Pont DOM/moteur unique**: `catalog.buildAutoPrepPlanForDetail(detail, opts)`
+  assemble le `rosterData` (owned chars, support summaries avec
+  `effective_effects`, pool de skills kit+deck, `course` via
+  `getBuildTargetRacetrack` = garde-fou piste unique, `resolveStaticZones`) et
+  appelle `buildAutoPrepPlan`. Le moteur reste pur (tout injecte).
+- **Glue pure testee** dans `prep.js`: `selectDefaultTargetId` (CM courante ->
+  prochaine -> derniere passee, gere "aucune CM future") et `planToBuildSeed`
+  (plan -> seed d'editeur).
+- **Page de plan**: uma retenue + alternatives cliquables (re-genere via
+  `selectedCharacterId`), style, stats (etiquete heuristique), **deck 6 cartes
+  avec raisons PAR CARTE** sur valeurs reelles + **swap par slot**
+  (`recommendSupportDeck` gagne `pinnedIds`/`excludedIds` + `benchByType`;
+  `buildAutoPrepPlan` propage `pinnedDeckIds`/`excludedDeckIds` -> le plan entier
+  se recalcule), skills, scenario (badge "curated"), spec parents, chaque
+  section avec un "why" depliable.
+- **Readouts deterministes**: `renderBuildFeasibilityPanel` +
+  `renderBuildSpurtPanel` reutilises tels quels via une entry synthetique
+  (meme garde-fou "piste unique": affiche "Track ambiguous" sinon).
+- **Actions**: swap par slot + Reset swaps, Regenerate, **Save as build draft**
+  (seed de l'editeur existant, aucune ecriture roster). L'ancienne reco de la
+  fiche `cm_targets` reste fonctionnelle (compat).
+
+Reste du chantier: Phase 3 (boucle reelle `run_results`), Phase 4 (meta/uma.moe
+via les `weights?`), cadrees separement.
+
 ## Estimation
 
 - Phase 1: le gros morceau (~2-3 sessions), surtout 1a et 1e

@@ -671,6 +671,38 @@ corrige une serie de problemes invisibles en test (detail par item dans
   layouts pleine largeur, batch compact 3 colonnes avec suppression
   multiple cochable
 
+### 17. Auto Prep — moteur (Phase 1) + UI (Phase 2)
+
+Plan complet: `docs/AUTO_PREP_PLAN.md` (+ son "Journal de livraison"). Objectif:
+remplacer la prepa CM faite via ChatGPT par du deterministe explicable sur le
+roster reel — l'utilisateur donne la cible, l'app rend un plan complet justifie.
+
+- **Phase 1 (moteur pur, teste)** dans `build_recommender.js`:
+  `scoreSupportForTarget` score les decks sur les **valeurs effectives reelles**
+  (`effective_effects` de la projection roster-view, au niveau/LB reel de la
+  carte) via un modele de poids par familles documente + hook `weights?` (meta,
+  phase 4); `recommendParentSpec` (spec de sparks, **jamais** de parents
+  concrets); `recommendScenario` (table curee etiquetee); bonus skills
+  course-aware **gate** sur piste unique (reutilise `resolveStaticZones`);
+  `buildAutoPrepPlan` agrege le tout en UN objet plan serialisable avec
+  `reasons[]` partout. Valide par un spike sur p_001.
+- **Phase 2 (UI)**: route `#/prep` (gate-like, sidebar visible), le CTA home et
+  la section CM Prep y menent. Une page de plan lisible de haut en bas: uma
+  retenue + alternatives cliquables (re-genere), style, stats, **deck 6 cartes
+  avec raisons PAR CARTE** sur les valeurs reelles ("Friendship Bonus 20
+  @Lv40 +66.67") et **swap par slot** (pin/exclude -> le plan entier se
+  recalcule), skills, scenario, spec parents, chaque section avec un "why"
+  depliable. Panneaux **Feasibility + Last Spurt reutilises** tels quels via une
+  entry synthetique (meme garde-fou "piste unique"). **Save as build draft**
+  seede l'editeur classique (qui reste le mode expert). Pont DOM/moteur unique:
+  `catalog.buildAutoPrepPlanForDetail`; glue pure testee dans `prep.js`
+  (`selectDefaultTargetId`, `planToBuildSeed`).
+- Verifie en navigateur de bout en bout sur le roster reel p_001 (deck sur
+  valeurs effectives, alternatives, swaps, save-as-draft, readouts, zero erreur
+  console). Compat: l'ancienne reco de la fiche `cm_targets` reste fonctionnelle.
+- Reste: Phase 3 (boucle `run_results` "la derniere fois") et Phase 4
+  (meta/uma.moe, injectee via les `weights?`), cadrees separement.
+
 ## Choix techniques et justification
 
 ### Manifest + JSON versionnes plutot que scraping HTML
