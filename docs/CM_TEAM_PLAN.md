@@ -68,7 +68,22 @@ recommandeur debuffer **priorise les skills de debuff** et donne la consigne
 par distance en **texte étiqueté**, sans auto-filtrer par stat (heuristique
 honnête, comme le reste).
 
-## Phase 1 — moteur (modules purs + tests, zéro UI)
+## Phase 1 — moteur — LIVREE (13/07/2026)
+
+Tout dans `build_recommender.js` (pur, testé), zéro UI. Suite verte (234 JS).
+API livrée : `TEAM_ROLES`, `recommendDebufferSkills` (+ `debufferDistanceGuidance`),
+`roleStatTarget`, `scoreCharacterForRole`, `teamStyleSpread`,
+`buildAutoPrepTeamPlan`. L'As reste `buildAutoPrepPlan` (compat intacte).
+
+Validé par un spike sur données réelles (cible Gemini Cup Long Turf 3200m) :
+As = Special Week (leader, fit 1) ; **Debuffer = Matikanefukukitaru** (betweener,
+Wit 1200, skills de debuff **détectés dans son kit** : Illusionist / Smoke Screen
+/ Hesitant Front Runners, consigne « stamina debuffs ») ; Pacer = Seiun Sky
+(runner). Styles ["leader","betweener","runner"] → spread complet, meneur présent.
+Choix cohérents avec la meta réelle (Matikanefukukitaru est un debuffer connu,
+Seiun Sky un meneur connu).
+
+### API (détail)
 
 Dans `build_recommender.js` (réutilise tout l'existant), ou un module dédié si
 ça grossit trop. API visée :
