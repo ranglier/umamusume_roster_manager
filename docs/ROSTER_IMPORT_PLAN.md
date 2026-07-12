@@ -248,6 +248,16 @@ Premiere session d'usage reel (retours utilisateur, tous corriges):
   ont ete essayes et ecartes (39/68 et 36/68)
 - **vocabulaire**: "Potential" partout dans l'UI d'import (le champ roster
   reste `awakening`, meme chose — nom historique de l'app)
+- **performances de la table de reconciliation** (bug utilisateur "l'appli
+  se fige a chaque changement"): chaque edition declenchait un re-render
+  global de l'app, et chaque ligne portait le catalogue complet dans son
+  dropdown (~550 options x ~170 lignes ~ 90k noeuds reconstruits a chaque
+  blur). Desormais: dropdown compact (top-3 + selection courante), catalogue
+  injecte a l'ouverture du select uniquement (expandCardSelect), et les
+  editions patchent la seule ligne touchee + la barre d'application
+  (refreshRowDom/updateApplyBar) sans aucun re-render global. Mesure: 5
+  options/select au chargement, edition en ~1.4ms, identite DOM des autres
+  lignes preservee
 - **famille de tier par cadre dore** (regle du jeu fournie par
   l'utilisateur): le cadre de la vignette uma devient DORE quand le
   potential est >=3, argent sinon. Le cadre est opaque, contrairement au

@@ -489,7 +489,7 @@ function rowDiffStatus(mode, row, itemsById) {
   return { kind: "unchanged", label: "Unchanged" };
 }
 
-function renderRowMatchSelect(row, itemsById, sortedItems) {
+function renderRowMatchSelect(row, itemsById) {
   const options = [`<option value="">— pick a card —</option>`];
   const seen = new Set();
   for (const candidate of row.top3) {
@@ -501,21 +501,40 @@ function renderRowMatchSelect(row, itemsById, sortedItems) {
     const label = `${item.title}${item.subtitle ? ` ${item.subtitle}` : ""} (d=${candidate.distance})`;
     options.push(`<option value="${escapeHtml(candidate.id)}" ${row.cardId === candidate.id ? "selected" : ""}>${escapeHtml(label)}</option>`);
   }
-  // Full catalog after the candidates: uncovered variants are not in the
-  // top-3 at all, and a manual pick here is what feeds the learning store.
-  options.push(`<option value="" disabled>——— all cards ———</option>`);
-  for (const item of sortedItems) {
-    const id = String(item.id);
-    if (seen.has(id)) {
-      continue;
-    }
-    const label = `${item.title}${item.subtitle ? ` ${item.subtitle}` : ""}`;
-    options.push(`<option value="${escapeHtml(id)}" ${row.cardId === id ? "selected" : ""}>${escapeHtml(label)}</option>`);
+  if (row.cardId && !seen.has(row.cardId)) {
+    const item = itemsById.get(row.cardId);
+    seen.add(row.cardId);
+    options.push(`<option value="${escapeHtml(row.cardId)}" selected>${escapeHtml(item ? `${item.title}${item.subtitle ? ` ${item.subtitle}` : ""}` : row.cardId)}</option>`);
   }
-  return `<select data-import-field="cardId" data-import-key="${escapeHtml(row.key)}">${options.join("")}</select>`;
+  // The full catalog (~550 entries) is injected lazily on first open:
+  // embedding it in every row froze the tab on each re-render with real
+  // rosters (hundreds of rows x hundreds of options).
+  options.push(`<option value="" disabled data-all-marker>— open to load all cards —</option>`);
+  return `<select data-import-field="cardId" data-import-key="${escapeHtml(row.key)}" data-expanded="0">${options.join("")}</select>`;
 }
 
-function renderImportRow(mode, row, itemsById, sortedItems) {
+function expandCardSelect(select, sortedItems) {
+  if (select.dataset.expanded === "1") {
+    return;
+  }
+  select.dataset.expanded = "1";
+  const present = new Set(Array.from(select.options).map((option) => option.value).filter(Boolean));
+  const marker = select.querySelector("[data-all-marker]");
+  if (marker) {
+    marker.textContent = "——— all cards ———";
+  }
+  const parts = [];
+  for (const item of sortedItems) {
+    const id = String(item.id);
+    if (present.has(id)) {
+      continue;
+    }
+    parts.push(`<option value="${escapeHtml(id)}">${escapeHtml(`${item.title}${item.subtitle ? ` ${item.subtitle}` : ""}`)}</option>`);
+  }
+  select.insertAdjacentHTML("beforeend", parts.join(""));
+}
+
+function renderImportRow(mode, row, itemsById) {
   const status = rowDiffStatus(mode, row, itemsById);
   const item = row.cardId ? itemsById.get(row.cardId) : null;
 
@@ -526,12 +545,12 @@ function renderImportRow(mode, row, itemsById, sortedItems) {
   warnings.push(...mode.warnings(row, item));
 
   return `
-    <tr class="import-row import-row-${status.kind}">
+    <tr class="import-row import-row-${status.kind}" data-import-row="${escapeHtml(row.key)}">
       <td><input type="checkbox" data-import-field="include" data-import-key="${escapeHtml(row.key)}" ${row.include ? "checked" : ""} ${status.kind === "unknown" ? "disabled" : ""}></td>
       <td><img class="import-cell-thumb" src="${row.thumb}" alt="captured cell" title="Click to enlarge" data-import-preview="${escapeHtml(row.key)}"></td>
       <td class="import-match-cell">
         ${item ? `<img class="import-ref-thumb" src="${escapeHtml(resolveMediaAssetSrc(mode.displaySrc(item)))}" alt="">` : ""}
-        ${renderRowMatchSelect(row, itemsById, sortedItems)}
+        ${renderRowMatchSelect(row, itemsById)}
       </td>
       ${mode.renderValueCells(row)}
       <td>
@@ -587,13 +606,13 @@ export function renderRosterImportPanel(entityKey) {
       </div>
       ${rows.length ? `
         <div class="import-apply-bar">
-          <strong>${selectedCount}</strong> row(s) selected
+          <strong id="importSelectedCount">${selectedCount}</strong> row(s) selected
           <button type="button" class="button-strong" id="importApplyButton" ${selectedCount && !current.processing ? "" : "disabled"}>Apply to my roster</button>
         </div>
         <div class="import-table-wrap">
           <table class="import-table">
             <thead>${tableHead}</thead>
-            <tbody>${visible.map((row) => renderImportRow(mode, row, itemsById, sortedItems)).join("")}</tbody>
+            <tbody>${visible.map((row) => renderImportRow(mode, row, itemsById)).join("")}</tbody>
           </table>
         </div>
         ${unchangedRows.length ? `
@@ -602,7 +621,7 @@ export function renderRosterImportPanel(entityKey) {
             <div class="import-table-wrap">
               <table class="import-table">
                 <thead>${tableHead}</thead>
-                <tbody>${unchangedRows.map((row) => renderImportRow(mode, row, itemsById, sortedItems)).join("")}</tbody>
+                <tbody>${unchangedRows.map((row) => renderImportRow(mode, row, itemsById)).join("")}</tbody>
               </table>
             </div>
           </details>
@@ -611,7 +630,7 @@ export function renderRosterImportPanel(entityKey) {
     </div>
   `;
 
-  attachImportListeners(modeKey);
+  attachImportListeners(modeKey, itemsById, sortedItems);
 }
 
 function findRow(modeKey, key) {
@@ -679,7 +698,7 @@ function openImportPreview(modeKey, row) {
   document.addEventListener("keydown", onImportPreviewKeydown);
 }
 
-function attachImportListeners(modeKey) {
+function attachImportListeners(modeKey, itemsById, sortedItems) {
   const mode = IMPORT_MODES[modeKey];
   const fileInput = document.getElementById("importFileInput");
   if (fileInput) {
@@ -731,24 +750,77 @@ function attachImportListeners(modeKey) {
     });
   }
 
-  listEl.querySelectorAll("[data-import-action='remove']").forEach((button) => {
-    button.addEventListener("click", () => {
-      const current = importState(modeKey);
-      current.results = current.results.filter((row) => row.key !== button.dataset.importKey);
-      requestRenderPreservingScroll();
-    });
-  });
+  const rowContext = { modeKey, mode, itemsById, sortedItems };
+  listEl.querySelectorAll("tr[data-import-row]").forEach((tr) => bindRowEvents(tr, rowContext));
 
-  listEl.querySelectorAll("[data-import-preview]").forEach((img) => {
-    img.addEventListener("click", () => {
-      const row = findRow(modeKey, img.dataset.importPreview);
+  const applyButton = document.getElementById("importApplyButton");
+  if (applyButton) {
+    applyButton.addEventListener("click", async () => {
+      await applySelectedRows(modeKey);
+    });
+  }
+}
+
+// Editing a row must NOT trigger a global re-render: with a real roster
+// (hundreds of rows) rebuilding the whole panel froze the tab on every
+// blur (user-reported). Edits update the row state, then patch only the
+// affected <tr> (and the apply bar) in place.
+function updateApplyBar(modeKey) {
+  const rows = importState(modeKey).results;
+  const count = rows.filter((row) => row.include && row.cardId).length;
+  const countEl = document.getElementById("importSelectedCount");
+  if (countEl) {
+    countEl.textContent = String(count);
+  }
+  const applyButton = document.getElementById("importApplyButton");
+  if (applyButton) {
+    applyButton.disabled = !count || importState(modeKey).processing;
+  }
+}
+
+function refreshRowDom(ctx, row) {
+  const tr = listEl.querySelector(`tr[data-import-row="${CSS.escape(row.key)}"]`);
+  if (!tr) {
+    return;
+  }
+  const template = document.createElement("template");
+  template.innerHTML = renderImportRow(ctx.mode, row, ctx.itemsById).trim();
+  const fresh = template.content.firstElementChild;
+  tr.replaceWith(fresh);
+  bindRowEvents(fresh, ctx);
+}
+
+function bindRowEvents(tr, ctx) {
+  const { modeKey, mode } = ctx;
+
+  const removeButton = tr.querySelector("[data-import-action='remove']");
+  if (removeButton) {
+    removeButton.addEventListener("click", () => {
+      const current = importState(modeKey);
+      current.results = current.results.filter((row) => row.key !== removeButton.dataset.importKey);
+      tr.remove();
+      updateApplyBar(modeKey);
+    });
+  }
+
+  const preview = tr.querySelector("[data-import-preview]");
+  if (preview) {
+    preview.addEventListener("click", () => {
+      const row = findRow(modeKey, preview.dataset.importPreview);
       if (row) {
         openImportPreview(modeKey, row);
       }
     });
-  });
+  }
 
-  listEl.querySelectorAll("[data-import-field]").forEach((input) => {
+  const cardSelect = tr.querySelector("[data-import-field='cardId']");
+  if (cardSelect) {
+    const expand = () => expandCardSelect(cardSelect, ctx.sortedItems);
+    cardSelect.addEventListener("mousedown", expand);
+    cardSelect.addEventListener("focus", expand);
+  }
+
+  tr.querySelectorAll("[data-import-field]").forEach((input) => {
     input.addEventListener("change", () => {
       const row = findRow(modeKey, input.dataset.importKey);
       if (!row) {
@@ -757,7 +829,10 @@ function attachImportListeners(modeKey) {
       const field = input.dataset.importField;
       if (field === "include") {
         row.include = input.checked;
-      } else if (field === "cardId") {
+        updateApplyBar(modeKey);
+        return;
+      }
+      if (field === "cardId") {
         row.cardId = String(input.value || "");
         row.matchConfident = Boolean(row.cardId);
         // A manual pick is what feeds the learning store on apply.
@@ -769,16 +844,10 @@ function attachImportListeners(modeKey) {
       } else {
         mode.onFieldChange(row, field, input);
       }
-      requestRenderPreservingScroll();
+      refreshRowDom(ctx, row);
+      updateApplyBar(modeKey);
     });
   });
-
-  const applyButton = document.getElementById("importApplyButton");
-  if (applyButton) {
-    applyButton.addEventListener("click", async () => {
-      await applySelectedRows(modeKey);
-    });
-  }
 }
 
 async function applySelectedRows(modeKey) {
