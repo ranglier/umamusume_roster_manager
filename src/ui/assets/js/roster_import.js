@@ -32,7 +32,7 @@ import {
   umaReferenceFingerprint,
 } from "./roster_import_cv.js";
 import { getRosterEntry, setRosterEntry } from "./roster.js";
-import { persistRosterDocument, requestRenderPreservingScroll } from "../app.js";
+import { persistRosterDocument, refreshRosterFromServer, requestRenderPreservingScroll } from "../app.js";
 
 const FETCH_CONCURRENCY = 8;
 // Level digits read below this agreement are unreliable (correct reads sit
@@ -788,6 +788,8 @@ async function applySelectedRows(modeKey) {
   if (!selected.length) {
     return;
   }
+  // Base the merge on the freshest server state (see refreshRosterFromServer).
+  await refreshRosterFromServer();
   for (const row of selected) {
     const item = itemsById.get(row.cardId);
     const entry = { ...getRosterEntry(mode.entityKey, item), owned: true };

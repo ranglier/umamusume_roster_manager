@@ -248,6 +248,23 @@ Premiere session d'usage reel (retours utilisateur, tous corriges):
   ont ete essayes et ecartes (39/68 et 36/68)
 - **vocabulaire**: "Potential" partout dans l'UI d'import (le champ roster
   reste `awakening`, meme chose — nom historique de l'app)
+- **famille de tier par cadre dore** (regle du jeu fournie par
+  l'utilisateur): le cadre de la vignette uma devient DORE quand le
+  potential est >=3, argent sinon. Le cadre est opaque, contrairement au
+  bandeau translucide dont la teinte du texte servait avant (l'art orange
+  qui saigne a travers produisait des faux positifs, 2 observes sur 70
+  cellules). Mesure: cadres dores r-b >= 73, argent <= 20, seuil a 45 —
+  frameIsGold remplace tierIsOrange dans readUmaPotential
+- **suppression multiple en mode batch** (demande utilisateur): case a
+  cocher par carte + bouton "Remove selected" (confirm avec compte) pour
+  characters et supports
+- **anti-resurrection** (bug utilisateur "mes suppressions reviennent"):
+  le PUT roster est un document entier, dernier ecrivain gagnant — un
+  onglet perime (autre fenetre, ou session de verification de l'assistant)
+  qui sauvait ressuscitait les suppressions faites ailleurs. Tous les flux
+  de mutation (formulaire, batch, import, add/remove/reset) rafraichissent
+  desormais le document depuis le serveur juste avant de muter
+  (refreshRosterFromServer)
 - **section "already up to date" persistante + suppression de ligne**
   (retours utilisateur): l'etat ouvert/replie du details survit aux
   re-renders declenches par l'edition (importState.unchangedOpen, meme

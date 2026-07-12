@@ -3696,6 +3696,14 @@ body.route-wizard .profile-gate::after {
   color: var(--accent);
 }
 
+.batch-select {
+  width: 17px;
+  height: 17px;
+  flex: none;
+  accent-color: var(--accent-4);
+  cursor: pointer;
+}
+
 .import-remove-button {
   padding: 2px 9px;
   border: 1px solid rgba(255, 139, 102, 0.25);

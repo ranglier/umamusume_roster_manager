@@ -854,7 +854,6 @@ export function readUmaStars(cellImg) {
 // templates captured from a real device screenshot. Binarized masks do NOT
 // work here: the banner is translucent and the art bleeds through it.
 
-const UMA_TIER_BAND = Object.freeze({ x0: 14, y0: 146, x1: 166, y1: 174 });
 const UMA_DIGIT_BOX = Object.freeze({ x0: 136, y0: 146, x1: 170, y1: 172 });
 const UMA_DIGIT_W = UMA_DIGIT_BOX.x1 - UMA_DIGIT_BOX.x0;
 const UMA_DIGIT_H = UMA_DIGIT_BOX.y1 - UMA_DIGIT_BOX.y0;
@@ -892,26 +891,38 @@ const UMA_DIGIT_TEMPLATES = Object.entries(UMA_DIGIT_TEMPLATES_RAW).map(([value,
   return { value: Number(value), family: raw.f, values, maskIdx };
 });
 
-function tierIsOrange(cellImg) {
+// Tier family via the CARD FRAME color (user-provided game rule): the cell
+// frame turns GOLD when the potential is 3+ and stays silver below. The frame
+// is opaque, unlike the translucent banner whose text tint the engine used
+// before — orange-ish art bleeding through the banner produced false
+// "orange text" positives that the frame is immune to. Measured on two full
+// captures: gold frames read r-b >= 73, silver ones <= 20.
+const UMA_FRAME_GOLD_THRESHOLD = 45;
+
+function frameIsGold(cellImg) {
   const sx = cellImg.width / UMA_GRID.cellWidth;
   const sy = cellImg.height / UMA_GRID.cellHeight;
-  const x0 = Math.round(UMA_TIER_BAND.x0 * sx);
-  const x1 = Math.min(Math.round(UMA_TIER_BAND.x1 * sx), cellImg.width);
-  const y0 = Math.round(UMA_TIER_BAND.y0 * sy);
-  const y1 = Math.min(Math.round(UMA_TIER_BAND.y1 * sy), cellImg.height);
-  let orange = 0;
-  for (let y = y0; y < y1; y += 1) {
-    for (let x = x0; x < x1; x += 1) {
+  const stripXs = [];
+  for (let x = 1; x <= 5; x += 1) {
+    stripXs.push(Math.round(x * sx));
+  }
+  for (let x = 174; x <= 178; x += 1) {
+    stripXs.push(Math.min(Math.round(x * sx), cellImg.width - 1));
+  }
+  const y0 = Math.round(50 * sy);
+  const y1 = Math.min(Math.round(130 * sy), cellImg.height);
+  let redSum = 0;
+  let blueSum = 0;
+  let count = 0;
+  for (const x of stripXs) {
+    for (let y = y0; y < y1; y += Math.max(1, Math.round(4 * sy))) {
       const i = (y * cellImg.width + x) * 4;
-      const r = cellImg.data[i];
-      const g = cellImg.data[i + 1];
-      const b = cellImg.data[i + 2];
-      if (r > 190 && g > 60 && g < 190 && b < 90) {
-        orange += 1;
-      }
+      redSum += cellImg.data[i];
+      blueSum += cellImg.data[i + 2];
+      count += 1;
     }
   }
-  return orange > 100 * sx * sy;
+  return count > 0 && (redSum - blueSum) / count > UMA_FRAME_GOLD_THRESHOLD;
 }
 
 function digitWindowLum(cellImg, dx, dy) {
@@ -962,7 +973,7 @@ function maskedNcc(template, candidate) {
 }
 
 export function readUmaPotential(cellImg) {
-  const family = tierIsOrange(cellImg) ? "o" : "b";
+  const family = frameIsGold(cellImg) ? "o" : "b";
   const candidates = UMA_DIGIT_TEMPLATES.filter((t) => t.family === family);
   const sx = cellImg.width / UMA_GRID.cellWidth;
   const jy = Math.max(3, Math.round(7 * sx));

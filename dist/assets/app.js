@@ -3,7 +3,7 @@
 import { activeProfileBlock, activeProfileNameEl, adminButton, allowedEntityKeys, appSidebarEl, asArray, backToTopButton, BUILD_RUNNING_STYLE_OPTIONS, BUILD_STATUS_OPTIONS, browseActionsEl, buildsEntityKey, changeProfileButton, clearButton, collectionEntityKeys, compactLayoutQuery, createEntityState, currentRouteState, data, datasetBarEl, datasetHeadingEl, defaultEntityKeyForMode, defaultProfilesIndex, detailColumnEl, detailEl, detailPanelEl, entityMetaEl, entityTitleEl, filtersEl, getActiveProfile, getBuildTargetOptions, getEntityItems, getLoadedReferenceGeneratedAt, getRosterViewEntry, getRosterViewPayload, getViewState, globalBuild, hasLoadedReferenceBundle, lastBuildBlock, legacyEntityKey, listEl, navEl, normalizeProfilesIndex, normalizeRosterDocument, normalizeRosterViewPayload, pageTitleEl, profileBackgroundMediaEl, profileBackgroundVideoEl, profileGateEl, referenceEntityKeys, renderGradeBadge, resetBuildsDocument, resetLegacyViewPayload, resultCountEl, resultsPanelEl, rosterEntityKeys, searchInput, setAdminHash, setBrowseHash, setHomeHash, setProfilesHash, setWizardHash, SIDEBAR_SECTIONS, sidebarSectionForRoute, sidebarSectionsEl, state, summaryText, syncSelectedProfileId, toolbarEl, topHeaderEl, viewStateByKey } from "./js/core.js";
 import { escapeHtml, formatDateTime, renderBadge, renderDetailHeader, renderLinks, renderResultTop } from "./js/dom-utils.js";
 import { attachCmTargetRecommendationListeners, attachRacetrackVisualizerListeners, getCmTargetDeck, getCmTargetRecommendations, renderCatalogSupportQuickAdd, renderCharacters, renderCmTargets, renderCompatibility, renderG1Factors, renderRaces, renderRacetracks, renderScenarios, renderSkills, renderSupports, renderTrainingEvents } from "./js/catalog.js";
-import { attachRosterFormListeners, collectRosterFormData, getDefaultRosterEntry, getRosterBadges, getRosterEntry, getRosterFilterDefinitions, getRosterFilterOptions, renderBatchList, renderReferenceRosterActions, renderRosterCardProgress, renderRosterEditor, rosterCountForEntity, saveVisibleBatchRows, setRosterEntry } from "./js/roster.js";
+import { attachRosterFormListeners, collectRosterFormData, getDefaultRosterEntry, getRosterBadges, getRosterEntry, getRosterFilterDefinitions, getRosterFilterOptions, removeSelectedBatchRows, renderBatchList, renderReferenceRosterActions, renderRosterCardProgress, renderRosterEditor, rosterCountForEntity, saveVisibleBatchRows, setRosterEntry } from "./js/roster.js";
 import { attachLegacyFormListeners, getCharacterRosterDefaults, getLegacyCharacterOptions, renderLegacyDetailBody, renderLegacyEditor, renderLegacyPreview, renderLegacySimulatorList } from "./js/legacy.js";
 import { attachBuildFormListeners, createEmptyBuildEntry, renderBuildEditor, startSeededBuildDraft } from "./js/builds.js";
 import { loadBuildsForProfile, loadLegacyForProfile, loadRunsForProfile, openProfile, refreshAdminData, renderAdminPage, renderProfilesPage, renderWizardPage, runAdminJob, wizardNeedsReferenceBuild } from "./js/admin.js";
@@ -546,6 +546,7 @@ export function renderBrowseActions(route, filteredItems) {
         <button type="button" class="button-secondary" data-batch-favorite="no">Unfavorite filtered</button>
         <button type="button" class="button-secondary" data-batch-tag="add">Add tag</button>
         <button type="button" class="button-secondary" data-batch-tag="remove">Remove tag</button>
+        <button type="button" class="button-danger" data-batch-remove>Remove selected</button>
       </div>
     ` : ""}
   `;
@@ -578,6 +579,21 @@ export function renderBrowseActions(route, filteredItems) {
     });
   });
 
+  const removeSelectedButton = browseActionsEl.querySelector("[data-batch-remove]");
+  if (removeSelectedButton) {
+    removeSelectedButton.addEventListener("click", async () => {
+      const selectedIds = Array.from(listEl.querySelectorAll("[data-batch-select]:checked")).map((box) => box.dataset.batchSelect);
+      if (!selectedIds.length) {
+        window.alert("Tick the checkbox on the entries to remove first.");
+        return;
+      }
+      if (!window.confirm(`Remove ${selectedIds.length} entr${selectedIds.length === 1 ? "y" : "ies"} from the roster?`)) {
+        return;
+      }
+      await removeSelectedBatchRows(route.entityKey, selectedIds);
+    });
+  }
+
   const saveBatchAllButton = browseActionsEl.querySelector("[data-save-batch-all]");
   if (saveBatchAllButton) {
     saveBatchAllButton.addEventListener("click", async () => {
@@ -587,6 +603,7 @@ export function renderBrowseActions(route, filteredItems) {
 }
 
 export async function applyBatchFavorite(entityKey, filteredItems, nextValue) {
+  await refreshRosterFromServer();
   filteredItems.forEach((item) => {
     const entry = getRosterEntry(entityKey, item);
     setRosterEntry(entityKey, item, {
@@ -599,6 +616,7 @@ export async function applyBatchFavorite(entityKey, filteredItems, nextValue) {
 }
 
 export async function applyBatchTag(entityKey, filteredItems, action, rawTag) {
+  await refreshRosterFromServer();
   filteredItems.forEach((item) => {
     const entry = getRosterEntry(entityKey, item);
     const tags = new Set(asArray(entry.custom_tags));
@@ -1382,6 +1400,25 @@ export async function loadRosterForProfile(profileId, force) {
   state.rosterStatus = { kind: "idle", message: "" };
 }
 
+// The roster save is a whole-document PUT: last writer wins. A stale tab
+// (another window, or an assistant verification session) that saves an old
+// document silently resurrects entries deleted elsewhere — observed in real
+// use. Every mutation flow therefore refreshes the document from the server
+// first, so its changes land on top of the latest saved state.
+export async function refreshRosterFromServer() {
+  if (!state.activeProfileId) {
+    return;
+  }
+  try {
+    const serverRoster = await apiJson(`/api/profiles/${encodeURIComponent(state.activeProfileId)}/roster`);
+    state.rosterDocument = normalizeRosterDocument(serverRoster);
+    state.rosterProfileId = state.activeProfileId;
+  } catch {
+    // Server unreachable: keep the local document; the save itself will
+    // fail and resync through persistRosterDocument's error path.
+  }
+}
+
 export async function loadRosterViewsForProfile(profileId, force) {
   if (!profileId) {
     state.rosterViews.characters = normalizeRosterViewPayload("characters", null);
@@ -1543,11 +1580,13 @@ export async function persistRosterDocument(successMessage, scope = null) {
 
 export async function saveRosterForm(entityKey, item, formEl) {
   const nextEntry = collectRosterFormData(entityKey, item, formEl);
+  await refreshRosterFromServer();
   setRosterEntry(entityKey, item, nextEntry);
   await persistRosterDocument(`Saved locally on ${formatDateTime(new Date().toISOString())}.`, `${entityKey}:${item.id}`);
 }
 
 export async function addItemToRoster(entityKey, item) {
+  await refreshRosterFromServer();
   const currentEntry = getRosterEntry(entityKey, item);
   setRosterEntry(entityKey, item, {
     ...currentEntry,
@@ -1557,6 +1596,7 @@ export async function addItemToRoster(entityKey, item) {
 }
 
 export async function removeItemFromRoster(entityKey, item) {
+  await refreshRosterFromServer();
   const bucket = { ...(state.rosterDocument[entityKey] || {}) };
   delete bucket[item.id];
   state.rosterDocument = {
@@ -1572,6 +1612,7 @@ export async function removeItemFromRoster(entityKey, item) {
 }
 
 export async function resetRosterEntry(entityKey, item) {
+  await refreshRosterFromServer();
   const bucket = { ...(state.rosterDocument[entityKey] || {}) };
   delete bucket[item.id];
   state.rosterDocument = {

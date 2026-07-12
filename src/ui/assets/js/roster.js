@@ -2,7 +2,7 @@
 import { asArray, buildsEntityKey, data, getActiveProfile, getRosterViewEntry, getRosterViewPayload, getSupportEntryLevelCap, getViewState, legacyEntityKey, listEl, rosterEntityKeys, rosterFilterDefinitionsBase, setBrowseHash, state } from "./core.js";
 import { clampNumber, clampRatio, escapeHtml, parseRosterTokenList, renderLinkedSkillList, renderProgressMetric, renderStatePill, tableFromRows } from "./dom-utils.js";
 import { formatSupportEffectValue } from "./catalog.js";
-import { persistRosterDocument, removeItemFromRoster, resetRosterEntry, saveRosterForm, showAppToast } from "../app.js";
+import { persistRosterDocument, refreshRosterFromServer, removeItemFromRoster, resetRosterEntry, saveRosterForm, showAppToast } from "../app.js";
 
 
 export function renderSupportCurrentEffects(projection) {
@@ -413,6 +413,7 @@ export function renderBatchList(entityKey, filteredItems) {
     return `
       <article class="batch-card" data-batch-row="${escapeHtml(item.id)}">
         <div class="batch-card-head">
+          <input type="checkbox" class="batch-select" title="Select for removal" data-batch-select="${escapeHtml(item.id)}">
           <button type="button" class="batch-open-button" data-open-item="${escapeHtml(item.id)}">${escapeHtml(item.title)}</button>
           <div class="batch-row-subtitle">${escapeHtml(item.subtitle || "")}</div>
         </div>
@@ -501,6 +502,7 @@ export function collectBatchRowData(entityKey, item, row) {
 }
 
 export async function saveVisibleBatchRows(entityKey, filteredItems) {
+  await refreshRosterFromServer();
   const rows = Array.from(listEl.querySelectorAll("[data-batch-row]"));
   let savedCount = 0;
   rows.forEach((row) => {
@@ -516,6 +518,30 @@ export async function saveVisibleBatchRows(entityKey, filteredItems) {
   }
   await persistRosterDocument(`Saved ${savedCount} visible roster entries.`);
   showAppToast(`${savedCount} visible entries saved. You can leave batch mode.`, "success");
+}
+
+// Multi-delete for batch mode: drops the ticked entries from the roster
+// document entirely (same semantics as "Remove from roster" in the detail
+// form). Refreshes from the server first so a stale document cannot
+// resurrect entries deleted elsewhere.
+export async function removeSelectedBatchRows(entityKey, selectedIds) {
+  if (!selectedIds.length) {
+    return;
+  }
+  await refreshRosterFromServer();
+  const bucket = { ...(state.rosterDocument[entityKey] || {}) };
+  let removed = 0;
+  for (const id of selectedIds) {
+    if (bucket[id]) {
+      delete bucket[id];
+      removed += 1;
+    }
+  }
+  state.rosterDocument = {
+    ...state.rosterDocument,
+    [entityKey]: bucket,
+  };
+  await persistRosterDocument(`Removed ${removed} entr${removed === 1 ? "y" : "ies"} from the roster.`);
 }
 
 
