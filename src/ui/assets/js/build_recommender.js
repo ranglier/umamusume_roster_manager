@@ -430,10 +430,37 @@ function categoryWeight(category, targetProfile) {
   return weight;
 }
 
+// --- Phase 1d (Auto Prep): course-aware skill bonus, GATED. When (and only
+// when) a cm_target resolves to a SINGLE racetrack (same guard as the Feasibility
+// / Last-Spurt panels - getBuildTargetRacetrack returns null for 2+ candidates),
+// a skill that actually fires in a static zone ON THIS TRACK is worth more than
+// one whose trigger never lands. We reuse the visualizer's resolveStaticZones
+// verbatim, injected so this pure module stays free of the visualizer/DOM. With
+// no single track, no counter is passed and behavior is unchanged. ---
+
+const ZONE_BONUS_PER = 15;
+const ZONE_BONUS_MAX_ZONES = 2;
+
+// makeSkillZoneCounter(course, resolveStaticZonesFn) -> (skillItem) => zoneCount.
+// Mirrors catalog.js's per-skill resolution; `course` is a single racetrack's
+// detail geometry, `resolveStaticZonesFn` is visualizer.resolveStaticZones.
+export function makeSkillZoneCounter(course, resolveStaticZonesFn) {
+  return (skillItem) => {
+    const groups = skillItem?.detail?.condition_groups || [];
+    let total = 0;
+    for (const group of groups) {
+      const resolved = resolveStaticZonesFn(group.condition, group.precondition, course);
+      total += (resolved?.zones || []).length;
+    }
+    return total;
+  };
+}
+
 // poolSkillItems: resolved reference skill items (with detail.condition_groups
 // and detail.rarity), deduped by the caller or here. Returns a required/optional
-// shortlist plus a per-category count.
-export function recommendSkillsForBuild(poolSkillItems, targetProfile, { requiredLimit = 4, optionalLimit = 6 } = {}) {
+// shortlist plus a per-category count and the scored entries. Pass
+// `courseZoneCounter` (see makeSkillZoneCounter) to add the gated track bonus.
+export function recommendSkillsForBuild(poolSkillItems, targetProfile, { requiredLimit = 4, optionalLimit = 6, courseZoneCounter = null } = {}) {
   const seen = new Set();
   const scored = [];
   for (const item of poolSkillItems || []) {
@@ -444,7 +471,17 @@ export function recommendSkillsForBuild(poolSkillItems, targetProfile, { require
     const weight = categoryWeight(category, targetProfile);
     if (weight < 0) continue; // drop debuffs from a self-build
     const rarity = Number(item?.detail?.rarity) || 0;
-    scored.push({ id, title: item.title || id, category, score: weight + rarity * 3 });
+    let score = weight + rarity * 3;
+    let zones = 0;
+    const reasons = [`${category} skill`];
+    if (courseZoneCounter) {
+      zones = courseZoneCounter(item) || 0;
+      if (zones > 0) {
+        score += Math.min(zones, ZONE_BONUS_MAX_ZONES) * ZONE_BONUS_PER;
+        reasons.push(`activates on ${zones} zone${zones === 1 ? "" : "s"} of this track`);
+      }
+    }
+    scored.push({ id, title: item.title || id, category, score, zones, reasons });
   }
   scored.sort((a, b) => b.score - a.score);
 
@@ -468,6 +505,8 @@ export function recommendSkillsForBuild(poolSkillItems, targetProfile, { require
     optional: optional.map((entry) => entry.id),
     byCategory,
     poolSize: scored.length,
+    entries: scored,
+    courseAware: Boolean(courseZoneCounter),
   };
 }
 

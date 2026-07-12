@@ -7,6 +7,7 @@ import {
   proposeTargetStats,
   rankOwnedCharactersForTarget,
   recommendBuildForTarget,
+  makeSkillZoneCounter,
   recommendParentSpec,
   recommendScenario,
   recommendSkillsForBuild,
@@ -356,4 +357,30 @@ test("recommendSkillsForBuild ranks acceleration above speed above recovery", ()
   // accel and speed are required (in that priority order); recovery is optional.
   assert.deepEqual(result.required, ["a", "s"]);
   assert.deepEqual(result.optional, ["r"]);
+});
+
+// --- Phase 1d: course-aware skill bonus (gated on a single resolved track) ---
+
+test("makeSkillZoneCounter counts static zones across a skill's condition groups", () => {
+  const fakeResolve = (condition) => ({ zones: condition === "hit2" ? [{}, {}] : condition === "hit1" ? [{}] : [] });
+  const counter = makeSkillZoneCounter({ length_m: 2400 }, fakeResolve);
+  const skill = { detail: { condition_groups: [{ condition: "hit2" }, { condition: "miss" }, { condition: "hit1" }] } };
+  assert.equal(counter(skill), 3);
+});
+
+test("recommendSkillsForBuild applies the gated zone bonus only when a counter is passed", () => {
+  const pool = [makeSkill("a1", [31], 1), makeSkill("a2", [31], 1)]; // same category+rarity -> tie
+  // a2 fires on this track, a1 never does.
+  const counter = (item) => (item.id === "a2" ? 2 : 0);
+  const withTrack = recommendSkillsForBuild(pool, MEDIUM_TURF, { courseZoneCounter: counter });
+  assert.equal(withTrack.courseAware, true);
+  assert.equal(withTrack.required[0], "a2"); // zone bonus breaks the tie
+  const a2 = withTrack.entries.find((e) => e.id === "a2");
+  assert.equal(a2.zones, 2);
+  assert.match(a2.reasons.join(" "), /activates on 2 zones/);
+
+  // Without a counter, order is unchanged and no zone reasons appear.
+  const noTrack = recommendSkillsForBuild(pool, MEDIUM_TURF);
+  assert.equal(noTrack.courseAware, false);
+  assert.equal(noTrack.entries.every((e) => e.zones === 0), true);
 });
