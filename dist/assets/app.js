@@ -1498,11 +1498,12 @@ export function showAppToast(message, kind = "success") {
   }, 3400);
 }
 
-export async function persistRosterDocument(successMessage) {
+export async function persistRosterDocument(successMessage, scope = null) {
   if (!state.activeProfileId) {
     return;
   }
 
+  state.rosterStatusScope = scope;
   state.rosterStatus = { kind: "saving", message: "Saving locally..." };
   requestRender();
 
@@ -1523,6 +1524,18 @@ export async function persistRosterDocument(successMessage) {
       kind: "error",
       message: error.message || "Could not save the local roster entry.",
     };
+    // The caller mutated the local document BEFORE this save; keeping the
+    // rejected mutation would poison every later save from any screen (a
+    // whole-document PUT — observed in real use with an invalid
+    // unique_level blocking support saves). Resync from the server, which
+    // still holds the last valid state; keep the error message visible.
+    try {
+      const serverRoster = await apiJson(`/api/profiles/${encodeURIComponent(state.activeProfileId)}/roster`);
+      state.rosterDocument = normalizeRosterDocument(serverRoster);
+      state.rosterProfileId = state.activeProfileId;
+    } catch {
+      // Server unreachable: nothing to resync from.
+    }
   }
 
   requestRender();
@@ -1531,7 +1544,7 @@ export async function persistRosterDocument(successMessage) {
 export async function saveRosterForm(entityKey, item, formEl) {
   const nextEntry = collectRosterFormData(entityKey, item, formEl);
   setRosterEntry(entityKey, item, nextEntry);
-  await persistRosterDocument(`Saved locally on ${formatDateTime(new Date().toISOString())}.`);
+  await persistRosterDocument(`Saved locally on ${formatDateTime(new Date().toISOString())}.`, `${entityKey}:${item.id}`);
 }
 
 export async function addItemToRoster(entityKey, item) {

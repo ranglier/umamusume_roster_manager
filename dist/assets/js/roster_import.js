@@ -32,7 +32,7 @@ import {
   umaReferenceFingerprint,
 } from "./roster_import_cv.js";
 import { getRosterEntry, setRosterEntry } from "./roster.js";
-import { loadRosterForProfile, persistRosterDocument, requestRenderPreservingScroll } from "../app.js";
+import { persistRosterDocument, requestRenderPreservingScroll } from "../app.js";
 
 const FETCH_CONCURRENCY = 8;
 // Level digits read below this agreement are unreliable (correct reads sit
@@ -782,17 +782,15 @@ async function applySelectedRows(modeKey) {
 
   await persistRosterDocument(`Imported ${selected.length} ${mode.noun}(s) from screenshots.`);
 
-  // persistRosterDocument swallows its errors into rosterStatus. A failed PUT
-  // must NOT be reported as success here: the local mutations would live only
-  // in this tab (phantom "owned" entries the server never saw — observed in
-  // real use when the server restarted mid-session). Resync from the server
-  // so the table goes back to proposing the unsaved rows, and learn nothing.
+  // persistRosterDocument swallows its errors into rosterStatus (and now
+  // resyncs the document from the server itself). A failed PUT must NOT be
+  // reported as success here: the local mutations lived only in this tab
+  // (phantom "owned" entries the server never saw — observed in real use).
   if (state.rosterStatus?.kind === "error") {
-    await loadRosterForProfile(state.activeProfileId, true);
     setImportStatus(
       modeKey,
       "error",
-      `NOT saved: ${state.rosterStatus.message || "the roster save failed."} Your rows are still selected — apply again once the server is reachable.`,
+      `NOT saved: ${state.rosterStatus.message || "the roster save failed."} Your rows are still selected — fix the reported value or retry once the server is reachable.`,
     );
     requestRenderPreservingScroll();
     return;

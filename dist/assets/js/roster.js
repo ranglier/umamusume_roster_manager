@@ -550,7 +550,11 @@ export function renderRosterEditor(entityKey, item) {
   const entry = getRosterEntry(entityKey, item);
   const viewEntry = getRosterViewEntry(entityKey, item);
   const derived = viewEntry?.derived || null;
-  const statusText = state.rosterStatus.message || "Changes are stored locally for the active profile.";
+  // Only surface the save status that THIS form triggered: a global status
+  // (e.g. a failed save that concerns a character entry) has no business
+  // showing up in every other entity's detail panel.
+  const statusIsMine = state.rosterStatusScope === `${entityKey}:${item.id}`;
+  const statusText = (statusIsMine && state.rosterStatus.message) || "Changes are stored locally for the active profile.";
   const progressFields = entityKey === "characters"
     ? `
       <label class="field-stack">
@@ -616,7 +620,7 @@ export function renderRosterEditor(entityKey, item) {
           <button type="button" class="button-secondary" id="removeFromRosterButton">Remove from roster</button>
           <button type="button" class="button-secondary" id="rosterResetButton">Reset entry</button>
         </div>
-        <p id="rosterStatus" class="source-note ${state.rosterStatus.kind === "error" ? "error-text" : ""}">${escapeHtml(statusText)}</p>
+        <p id="rosterStatus" class="source-note ${statusIsMine && state.rosterStatus.kind === "error" ? "error-text" : ""}">${escapeHtml(statusText)}</p>
       </form>
     </div>
   `;

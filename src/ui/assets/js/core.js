@@ -389,6 +389,10 @@ export const state = {
     activeFormTab: "setup",
   },
   rosterStatus: { kind: "idle", message: "" },
+  // Which form triggered the last roster save ("<entityKey>:<itemId>", or
+  // null for bulk flows). Detail panels only display rosterStatus when it is
+  // theirs — a failed character save must not surface in a support panel.
+  rosterStatusScope: null,
   // Screenshot-based roster import (docs/ROSTER_IMPORT_PLAN.md), one slot per
   // importable entity. Reference fingerprints live in memory (hydrated from
   // localStorage); results carry the reviewed rows of the reconciliation table.

@@ -248,6 +248,15 @@ Premiere session d'usage reel (retours utilisateur, tous corriges):
   ont ete essayes et ecartes (39/68 et 36/68)
 - **vocabulaire**: "Potential" partout dans l'UI d'import (le champ roster
   reste `awakening`, meme chose — nom historique de l'app)
+- **resync sur echec + statut scope** (bug utilisateur "characters.
+  unique_level... affiche sur un panneau support"): persistRosterDocument
+  resynchronise desormais le document depuis le serveur quand le PUT echoue
+  (le document entier est envoye: une entree invalide laissee en local
+  empoisonnait toutes les sauvegardes suivantes, quel que soit l'ecran), et
+  le statut de sauvegarde n'apparait que dans le formulaire qui l'a
+  declenchee (state.rosterStatusScope). Verifie en simulant un 400: erreur
+  affichee uniquement sur le formulaire declencheur, panneau suivant neutre,
+  re-sauvegarde immediate reussie
 - **echec de sauvegarde honnete** (bug utilisateur "entrees fantomes":
   affichees Owned cote client mais absentes du serveur, projections vides,
   uniques a 0): persistRosterDocument avale ses erreurs dans rosterStatus et
