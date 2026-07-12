@@ -8,6 +8,7 @@ import {
   rankOwnedCharactersForTarget,
   recommendBuildForTarget,
   recommendParentSpec,
+  recommendScenario,
   recommendSkillsForBuild,
   recommendSupportDeck,
   scoreCharacterForTarget,
@@ -295,6 +296,24 @@ test("recommendParentSpec notes when aptitudes are already covered and lists whi
   assert.equal(spec.whiteSparks.races.length, 2);
   assert.equal(spec.whiteSparks.skills[0].id, "skill_a");
   assert.match(spec.reasons[0], /already A\+/);
+});
+
+// --- Phase 1c: curated scenario suggestion ---
+
+test("recommendScenario is confident (curated-match) for long turf -> L'Arc", () => {
+  const result = recommendScenario({ surfaceKey: "turf", distanceKey: "long" });
+  assert.equal(result.recommended.slug, "scenario-larc");
+  assert.equal(result.confidence, "curated-match");
+  assert.equal(result.source, "curated");
+  assert.equal(result.note, null);
+});
+
+test("recommendScenario admits low confidence and says pick your most practiced otherwise", () => {
+  const result = recommendScenario({ surfaceKey: "dirt", distanceKey: "short" });
+  assert.equal(result.confidence, "low");
+  assert.match(result.note, /pick the one you've practiced/i);
+  assert.ok(result.recommended.slug); // still offers a safe default
+  assert.ok(result.alternatives.length >= 1);
 });
 
 // --- Phase 2b: skill recommendation by effect category ---
