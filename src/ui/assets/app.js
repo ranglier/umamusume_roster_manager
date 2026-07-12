@@ -6,7 +6,7 @@ import { attachCmTargetRecommendationListeners, attachRacetrackVisualizerListene
 import { planToBuildSeed, selectDefaultTargetId } from "./js/prep.js";
 import { attachRosterFormListeners, collectRosterFormData, getDefaultRosterEntry, getRosterBadges, getRosterEntry, getRosterFilterDefinitions, getRosterFilterOptions, removeSelectedBatchRows, renderBatchList, renderReferenceRosterActions, renderRosterCardProgress, renderRosterEditor, rosterCountForEntity, saveVisibleBatchRows, setRosterEntry } from "./js/roster.js";
 import { attachLegacyFormListeners, getCharacterRosterDefaults, getLegacyCharacterOptions, renderLegacyDetailBody, renderLegacyEditor, renderLegacyPreview, renderLegacySimulatorList } from "./js/legacy.js";
-import { attachBuildFormListeners, createEmptyBuildEntry, renderBuildEditor, startSeededBuildDraft } from "./js/builds.js";
+import { attachBuildFormListeners, createEmptyBuildEntry, renderBuildEditor, renderBuildFeasibilityPanel, renderBuildSpurtPanel, startSeededBuildDraft } from "./js/builds.js";
 import { loadBuildsForProfile, loadLegacyForProfile, loadRunsForProfile, openProfile, refreshAdminData, renderAdminPage, renderProfilesPage, renderWizardPage, runAdminJob, wizardNeedsReferenceBuild } from "./js/admin.js";
 import { renderRosterImportPanel } from "./js/roster_import.js";
 
@@ -396,6 +396,21 @@ function renderPrepDeckCard(pick, titleById) {
 
 const RECO_TYPE_LABELS_APP = { speed: "Speed", stamina: "Stamina", power: "Power", guts: "Guts", intelligence: "Wisdom", friend: "Friend", group: "Group" };
 
+// A minimal build entry so the existing Feasibility / Last-Spurt panels
+// (builds.js) can be reused verbatim: they read target_id (for the racetrack),
+// running_style, target_stats and target_aptitudes.distance/surface.
+function prepSyntheticEntry(plan, targetId) {
+  return {
+    target_id: String(targetId || ""),
+    running_style: plan.style?.key || "",
+    target_stats: { ...(plan.stats?.stats || {}) },
+    target_aptitudes: {
+      distance: plan.selected?.distanceGrade || "",
+      surface: plan.selected?.surfaceGrade || "",
+    },
+  };
+}
+
 function renderPrepPlanSections(plan, targetId) {
   if (!plan?.selected) {
     return `<div class="prep-empty"><p>${escapeHtml(plan?.reasons?.[0] || "No plan available for this target.")}</p></div>`;
@@ -462,6 +477,14 @@ function renderPrepPlanSections(plan, targetId) {
       <p class="prep-line"><span class="prep-line-label">White · races</span> ${asArray(plan.parents?.whiteSparks?.races).map((race) => escapeHtml(race.title)).join(", ") || "-"}</p>
       <p class="prep-line"><span class="prep-line-label">White · skills</span> ${asArray(plan.parents?.whiteSparks?.skills).map((skill) => escapeHtml(skill.title)).join(", ") || "-"}</p>
       ${renderPrepWhy(plan.parents?.reasons)}
+    </section>
+
+    <section class="prep-section prep-section-readouts">
+      <div class="prep-section-head"><h2>Deterministic readouts</h2></div>
+      <div class="build-panel-grid">
+        ${renderBuildFeasibilityPanel(prepSyntheticEntry(plan, targetId))}
+        ${renderBuildSpurtPanel(prepSyntheticEntry(plan, targetId))}
+      </div>
     </section>
 
     <div class="prep-actions">
