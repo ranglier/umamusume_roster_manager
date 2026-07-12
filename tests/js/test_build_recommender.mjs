@@ -228,6 +228,26 @@ test("recommendSupportDeck ranks by effective value when projections are present
   assert.ok(speedPicks[0].reasons.length >= 1);
 });
 
+test("recommendSupportDeck pins force-included cards, excludes replaced ones, and lists a bench", () => {
+  const owned = [
+    { id: "s1", type: "speed", rarity: 3, limitBreak: 4, effectiveEffects: [eff(1, 30)] },
+    { id: "s2", type: "speed", rarity: 3, limitBreak: 4, effectiveEffects: [eff(1, 25)] },
+    { id: "s3", type: "speed", rarity: 3, limitBreak: 0, effectiveEffects: [eff(1, 10)] }, // weakest speed
+    { id: "s4", type: "speed", rarity: 3, limitBreak: 2, effectiveEffects: [eff(1, 20)] },
+    { id: "w1", type: "intelligence", rarity: 3, limitBreak: 4, effectiveEffects: [eff(1, 30)] },
+    { id: "w2", type: "intelligence", rarity: 3, limitBreak: 0, effectiveEffects: [eff(1, 12)] },
+    { id: "p1", type: "power", rarity: 3, limitBreak: 4, effectiveEffects: [eff(1, 20)] },
+    { id: "p2", type: "power", rarity: 2, limitBreak: 0, effectiveEffects: [eff(1, 8)] },
+  ];
+  // Swap the weak s3 in by pinning it and excluding the strong s1 it replaces.
+  const result = recommendSupportDeck("mile", owned, { targetProfile: MEDIUM_TURF, pinnedIds: ["s3"], excludedIds: ["s1"] });
+  assert.ok(result.deck.includes("s3"));   // pinned card is in the deck
+  assert.ok(!result.deck.includes("s1"));  // excluded card never appears
+  assert.equal(result.deck.length, 6);
+  // the leftover unpicked card is offered on the bench for a future swap.
+  assert.ok(Object.values(result.benchByType).flat().some((c) => c.id === "p2"));
+});
+
 test("recommendSupportDeck flags a shortfall and fills what it can when the roster is too small", () => {
   const owned = [makeSupport("s1", "speed", 3, 0), makeSupport("w1", "intelligence", 2, 0)];
   const result = recommendSupportDeck("mile", owned);

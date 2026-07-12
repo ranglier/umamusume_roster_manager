@@ -313,9 +313,14 @@ export function scoreSupportForTarget(summary, targetProfile, weights = {}) {
 // the suggested deck (ids), the target vs actual mix, a shortfall flag, and
 // `picks` with per-card { score, reasons[], hasProjection } for the UI. Pass
 // `targetProfile` for distance-aware scoring; `weights` is the meta hook.
-export function recommendSupportDeck(distanceCategoryKey, ownedSupportSummaries, { size = DECK_SIZE, targetProfile = null, weights = {} } = {}) {
+// `pinnedIds` are force-included first (deck-slot swaps); `excludedIds` are never
+// picked (the card a swap replaced). `benchByType` in the result lists the
+// unpicked candidates per type (scored) so the UI can offer swap alternatives.
+export function recommendSupportDeck(distanceCategoryKey, ownedSupportSummaries, { size = DECK_SIZE, targetProfile = null, weights = {}, pinnedIds = [], excludedIds = [] } = {}) {
   const target = getRecommendedTypeDistribution(distanceCategoryKey);
   const profile = targetProfile || { distanceKey: distanceCategoryKey };
+  const excluded = new Set((excludedIds || []).map(String));
+  const pool = (ownedSupportSummaries || []).filter((summary) => !excluded.has(String(summary?.id ?? "")));
 
   // Score once, cache by summary object (ids can collide across passes).
   const scoreById = new Map();
@@ -329,10 +334,10 @@ export function recommendSupportDeck(distanceCategoryKey, ownedSupportSummaries,
     }
     return scoreById.get(id);
   };
-  (ownedSupportSummaries || []).forEach(scoreOf);
+  pool.forEach(scoreOf);
 
   const byType = new Map();
-  for (const summary of ownedSupportSummaries || []) {
+  for (const summary of pool) {
     const type = String(summary?.type || "").toLowerCase();
     if (!byType.has(type)) byType.set(type, []);
     byType.get(type).push(summary);
@@ -350,12 +355,24 @@ export function recommendSupportDeck(distanceCategoryKey, ownedSupportSummaries,
     }
   };
 
-  // First pass: honor the target mix (composition constraint).
+  // Zeroth pass: force-include the pinned cards (swap targets), in order.
+  const summaryById = new Map(pool.map((summary) => [String(summary.id), summary]));
+  for (const id of pinnedIds || []) {
+    take(summaryById.get(String(id)));
+  }
+  // First pass: honor the target mix (composition constraint), discounting the
+  // slots the pins already filled per type so the mix intent is preserved.
+  const pinnedByType = {};
+  for (const summary of picked) {
+    const type = String(summary.type || "").toLowerCase();
+    pinnedByType[type] = (pinnedByType[type] || 0) + 1;
+  }
   for (const [type, count] of Object.entries(target)) {
-    (byType.get(type) || []).slice(0, count).forEach(take);
+    const remainingCount = Math.max(0, count - (pinnedByType[type] || 0));
+    (byType.get(type) || []).filter((summary) => !pickedIds.has(summary.id)).slice(0, remainingCount).forEach(take);
   }
   // Second pass: fill any remaining slots with the best remaining, any type.
-  const remaining = (ownedSupportSummaries || [])
+  const remaining = pool
     .filter((summary) => !pickedIds.has(summary.id))
     .sort((a, b) => scoreOf(b) - scoreOf(a));
   remaining.forEach(take);
@@ -366,6 +383,17 @@ export function recommendSupportDeck(distanceCategoryKey, ownedSupportSummaries,
     actual[type] = (actual[type] || 0) + 1;
   }
 
+  // Bench: unpicked candidates per type, scored, for swap menus.
+  const benchByType = {};
+  for (const summary of remaining) {
+    const type = String(summary.type || "").toLowerCase();
+    if (!benchByType[type]) benchByType[type] = [];
+    if (benchByType[type].length >= 8) continue;
+    const id = String(summary.id);
+    const detail = detailById.get(id) || { score: 0, reasons: [], hasProjection: false };
+    benchByType[type].push({ id, type, title: summary.title, ...detail });
+  }
+
   return {
     deck: picked.map((summary) => String(summary.id)),
     picks: picked.map((summary) => {
@@ -373,6 +401,7 @@ export function recommendSupportDeck(distanceCategoryKey, ownedSupportSummaries,
       const detail = detailById.get(id) || { score: 0, reasons: [], hasProjection: false };
       return { id, type: String(summary.type || "").toLowerCase(), title: summary.title, ...detail };
     }),
+    benchByType,
     target,
     actual,
     shortfall: picked.length < size,
@@ -714,7 +743,7 @@ export function buildAutoPrepPlan(target, rosterData = {}, options = {}) {
     resolveStaticZones = null,
     weights = {},
   } = rosterData;
-  const { alternatives: altCount = 3, selectedCharacterId = null } = options;
+  const { alternatives: altCount = 3, selectedCharacterId = null, pinnedDeckIds = [], excludedDeckIds = [] } = options;
 
   const targetSummary = {
     name: detail?.name || profile.raceName || "",
@@ -773,7 +802,7 @@ export function buildAutoPrepPlan(target, rosterData = {}, options = {}) {
     ],
   };
 
-  const deck = recommendSupportDeck(profile.distanceKey, supportSummaries, { targetProfile: profile, weights });
+  const deck = recommendSupportDeck(profile.distanceKey, supportSummaries, { targetProfile: profile, weights, pinnedIds: pinnedDeckIds, excludedIds: excludedDeckIds });
   const deckReasons = [];
   if (deck.shortfall) deckReasons.push(`Roster only fills ${deck.filled}/6 of the recommended mix.`);
   const projectedCount = deck.picks.filter((p) => p.hasProjection).length;

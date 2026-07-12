@@ -81,7 +81,7 @@ export function getCmTargetRecommendations(detail) {
 // buildSkillPool is called by the engine once the deck is known (kit + deck
 // hints, same as getCandidateSkillReco); the course is only present when the
 // cm_target resolves to exactly ONE racetrack (getBuildTargetRacetrack).
-export function buildAutoPrepPlanForDetail(detail, { selectedCharacterId = null, weights = {} } = {}) {
+export function buildAutoPrepPlanForDetail(detail, { selectedCharacterId = null, weights = {}, pinnedDeckIds = [], excludedDeckIds = [] } = {}) {
   const targetItem = { detail };
   const racetrack = getBuildTargetRacetrack(targetItem);
   const rosterData = {
@@ -96,7 +96,7 @@ export function buildAutoPrepPlanForDetail(detail, { selectedCharacterId = null,
     resolveStaticZones,
     weights,
   };
-  return buildAutoPrepPlan(targetItem, rosterData, { selectedCharacterId });
+  return buildAutoPrepPlan(targetItem, rosterData, { selectedCharacterId, pinnedDeckIds, excludedDeckIds });
 }
 
 // Owned supports reduced to the fields the deck heuristic reads, plus a title

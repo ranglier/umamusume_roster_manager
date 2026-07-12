@@ -354,7 +354,7 @@ export function renderHomePage() {
 // plan from buildAutoPrepPlan, each section with an expandable "why". Client-only
 // on already-loaded data; the uma choice is kept in module scope so it survives
 // re-renders and resets when the target changes. ---
-let prepSelection = { targetId: null, characterId: null };
+let prepSelection = { targetId: null, characterId: null, deckPinned: [], deckExcluded: [] };
 
 const PREP_STYLE_LABELS = { runner: "Front Runner", leader: "Pace Chaser", betweener: "Late Surger", chaser: "End Closer" };
 const PREP_VERDICT_TONE = { useful: "ok", workable: "warn", "off-target": "bad" };
@@ -370,7 +370,7 @@ function renderPrepWhy(reasons) {
   `;
 }
 
-function renderPrepDeckCard(pick, titleById) {
+function renderPrepDeckCard(pick, titleById, benchByType) {
   const title = pick.title || titleById.get(String(pick.id)) || String(pick.id);
   const reasons = asArray(pick.reasons)
     .slice(0, 3)
@@ -380,6 +380,22 @@ function renderPrepDeckCard(pick, titleById) {
       return `<li>${escapeHtml(`${reason.label}${value}${level}`)} <span class="prep-pts">+${escapeHtml(String(reason.points ?? 0))}</span></li>`;
     })
     .join("");
+  const bench = asArray(benchByType?.[pick.type]);
+  const swapMenu = bench.length
+    ? `
+      <details class="prep-swap">
+        <summary>Swap</summary>
+        <div class="prep-swap-list">
+          ${bench.map((candidate) => `
+            <button type="button" class="prep-swap-option" data-prep-swap-from="${escapeHtml(String(pick.id))}" data-prep-swap-to="${escapeHtml(String(candidate.id))}">
+              <span>${escapeHtml(candidate.title || String(candidate.id))}</span>
+              <span class="prep-deck-score">${escapeHtml(String(candidate.score ?? 0))}</span>
+            </button>
+          `).join("")}
+        </div>
+      </details>
+    `
+    : "";
   return `
     <article class="prep-deck-card" data-prep-slot="${escapeHtml(String(pick.id))}">
       <div class="prep-deck-head">
@@ -389,7 +405,7 @@ function renderPrepDeckCard(pick, titleById) {
       </div>
       <ul class="prep-deck-reasons">${reasons}</ul>
       ${pick.hasProjection ? "" : `<p class="prep-note">No projection - ranked by rarity+LB</p>`}
-      <button type="button" class="prep-slot-swap" data-prep-swap="${escapeHtml(String(pick.id))}" data-prep-type="${escapeHtml(pick.type || "")}">Swap</button>
+      ${swapMenu}
     </article>
   `;
 }
@@ -452,8 +468,12 @@ function renderPrepPlanSections(plan, targetId) {
     </section>
 
     <section class="prep-section">
-      <div class="prep-section-head"><h2>Support deck</h2>${plan.deck?.shortfall ? `<span class="prep-badge prep-badge-warn">${escapeHtml(String(plan.deck.filled))}/6</span>` : ""}</div>
-      <div class="prep-deck-grid">${(plan.deck?.picks || []).map((pick) => renderPrepDeckCard(pick, titleById)).join("")}</div>
+      <div class="prep-section-head">
+        <h2>Support deck</h2>
+        ${plan.deck?.shortfall ? `<span class="prep-badge prep-badge-warn">${escapeHtml(String(plan.deck.filled))}/6</span>` : ""}
+        ${prepSelection.deckExcluded.length ? `<button type="button" class="prep-slot-swap" id="prepResetSwaps">Reset swaps</button>` : ""}
+      </div>
+      <div class="prep-deck-grid">${(plan.deck?.picks || []).map((pick) => renderPrepDeckCard(pick, titleById, plan.deck?.benchByType)).join("")}</div>
       ${renderPrepWhy(plan.deck?.reasons)}
     </section>
 
@@ -510,14 +530,18 @@ export function renderPrepPage(route) {
     ? String(route.targetId)
     : defaultId;
 
-  // Reset the uma override when the target changes.
+  // Reset the uma override and deck swaps when the target changes.
   if (prepSelection.targetId !== activeId) {
-    prepSelection = { targetId: activeId, characterId: null };
+    prepSelection = { targetId: activeId, characterId: null, deckPinned: [], deckExcluded: [] };
   }
 
   const activeItem = targetItems.find((item) => String(item.id) === String(activeId));
   const detail = activeItem?.detail || {};
-  const plan = buildAutoPrepPlanForDetail(detail, { selectedCharacterId: prepSelection.characterId });
+  const plan = buildAutoPrepPlanForDetail(detail, {
+    selectedCharacterId: prepSelection.characterId,
+    pinnedDeckIds: prepSelection.deckPinned,
+    excludedDeckIds: prepSelection.deckExcluded,
+  });
 
   const options = targetItems
     .slice()
@@ -568,6 +592,26 @@ export function renderPrepPage(route) {
       requestRender();
     });
   });
+  profileGateEl.querySelectorAll("[data-prep-swap-to]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const fromId = button.dataset.prepSwapFrom;
+      const toId = button.dataset.prepSwapTo;
+      // Exclude the replaced card and pin the chosen one; drop any stale pin for
+      // the replaced card so chained swaps stay consistent.
+      if (fromId && !prepSelection.deckExcluded.includes(fromId)) prepSelection.deckExcluded.push(fromId);
+      prepSelection.deckPinned = prepSelection.deckPinned.filter((id) => id !== fromId);
+      if (toId && !prepSelection.deckPinned.includes(toId)) prepSelection.deckPinned.push(toId);
+      requestRender();
+    });
+  });
+  const resetSwapsButton = document.getElementById("prepResetSwaps");
+  if (resetSwapsButton) {
+    resetSwapsButton.addEventListener("click", () => {
+      prepSelection.deckPinned = [];
+      prepSelection.deckExcluded = [];
+      requestRender();
+    });
+  }
   const saveButton = document.getElementById("prepSaveDraft");
   if (saveButton) {
     saveButton.addEventListener("click", () => {

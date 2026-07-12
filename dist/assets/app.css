@@ -5373,3 +5373,33 @@ code {
   text-align: center;
   color: var(--text-soft);
 }
+
+.prep-swap { align-self: flex-start; }
+.prep-swap > summary {
+  cursor: pointer;
+  font-size: 0.78rem;
+  color: var(--text-soft);
+  list-style: revert;
+}
+.prep-swap[open] > summary { color: var(--accent); }
+.prep-swap-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.prep-swap-option {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--ink-deep);
+  font-size: 0.82rem;
+}
+.prep-swap-option:hover { border-color: var(--accent); }
