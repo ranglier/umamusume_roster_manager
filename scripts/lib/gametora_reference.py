@@ -2170,6 +2170,14 @@ def normalize_scenarios(
                     ("key", scenario_key),
                     ("slug", slugify_text(scenario_key)),
                     ("name", name),
+                    # The Global (EN) display name and release timestamp come
+                    # straight from GameTora's raw scenario entry, exactly like
+                    # `release_en` on cards. `start_en` is a unix seconds ts (or
+                    # None if the scenario is not on Global yet); the frontend
+                    # gates the CM-prep scenario suggestion on it so we never
+                    # propose a scenario the player can't run.
+                    ("name_en", dynamic.get("name_en")),
+                    ("start_en", int(dynamic["start_en"])) if dynamic.get("start_en") is not None else ("start_en", None),
                     ("order", int(dynamic["order"])) if dynamic.get("order") is not None else ("order", None),
                     ("program", int(dynamic["program"])) if dynamic.get("program") is not None else ("program", None),
                     ("program_label", f"Program {dynamic['program']}") if dynamic.get("program") is not None else ("program_label", None),

@@ -652,23 +652,27 @@ export function recommendParentSpec(targetProfile, charItem, buildSkills = []) {
   };
 }
 
-// --- Phase 1c (Auto Prep): scenario suggestion from a CURATED table. This is
-// the project's weakest source of truth, and it is labeled as such: scenario
-// value is mostly target-independent (it's about the mechanics you want and what
-// you've practiced), so v1 only makes a confident call where a scenario clearly
-// favors the target's distance/surface (L'Arc for long turf), and otherwise says
-// so out loud ("no strong signal - pick your most practiced"). The meta layer
-// (Phase 4) replaces/weights this. Notes are hand-written, source "curated". ---
+// --- Phase 1c (Auto Prep): scenario suggestion from a CURATED table, GATED on
+// Global availability. This is the project's weakest source of truth, labeled as
+// such: scenario value is mostly target-independent (it's about the mechanics you
+// want and what you've practiced), so we only make a confident call where a
+// scenario clearly favors the target's distance/surface, and otherwise say so
+// ("pick your most practiced"). CRITICAL: we must never propose a scenario the
+// player can't run - the caller passes `availableScenarios` (slug + Global name),
+// derived from GameTora's per-scenario `start_en` release date exactly like card
+// `available.en`, and only those are considered. The meta layer (Phase 4)
+// replaces/weights this. Notes are hand-written, source "curated". ---
 
-// Keyed by scenario slug (data/normalized/scenarios.json). Only the widely-known
-// scenarios are described; `favors` is the only field recommendScenario keys on.
+// Keyed by scenario slug (data/normalized/scenarios.json). `favors` is the only
+// field recommendScenario keys on; `name` is a fallback - the real display name
+// comes from the reference data (Global name_en) when available.
 export const SCENARIO_NOTES = [
   { slug: "scenario-larc", name: "Project L'Arc", bonusType: "races", caps: "high stat gains overseas", favors: { distance: ["long", "medium"], surface: ["turf"] }, verdict: "Best for long turf targets: overseas races reward stamina and pace, big stat swings." },
   { slug: "scenario-uaf", name: "U.A.F. Ready GO!", bonusType: "training", caps: "very high all-round stats", favors: {}, verdict: "Strong general pick: athletics training pushes high stats across the board." },
-  { slug: "scenario-aoharu", name: "Aoharu Cup", bonusType: "races", caps: "team races give stat blocks", favors: { distance: ["medium", "long"] }, verdict: "Reliable all-rounder; team races help stamina-leaning builds." },
+  { slug: "scenario-aoharu", name: "Unity Cup", bonusType: "races", caps: "team races give stat blocks", favors: { distance: ["medium", "long"] }, verdict: "Reliable all-rounder; team races help stamina-leaning builds." },
   { slug: "scenario-live", name: "Grand Live", bonusType: "training", caps: "skill-point heavy", favors: {}, verdict: "Best when the build wants many skills - performance stats feed hints and SP." },
   { slug: "scenario-masters", name: "Grandmasters", bonusType: "training", caps: "high ceilings, complex", favors: {}, verdict: "Advanced min-maxing; high ceilings but more micro." },
-  { slug: "scenario-mant", name: "TS Climax", bonusType: "training", caps: "shop-boosted, flexible", favors: {}, verdict: "Flexible high ceiling if you like managing the shop." },
+  { slug: "scenario-mant", name: "Trackblazer", bonusType: "training", caps: "shop-boosted, flexible", favors: {}, verdict: "Flexible high ceiling if you like managing the shop." },
   { slug: "scenario-ura", name: "URA Finale", bonusType: "training", caps: "baseline, no special mechanic", favors: {}, verdict: "Simplest baseline - safe when unsure or learning a new uma." },
 ];
 
@@ -679,18 +683,42 @@ function scenarioFavorScore(note, targetProfile) {
   return score;
 }
 
-// recommendScenario(targetProfile) -> { recommended, alternatives, confidence,
-// note, reasons[] }. confidence is "curated-match" only when a scenario clearly
-// favors the target's distance+surface; otherwise "low" with an honest note.
-export function recommendScenario(targetProfile) {
-  const scored = SCENARIO_NOTES
+// recommendScenario(targetProfile, { availableScenarios }) -> { recommended,
+// alternatives, confidence, note, reasons[] }. `availableScenarios` is
+// [{ slug, name }] of the scenarios actually released on the player's version
+// (Global): when provided, ONLY those are considered and their Global name is
+// used for display. When omitted, all curated notes are used (back-compat).
+// confidence is "curated-match" only when a scenario clearly favors the target's
+// distance+surface; otherwise "low" with an honest note.
+export function recommendScenario(targetProfile, { availableScenarios = null } = {}) {
+  let notes = SCENARIO_NOTES;
+  let nameBySlug = null;
+  if (Array.isArray(availableScenarios)) {
+    const availableSlugs = new Set(availableScenarios.map((entry) => String(entry.slug)));
+    nameBySlug = new Map(availableScenarios.map((entry) => [String(entry.slug), entry.name]));
+    notes = SCENARIO_NOTES.filter((note) => availableSlugs.has(note.slug));
+  }
+  const displayName = (note) => (nameBySlug && nameBySlug.get(note.slug)) || note.name;
+
+  if (!notes.length) {
+    return {
+      recommended: null,
+      alternatives: [],
+      confidence: "none",
+      source: "curated",
+      note: "No known scenario is available on your version yet.",
+      reasons: ["No known scenario is available on your version yet."],
+    };
+  }
+
+  const scored = notes
     .map((note) => ({ note, favor: scenarioFavorScore(note, targetProfile) }))
     .sort((a, b) => b.favor - a.favor);
 
   const top = scored[0];
   const strong = top.favor >= 3; // matched both distance AND surface
   const recommended = top.note;
-  const alternatives = scored.slice(1, 4).map((entry) => ({ slug: entry.note.slug, name: entry.note.name, verdict: entry.note.verdict }));
+  const alternatives = scored.slice(1, 4).map((entry) => ({ slug: entry.note.slug, name: displayName(entry.note), verdict: entry.note.verdict }));
 
   const reasons = [];
   let confidence;
@@ -698,16 +726,16 @@ export function recommendScenario(targetProfile) {
   if (strong) {
     confidence = "curated-match";
     note = null;
-    reasons.push(`${recommended.name}: ${recommended.verdict}`);
+    reasons.push(`${displayName(recommended)}: ${recommended.verdict}`);
   } else {
     confidence = "low";
     note = "No strong scenario signal for this target - pick the one you've practiced most. This table is curated (to be replaced by meta data).";
     reasons.push(note);
-    reasons.push(`Default suggestion ${recommended.name}: ${recommended.verdict}`);
+    reasons.push(`Default suggestion ${displayName(recommended)}: ${recommended.verdict}`);
   }
 
   return {
-    recommended: { slug: recommended.slug, name: recommended.name, bonusType: recommended.bonusType, caps: recommended.caps, verdict: recommended.verdict },
+    recommended: { slug: recommended.slug, name: displayName(recommended), bonusType: recommended.bonusType, caps: recommended.caps, verdict: recommended.verdict },
     alternatives,
     confidence,
     source: "curated",
@@ -742,6 +770,7 @@ export function buildAutoPrepPlan(target, rosterData = {}, options = {}) {
     course = null,
     resolveStaticZones = null,
     weights = {},
+    availableScenarios = null,
   } = rosterData;
   const { alternatives: altCount = 3, selectedCharacterId = null, pinnedDeckIds = [], excludedDeckIds = [] } = options;
 
@@ -825,7 +854,7 @@ export function buildAutoPrepPlan(target, rosterData = {}, options = {}) {
   const selectedItem = charById.get(selectedRanked.characterId) || { detail: { aptitudes: {} }, title: selectedRanked.title };
   const parents = recommendParentSpec(profile, selectedItem, buildSkillsForParents);
 
-  const scenario = recommendScenario(profile);
+  const scenario = recommendScenario(profile, { availableScenarios });
 
   return {
     target: targetSummary,

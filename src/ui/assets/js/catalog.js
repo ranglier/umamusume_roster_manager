@@ -95,8 +95,23 @@ export function buildAutoPrepPlanForDetail(detail, { selectedCharacterId = null,
     course: racetrack?.detail || null,
     resolveStaticZones,
     weights,
+    availableScenarios: getGlobalAvailableScenarios(),
   };
   return buildAutoPrepPlan(targetItem, rosterData, { selectedCharacterId, pinnedDeckIds, excludedDeckIds });
+}
+
+// Scenarios released on the player's version (Global), derived from GameTora's
+// per-scenario `start_en` release timestamp (unix seconds; null = not on Global)
+// - the same signal as card `available.en`. We never propose a scenario whose
+// EN release is missing or still in the future. Global display name = `name_en`.
+function getGlobalAvailableScenarios() {
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  return getEntityItems("scenarios")
+    .filter((item) => {
+      const startEn = Number(item.detail?.start_en);
+      return Number.isFinite(startEn) && startEn > 0 && startEn <= nowSeconds;
+    })
+    .map((item) => ({ slug: String(item.detail?.slug || item.id), name: item.detail?.name_en || item.detail?.name || item.title }));
 }
 
 // Owned supports reduced to the fields the deck heuristic reads, plus a title

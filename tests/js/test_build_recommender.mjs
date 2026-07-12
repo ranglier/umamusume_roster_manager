@@ -338,6 +338,28 @@ test("recommendScenario admits low confidence and says pick your most practiced 
   assert.ok(result.alternatives.length >= 1);
 });
 
+test("recommendScenario only proposes Global-available scenarios and uses their Global name", () => {
+  // Global (today) = URA Finale, Unity Cup, Trackblazer. L'Arc is NOT available.
+  const globalScenarios = [
+    { slug: "scenario-ura", name: "URA Finale" },
+    { slug: "scenario-aoharu", name: "Unity Cup" },
+    { slug: "scenario-mant", name: "Trackblazer" },
+  ];
+  const result = recommendScenario({ surfaceKey: "turf", distanceKey: "long" }, { availableScenarios: globalScenarios });
+  const proposed = [result.recommended.slug, ...result.alternatives.map((a) => a.slug)];
+  assert.ok(!proposed.includes("scenario-larc")); // never propose an unavailable scenario
+  assert.ok(proposed.every((slug) => globalScenarios.some((s) => s.slug === slug)));
+  // display name is the Global one from the data, not the JP-based fallback.
+  const unity = [result.recommended, ...result.alternatives].find((s) => s.slug === "scenario-aoharu");
+  assert.equal(unity.name, "Unity Cup");
+});
+
+test("recommendScenario returns confidence 'none' when nothing known is available", () => {
+  const result = recommendScenario({ surfaceKey: "turf", distanceKey: "long" }, { availableScenarios: [{ slug: "scenario-unknown", name: "Mystery" }] });
+  assert.equal(result.confidence, "none");
+  assert.equal(result.recommended, null);
+});
+
 // --- Phase 2b: skill recommendation by effect category ---
 
 function makeSkill(id, effectTypes, rarity = 1, title = id) {

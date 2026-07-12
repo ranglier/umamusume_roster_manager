@@ -789,7 +789,7 @@ class NormalizeCmTargetsTests(unittest.TestCase):
 
 
 def make_dynamic_scenario(**overrides):
-    scenario = {"id": "10", "order": 1, "program": 2, "stats": [1200, 1150, 1000, 1000, 900]}
+    scenario = {"id": "10", "order": 1, "program": 2, "stats": [1200, 1150, 1000, 1000, 900], "name_en": "URA Finale", "start_en": 1750897800}
     scenario.update(overrides)
     return scenario
 
@@ -817,6 +817,19 @@ class NormalizeScenariosTests(unittest.TestCase):
         self.assertEqual(item["program"], 2)
         self.assertEqual(item["program_label"], "Program 2")
         self.assertEqual(item["stat_caps"], {"speed": 1200, "stamina": 1150, "power": 1000, "guts": 1000, "wit": 900})
+
+    def test_global_name_and_release_are_carried_from_gametora(self):
+        result = gt.normalize_scenarios(
+            make_source_config("scenarios"), make_source_metadata(), [make_dynamic_scenario()], [make_static_scenario()], []
+        )
+        item = result["items"][0]
+        self.assertEqual(item["name_en"], "URA Finale")
+        self.assertEqual(item["start_en"], 1750897800)
+
+    def test_start_en_is_null_for_a_scenario_not_yet_on_global(self):
+        dynamic = make_dynamic_scenario(start_en=None)
+        result = gt.normalize_scenarios(make_source_config("scenarios"), make_source_metadata(), [dynamic], [make_static_scenario()], [])
+        self.assertIsNone(result["items"][0]["start_en"])
 
     def test_order_and_program_are_null_when_absent_from_dynamic_data(self):
         dynamic = make_dynamic_scenario(order=None, program=None)
