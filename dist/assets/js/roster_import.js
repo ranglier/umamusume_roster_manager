@@ -409,11 +409,15 @@ export async function processImportFiles(modeKey, fileList) {
     }
 
     // Default inclusion: confident rows whose application would change the
-    // roster. Unknown/unchanged rows start unchecked.
+    // roster. Unknown/unchanged rows start unchecked. Section membership is
+    // FROZEN here (startedUnchanged): editing a row toward the roster values
+    // must not teleport it into the collapsed "already up to date" section
+    // mid-review — the status badge updates live, the row stays put.
     const itemsById = getItemsById(mode);
     for (const row of merged) {
       const status = rowDiffStatus(mode, row, itemsById);
       row.include = Boolean(row.cardId) && row.matchConfident && (status.kind === "new" || status.kind === "changed");
+      row.startedUnchanged = status.kind === "unchanged";
     }
 
     current.results = merged;
@@ -523,8 +527,10 @@ export function renderRosterImportPanel(entityKey) {
   const statusText = current.status.message || mode.intro;
 
   const rows = current.results;
-  const visible = rows.filter((row) => rowDiffStatus(mode, row, itemsById).kind !== "unchanged");
-  const unchangedRows = rows.filter((row) => rowDiffStatus(mode, row, itemsById).kind === "unchanged");
+  // Frozen at processing time — live status changes never move rows between
+  // the main table and the collapsed section (user-reported disappearance).
+  const visible = rows.filter((row) => !row.startedUnchanged);
+  const unchangedRows = rows.filter((row) => row.startedUnchanged);
   const selectedCount = rows.filter((row) => row.include && row.cardId).length;
 
   const tableHead = `

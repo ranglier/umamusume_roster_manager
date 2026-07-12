@@ -248,6 +248,15 @@ Premiere session d'usage reel (retours utilisateur, tous corriges):
   ont ete essayes et ecartes (39/68 et 36/68)
 - **vocabulaire**: "Potential" partout dans l'UI d'import (le champ roster
   reste `awakening`, meme chose — nom historique de l'app)
+- **lignes figees dans leur section** (bug utilisateur "la ligne
+  disparait"): l'appartenance table principale / section repliee "already up
+  to date" est figee au traitement (startedUnchanged) — editer une ligne
+  vers les valeurs du roster met a jour son badge de statut mais ne la
+  deplace plus en cours de revue
+- **valeurs par defaut sures** (regles utilisateur): etoiles bornees 1-5
+  (un comptage hors bornes = misread -> defaut 3, flag "a confirmer";
+  le serveur rejette stars>5 de toute facon), potential sous le seuil de
+  confiance -> defaut 1 au lieu du guess NCC
 - **niveau d'unique = etoiles** (regle du jeu): l'import characters
   alimente aussi `unique_level` depuis les etoiles lues (mapping
   stars -> unique_level dans diffFields) — le diff l'affiche ("unique

@@ -227,11 +227,19 @@ test("readUmaStars counts gold stars and flags the overlay-obscured row", () => 
     if (cell.stars_obscured) {
       assert.equal(result.obscured, true, `(${cell.row},${cell.col}) devrait etre masquee`);
       assert.equal(result.confident, false);
-      assert.equal(result.stars, null);
+      // Doubt falls back to the default of 3 (user rule), never null/0/6+.
+      assert.equal(result.stars, 3);
     } else {
       assert.equal(result.obscured, false, `(${cell.row},${cell.col}) ne devrait pas etre masquee`);
       assert.equal(result.stars, cell.stars, `cellule (${cell.row},${cell.col})`);
     }
+  }
+});
+
+test("readUmaStars never returns a value outside 1-5", () => {
+  for (const cell of umaCells) {
+    const result = readUmaStars(cell.img);
+    assert.ok(result.stars >= 1 && result.stars <= 5, `(${cell.row},${cell.col}) stars=${result.stars}`);
   }
 });
 

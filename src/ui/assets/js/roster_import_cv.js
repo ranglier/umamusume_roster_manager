@@ -835,7 +835,16 @@ export function readUmaStars(cellImg) {
       width = 0;
     }
   }
-  return { stars: obscured ? null : stars, obscured, confident: !obscured };
+  // Stars go 1-5 in the game; a count outside that range is a misread (gold
+  // banner border bleeding into the band, art contamination...). Any doubt
+  // falls back to the requested default of 3, flagged for review — never
+  // propagate an impossible value (the server rejects stars > 5 outright).
+  const plausible = !obscured && stars >= 1 && stars <= 5;
+  return {
+    stars: plausible ? stars : 3,
+    obscured,
+    confident: plausible,
+  };
 }
 
 // "Potential Lvl X" (X = awakening tier 1-5): the digit sits in a fixed box
@@ -977,11 +986,14 @@ export function readUmaPotential(cellImg) {
     }
   }
   const margin = best.score - second;
+  const confident = best.value != null && best.score >= UMA_POTENTIAL_MIN_SCORE && margin >= UMA_POTENTIAL_MIN_MARGIN;
+  // Below the gate the NCC guess is noise more often than signal: fall back
+  // to the requested default of 1 (the most common tier), flagged for review.
   return {
-    potential: best.value,
+    potential: confident ? best.value : 1,
     score: best.score,
     margin,
-    confident: best.score >= UMA_POTENTIAL_MIN_SCORE && margin >= UMA_POTENTIAL_MIN_MARGIN,
+    confident,
   };
 }
 
