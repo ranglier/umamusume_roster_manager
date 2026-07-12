@@ -884,6 +884,10 @@ export function currentRouteState() {
     return { page: "home" };
   }
 
+  if (segments[0] === "prep") {
+    return { page: "prep", targetId: segments[1] || null };
+  }
+
   if (segments[0] === "reference" || segments[0] === "roster") {
     const mode = segments[0];
     const entityKey = segments[1] || defaultEntityKeyForMode(mode);
@@ -940,6 +944,15 @@ export function setHomeHash() {
   requestRender();
 }
 
+export function setPrepHash(targetId) {
+  const target = targetId ? `#/prep/${encodeURIComponent(targetId)}` : "#/prep";
+  if (window.location.hash !== target) {
+    window.location.hash = target;
+    return;
+  }
+  requestRender();
+}
+
 export function setBrowseHash(mode, entityKey, itemId) {
   const target = itemId
     ? `#/${mode}/${entityKey}/${encodeURIComponent(itemId)}`
@@ -956,7 +969,7 @@ export function setBrowseHash(mode, entityKey, itemId) {
 // is introduced. `target()` is deferred to click time.
 export const SIDEBAR_SECTIONS = [
   { id: "accueil", label: "Home", icon: "home", target: () => setHomeHash() },
-  { id: "prepa_cm", label: "CM Prep", icon: "target", target: () => setBrowseHash("roster", buildsEntityKey, null) },
+  { id: "prepa_cm", label: "CM Prep", icon: "target", target: () => setPrepHash() },
   { id: "collection", label: "My Collection", icon: "collection", target: () => setBrowseHash("roster", "characters", null) },
   { id: "reference", label: "References", icon: "reference", target: () => setBrowseHash("reference", defaultEntityKeyForMode("reference"), null) },
   { id: "admin", label: "Admin", icon: "admin", target: () => setAdminHash() },
@@ -966,6 +979,7 @@ export const SIDEBAR_SECTIONS = [
 // full-screen gate pages (profiles/wizard) where the sidebar is hidden.
 export function sidebarSectionForRoute(route) {
   if (route.page === "home") return "accueil";
+  if (route.page === "prep") return "prepa_cm";
   if (route.page === "admin") return "admin";
   if (route.page === "browse" && route.mode === "reference") return "reference";
   if (route.page === "browse" && route.mode === "roster") {

@@ -10,8 +10,8 @@ import {
   resolveStaticZones,
   SKILL_HIGHLIGHT_CLASSES,
 } from "./visualizer.js";
-import { recommendBuildForTarget, recommendSkillsForBuild, recommendSupportDeck, targetProfileFromCmDetail } from "./build_recommender.js";
-import { getSkillReferenceItem, getSupportOwnedSummary, startSeededBuildDraft } from "./builds.js";
+import { buildAutoPrepPlan, recommendBuildForTarget, recommendSkillsForBuild, recommendSupportDeck, targetProfileFromCmDetail } from "./build_recommender.js";
+import { getBuildTargetRacetrack, getSkillReferenceItem, getSupportOwnedSummary, startSeededBuildDraft } from "./builds.js";
 import { getOwnedSupportOptions } from "./core.js";
 import { requestRenderPreservingScroll, requestRenderPreservingScrollAndFocus } from "../app.js";
 
@@ -72,6 +72,31 @@ export function getCmTargetRecommendations(detail) {
     ...reco,
     skillReco: getCandidateSkillReco(reco.characterId, deckIds, profile),
   }));
+}
+
+// Auto Prep (docs/AUTO_PREP_PLAN.md Phase 2): assemble the full rosterData bundle
+// from the reference/roster singletons and hand it to the pure aggregator. This
+// is the single bridge between the DOM/state layer and buildAutoPrepPlan. The
+// skill pool and the single-track gate are injected so the engine stays pure:
+// buildSkillPool is called by the engine once the deck is known (kit + deck
+// hints, same as getCandidateSkillReco); the course is only present when the
+// cm_target resolves to exactly ONE racetrack (getBuildTargetRacetrack).
+export function buildAutoPrepPlanForDetail(detail, { selectedCharacterId = null, weights = {} } = {}) {
+  const targetItem = { detail };
+  const racetrack = getBuildTargetRacetrack(targetItem);
+  const rosterData = {
+    characters: getOwnedCharacterItems(),
+    supportSummaries: getOwnedSupportSummariesForDeck(),
+    buildSkillPool: (characterId, deckIds) => {
+      const characterItem = getEntityItems("characters").find((item) => String(item.id) === String(characterId));
+      const poolIds = [...getCharacterKitSkillIds(characterItem), ...getDeckSkillIds(deckIds)];
+      return poolIds.map((id) => getSkillReferenceItem(id)).filter(Boolean);
+    },
+    course: racetrack?.detail || null,
+    resolveStaticZones,
+    weights,
+  };
+  return buildAutoPrepPlan(targetItem, rosterData, { selectedCharacterId });
 }
 
 // Owned supports reduced to the fields the deck heuristic reads, plus a title

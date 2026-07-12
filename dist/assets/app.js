@@ -1,8 +1,9 @@
 ﻿// Entry point. Wires up the feature modules extracted under assets/js/
 // as part of docs/REFACTOR_PLAN.md.
-import { activeProfileBlock, activeProfileNameEl, adminButton, allowedEntityKeys, appSidebarEl, asArray, backToTopButton, BUILD_RUNNING_STYLE_OPTIONS, BUILD_STATUS_OPTIONS, browseActionsEl, buildsEntityKey, changeProfileButton, clearButton, collectionEntityKeys, compactLayoutQuery, createEntityState, currentRouteState, data, datasetBarEl, datasetHeadingEl, defaultEntityKeyForMode, defaultProfilesIndex, detailColumnEl, detailEl, detailPanelEl, entityMetaEl, entityTitleEl, filtersEl, getActiveProfile, getBuildTargetOptions, getEntityItems, getLoadedReferenceGeneratedAt, getRosterViewEntry, getRosterViewPayload, getViewState, globalBuild, hasLoadedReferenceBundle, lastBuildBlock, legacyEntityKey, listEl, navEl, normalizeProfilesIndex, normalizeRosterDocument, normalizeRosterViewPayload, pageTitleEl, profileBackgroundMediaEl, profileBackgroundVideoEl, profileGateEl, referenceEntityKeys, renderGradeBadge, resetBuildsDocument, resetLegacyViewPayload, resultCountEl, resultsPanelEl, rosterEntityKeys, searchInput, setAdminHash, setBrowseHash, setHomeHash, setProfilesHash, setWizardHash, SIDEBAR_SECTIONS, sidebarSectionForRoute, sidebarSectionsEl, state, summaryText, syncSelectedProfileId, toolbarEl, topHeaderEl, viewStateByKey } from "./js/core.js";
+import { activeProfileBlock, activeProfileNameEl, adminButton, allowedEntityKeys, appSidebarEl, asArray, backToTopButton, BUILD_RUNNING_STYLE_OPTIONS, BUILD_STATUS_OPTIONS, browseActionsEl, buildsEntityKey, changeProfileButton, clearButton, collectionEntityKeys, compactLayoutQuery, createEntityState, currentRouteState, data, datasetBarEl, datasetHeadingEl, defaultEntityKeyForMode, defaultProfilesIndex, detailColumnEl, detailEl, detailPanelEl, entityMetaEl, entityTitleEl, filtersEl, getActiveProfile, getBuildTargetOptions, getEntityItems, getLoadedReferenceGeneratedAt, getRosterViewEntry, getRosterViewPayload, getViewState, globalBuild, hasLoadedReferenceBundle, lastBuildBlock, legacyEntityKey, listEl, navEl, normalizeProfilesIndex, normalizeRosterDocument, normalizeRosterViewPayload, pageTitleEl, profileBackgroundMediaEl, profileBackgroundVideoEl, profileGateEl, referenceEntityKeys, renderGradeBadge, resetBuildsDocument, resetLegacyViewPayload, resultCountEl, resultsPanelEl, rosterEntityKeys, searchInput, setAdminHash, setBrowseHash, setHomeHash, setPrepHash, setProfilesHash, setWizardHash, SIDEBAR_SECTIONS, sidebarSectionForRoute, sidebarSectionsEl, state, summaryText, syncSelectedProfileId, toolbarEl, topHeaderEl, viewStateByKey } from "./js/core.js";
 import { escapeHtml, formatDateTime, renderBadge, renderDetailHeader, renderLinks, renderResultTop } from "./js/dom-utils.js";
-import { attachCmTargetRecommendationListeners, attachRacetrackVisualizerListeners, getCmTargetDeck, getCmTargetRecommendations, renderCatalogSupportQuickAdd, renderCharacters, renderCmTargets, renderCompatibility, renderG1Factors, renderRaces, renderRacetracks, renderScenarios, renderSkills, renderSupports, renderTrainingEvents } from "./js/catalog.js";
+import { attachCmTargetRecommendationListeners, attachRacetrackVisualizerListeners, buildAutoPrepPlanForDetail, getCmTargetDeck, getCmTargetRecommendations, renderCatalogSupportQuickAdd, renderCharacters, renderCmTargets, renderCompatibility, renderG1Factors, renderRaces, renderRacetracks, renderScenarios, renderSkills, renderSupports, renderTrainingEvents } from "./js/catalog.js";
+import { planToBuildSeed, selectDefaultTargetId } from "./js/prep.js";
 import { attachRosterFormListeners, collectRosterFormData, getDefaultRosterEntry, getRosterBadges, getRosterEntry, getRosterFilterDefinitions, getRosterFilterOptions, removeSelectedBatchRows, renderBatchList, renderReferenceRosterActions, renderRosterCardProgress, renderRosterEditor, rosterCountForEntity, saveVisibleBatchRows, setRosterEntry } from "./js/roster.js";
 import { attachLegacyFormListeners, getCharacterRosterDefaults, getLegacyCharacterOptions, renderLegacyDetailBody, renderLegacyEditor, renderLegacyPreview, renderLegacySimulatorList } from "./js/legacy.js";
 import { attachBuildFormListeners, createEmptyBuildEntry, renderBuildEditor, startSeededBuildDraft } from "./js/builds.js";
@@ -223,6 +224,11 @@ export function renderProfileGate(route) {
     return;
   }
 
+  if (route.page === "prep") {
+    renderPrepPage(route);
+    return;
+  }
+
   if (route.page === "wizard") {
     renderWizardPage();
     return;
@@ -320,14 +326,9 @@ export function renderHomePage() {
 
   const startBuildButton = document.getElementById("homeStartBuild");
   if (startBuildButton) {
-    startBuildButton.addEventListener("click", () => {
-      state.buildsStatus = { kind: "idle", message: "" };
-      state.buildEditor.activeFormTab = "setup";
-      if (state.buildEditor.targetKey === "__new__") {
-        state.buildEditor.draft = null;
-      }
-      setBrowseHash("roster", buildsEntityKey, "__new__");
-    });
+    // The home CTA now leads to Auto Prep (docs/AUTO_PREP_PLAN.md Phase 2): give
+    // a target, get a full plan. The classic build editor stays the expert mode.
+    startBuildButton.addEventListener("click", () => setPrepHash());
   }
 
   profileGateEl.querySelectorAll("[data-build-id]").forEach((button) => {
@@ -346,6 +347,213 @@ export function renderHomePage() {
       }
     });
   });
+}
+
+// --- Auto Prep page (docs/AUTO_PREP_PLAN.md Phase 2). Renders into #profileGate
+// (gate-like, sidebar visible). One decision asked - the target - then the whole
+// plan from buildAutoPrepPlan, each section with an expandable "why". Client-only
+// on already-loaded data; the uma choice is kept in module scope so it survives
+// re-renders and resets when the target changes. ---
+let prepSelection = { targetId: null, characterId: null };
+
+const PREP_STYLE_LABELS = { runner: "Front Runner", leader: "Pace Chaser", betweener: "Late Surger", chaser: "End Closer" };
+const PREP_VERDICT_TONE = { useful: "ok", workable: "warn", "off-target": "bad" };
+
+function renderPrepWhy(reasons) {
+  const items = asArray(reasons).filter(Boolean);
+  if (!items.length) return "";
+  return `
+    <details class="prep-why">
+      <summary>Why</summary>
+      <ul>${items.map((reason) => `<li>${escapeHtml(String(reason))}</li>`).join("")}</ul>
+    </details>
+  `;
+}
+
+function renderPrepDeckCard(pick, titleById) {
+  const title = pick.title || titleById.get(String(pick.id)) || String(pick.id);
+  const reasons = asArray(pick.reasons)
+    .slice(0, 3)
+    .map((reason) => {
+      const value = reason.value != null ? ` ${reason.value}` : "";
+      const level = reason.level ? ` @Lv${reason.level}` : "";
+      return `<li>${escapeHtml(`${reason.label}${value}${level}`)} <span class="prep-pts">+${escapeHtml(String(reason.points ?? 0))}</span></li>`;
+    })
+    .join("");
+  return `
+    <article class="prep-deck-card" data-prep-slot="${escapeHtml(String(pick.id))}">
+      <div class="prep-deck-head">
+        <span class="prep-deck-type" data-type="${escapeHtml(pick.type || "")}">${escapeHtml(RECO_TYPE_LABELS_APP[pick.type] || pick.type || "?")}</span>
+        <strong>${escapeHtml(title)}</strong>
+        <span class="prep-deck-score">${escapeHtml(String(pick.score ?? 0))}</span>
+      </div>
+      <ul class="prep-deck-reasons">${reasons}</ul>
+      ${pick.hasProjection ? "" : `<p class="prep-note">No projection - ranked by rarity+LB</p>`}
+      <button type="button" class="prep-slot-swap" data-prep-swap="${escapeHtml(String(pick.id))}" data-prep-type="${escapeHtml(pick.type || "")}">Swap</button>
+    </article>
+  `;
+}
+
+const RECO_TYPE_LABELS_APP = { speed: "Speed", stamina: "Stamina", power: "Power", guts: "Guts", intelligence: "Wisdom", friend: "Friend", group: "Group" };
+
+function renderPrepPlanSections(plan, targetId) {
+  if (!plan?.selected) {
+    return `<div class="prep-empty"><p>${escapeHtml(plan?.reasons?.[0] || "No plan available for this target.")}</p></div>`;
+  }
+
+  const selected = plan.selected;
+  const titleById = new Map((plan.deck?.picks || []).map((pick) => [String(pick.id), pick.title]));
+  const skillTitleById = new Map((plan.skills?.entries || []).map((entry) => [String(entry.id), entry.title]));
+  const skillLine = (ids) => asArray(ids).map((id) => escapeHtml(skillTitleById.get(String(id)) || String(id))).join(", ") || "-";
+
+  const altButtons = asArray(plan.alternatives)
+    .map((alt) => `
+      <button type="button" class="prep-alt" data-prep-uma="${escapeHtml(String(alt.characterId))}">
+        <strong>${escapeHtml(alt.title)}</strong>
+        <span class="prep-badge prep-badge-${PREP_VERDICT_TONE[alt.verdict] || "neutral"}">${escapeHtml(alt.verdict)}</span>
+        <span class="prep-alt-fit">fit ${escapeHtml(String(alt.fitScore))}</span>
+      </button>
+    `)
+    .join("");
+
+  return `
+    <section class="prep-section prep-section-uma">
+      <div class="prep-section-head"><h2>Retained uma</h2><span class="prep-badge prep-badge-${PREP_VERDICT_TONE[selected.verdict] || "neutral"}">${escapeHtml(selected.verdict)}</span></div>
+      <div class="prep-uma-main">
+        <strong class="prep-uma-name">${escapeHtml(selected.title)}</strong>
+        <span class="prep-uma-meta">${escapeHtml(PREP_STYLE_LABELS[plan.style?.key] || plan.style?.key || "-")} · ${escapeHtml(selected.surfaceGrade || "-")}/${escapeHtml(selected.distanceGrade || "-")} · fit ${escapeHtml(String(selected.fitScore))}</span>
+      </div>
+      ${renderPrepWhy(selected.reasons)}
+      ${altButtons ? `<div class="prep-alts"><span class="prep-alts-label">Alternatives</span>${altButtons}</div>` : ""}
+    </section>
+
+    <section class="prep-section">
+      <div class="prep-section-head"><h2>Running style &amp; stats</h2></div>
+      <p class="prep-line"><strong>${escapeHtml(PREP_STYLE_LABELS[plan.style?.key] || plan.style?.key || "-")}</strong> — ${escapeHtml(plan.style?.reason || "")}</p>
+      <div class="prep-stats-grid">
+        ${Object.entries(plan.stats?.stats || {}).map(([key, value]) => `<div class="prep-stat"><span>${escapeHtml(key)}</span><strong>${escapeHtml(String(value))}</strong></div>`).join("")}
+      </div>
+      ${renderPrepWhy(plan.stats?.reasons)}
+    </section>
+
+    <section class="prep-section">
+      <div class="prep-section-head"><h2>Support deck</h2>${plan.deck?.shortfall ? `<span class="prep-badge prep-badge-warn">${escapeHtml(String(plan.deck.filled))}/6</span>` : ""}</div>
+      <div class="prep-deck-grid">${(plan.deck?.picks || []).map((pick) => renderPrepDeckCard(pick, titleById)).join("")}</div>
+      ${renderPrepWhy(plan.deck?.reasons)}
+    </section>
+
+    <section class="prep-section">
+      <div class="prep-section-head"><h2>Skills</h2>${plan.skills?.courseAware ? `<span class="prep-badge prep-badge-ok">course-aware</span>` : ""}</div>
+      <p class="prep-line"><span class="prep-line-label">Required</span> ${skillLine(plan.skills?.required)}</p>
+      <p class="prep-line"><span class="prep-line-label">Optional</span> ${skillLine(plan.skills?.optional)}</p>
+      ${renderPrepWhy(plan.skills?.reasons)}
+    </section>
+
+    <section class="prep-section">
+      <div class="prep-section-head"><h2>Scenario</h2><span class="prep-badge prep-badge-${plan.scenario?.confidence === "curated-match" ? "ok" : "neutral"}">${escapeHtml(plan.scenario?.source || "curated")}</span></div>
+      <p class="prep-line"><strong>${escapeHtml(plan.scenario?.recommended?.name || "-")}</strong> — ${escapeHtml(plan.scenario?.recommended?.verdict || "")}</p>
+      ${plan.scenario?.note ? `<p class="prep-note">${escapeHtml(plan.scenario.note)}</p>` : ""}
+      ${renderPrepWhy(plan.scenario?.reasons)}
+    </section>
+
+    <section class="prep-section">
+      <div class="prep-section-head"><h2>Parent spec</h2></div>
+      ${(plan.parents?.parents || []).map((parent) => `<p class="prep-line"><strong>${escapeHtml(parent.summary)}</strong></p>`).join("")}
+      <p class="prep-line"><span class="prep-line-label">White · races</span> ${asArray(plan.parents?.whiteSparks?.races).map((race) => escapeHtml(race.title)).join(", ") || "-"}</p>
+      <p class="prep-line"><span class="prep-line-label">White · skills</span> ${asArray(plan.parents?.whiteSparks?.skills).map((skill) => escapeHtml(skill.title)).join(", ") || "-"}</p>
+      ${renderPrepWhy(plan.parents?.reasons)}
+    </section>
+
+    <div class="prep-actions">
+      <button type="button" class="prep-primary" id="prepSaveDraft">Save as build draft</button>
+    </div>
+  `;
+}
+
+export function renderPrepPage(route) {
+  if (!profileGateEl) {
+    return;
+  }
+
+  const targetItems = getEntityItems("cm_targets");
+  if (!targetItems.length) {
+    profileGateEl.innerHTML = `<div class="prep-page"><div class="prep-empty"><p>No Champions Meeting targets in the reference data.</p></div></div>`;
+    return;
+  }
+
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const defaultId = selectDefaultTargetId(targetItems, nowSeconds);
+  const activeId = route.targetId && targetItems.some((item) => String(item.id) === String(route.targetId))
+    ? String(route.targetId)
+    : defaultId;
+
+  // Reset the uma override when the target changes.
+  if (prepSelection.targetId !== activeId) {
+    prepSelection = { targetId: activeId, characterId: null };
+  }
+
+  const activeItem = targetItems.find((item) => String(item.id) === String(activeId));
+  const detail = activeItem?.detail || {};
+  const plan = buildAutoPrepPlanForDetail(detail, { selectedCharacterId: prepSelection.characterId });
+
+  const options = targetItems
+    .slice()
+    .sort((a, b) => (Number(b.detail?.start_ts) || 0) - (Number(a.detail?.start_ts) || 0))
+    .map((item) => {
+      const race = item.detail?.race_profile || {};
+      const label = `${item.detail?.name || item.title || item.id} · ${race.surface || ""} ${race.distance_category || ""} ${race.distance_m ? `${race.distance_m}m` : ""}`.trim();
+      return `<option value="${escapeHtml(String(item.id))}" ${String(item.id) === String(activeId) ? "selected" : ""}>${escapeHtml(label)}</option>`;
+    })
+    .join("");
+
+  profileGateEl.innerHTML = `
+    <div class="prep-page">
+      <header class="prep-header">
+        <button class="sidebar-toggle" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="appSidebar" onclick="window.umaSidebar&&window.umaSidebar.toggle()">
+          <span class="sidebar-toggle-bars" aria-hidden="true"></span>
+        </button>
+        <div class="prep-header-copy">
+          <p class="home-eyebrow">Auto Prep</p>
+          <h1 class="home-title">Prepare a Champions Meeting</h1>
+        </div>
+        <div class="prep-target-row">
+          <label class="field-stack">
+            <span>Target</span>
+            <select id="prepTarget">${options}</select>
+          </label>
+          <button type="button" class="prep-secondary" id="prepRegenerate">Regenerate</button>
+        </div>
+      </header>
+      ${renderPrepPlanSections(plan, activeId)}
+    </div>
+  `;
+
+  const targetSelect = document.getElementById("prepTarget");
+  if (targetSelect) {
+    targetSelect.addEventListener("change", () => setPrepHash(targetSelect.value));
+  }
+  const regenerateButton = document.getElementById("prepRegenerate");
+  if (regenerateButton) {
+    regenerateButton.addEventListener("click", () => {
+      prepSelection.characterId = null;
+      requestRender();
+    });
+  }
+  profileGateEl.querySelectorAll("[data-prep-uma]").forEach((button) => {
+    button.addEventListener("click", () => {
+      prepSelection.characterId = button.dataset.prepUma;
+      requestRender();
+    });
+  });
+  const saveButton = document.getElementById("prepSaveDraft");
+  if (saveButton) {
+    saveButton.addEventListener("click", () => {
+      const seed = planToBuildSeed(plan, activeId);
+      if (!seed) return;
+      startSeededBuildDraft(seed);
+      setBrowseHash("roster", buildsEntityKey, "__new__");
+    });
+  }
 }
 
 export function renderNav(mode, activeKey, keys = allowedEntityKeys(mode), targetEl = navEl) {
@@ -1116,6 +1324,14 @@ export function syncHeader(route) {
     return;
   }
 
+  if (route.page === "prep") {
+    // Auto Prep renders its own header; keep the top header hidden like home.
+    pageTitleEl.textContent = "CM Prep";
+    summaryText.textContent = "";
+    datasetHeadingEl.textContent = "CM Prep";
+    return;
+  }
+
   pageTitleEl.textContent = route.mode === "roster" ? "My Roster" : "Umamusume Pretty Derby Catalog";
 
   if (route.mode === "roster") {
@@ -1133,7 +1349,7 @@ export function syncHeader(route) {
 export function syncShellVisibility(route) {
   // Home + admin render into #profileGate (like the profiles/wizard gate) but keep
   // the sidebar visible; only profiles/wizard are the full-screen video gate.
-  const isGatePage = route.page === "profiles" || route.page === "wizard" || route.page === "admin" || route.page === "home";
+  const isGatePage = route.page === "profiles" || route.page === "wizard" || route.page === "admin" || route.page === "home" || route.page === "prep";
   const isProfilesLikePage = isGatePage;
   profileGateEl.hidden = !isGatePage;
   if (topHeaderEl) {
@@ -1160,6 +1376,7 @@ export function syncShellVisibility(route) {
   document.body.classList.toggle("route-wizard", route.page === "wizard");
   document.body.classList.toggle("route-admin", route.page === "admin");
   document.body.classList.toggle("route-home", route.page === "home");
+  document.body.classList.toggle("route-prep", route.page === "prep");
   document.body.classList.toggle("route-roster", route.page === "browse" && route.mode === "roster");
   document.body.classList.toggle("route-catalog", route.page === "browse" && route.mode === "reference");
   if (route.page !== "browse") {
@@ -1712,7 +1929,7 @@ export async function render() {
     }
   }
 
-  const needsRosterData = route.page === "browse" || route.page === "home";
+  const needsRosterData = route.page === "browse" || route.page === "home" || route.page === "prep";
 
   if (needsRosterData && !state.activeProfileId) {
     if (state.profilesIndex.last_profile_id) {
@@ -1738,7 +1955,7 @@ export async function render() {
   renderSidebar(route);
   syncShellVisibility(route);
 
-  if (route.page === "profiles" || route.page === "wizard" || route.page === "admin" || route.page === "home") {
+  if (route.page === "profiles" || route.page === "wizard" || route.page === "admin" || route.page === "home" || route.page === "prep") {
     renderProfileGate(route);
     syncLayoutMode(false);
     window.requestAnimationFrame(syncToolbarMetrics);
@@ -1760,7 +1977,7 @@ export function requestRender() {
   return render().catch((error) => {
     console.error(error);
     const route = currentRouteState();
-    if (route.page === "profiles" || route.page === "wizard" || route.page === "admin" || route.page === "home") {
+    if (route.page === "profiles" || route.page === "wizard" || route.page === "admin" || route.page === "home" || route.page === "prep") {
       syncShellVisibility(route);
       renderSidebar(route);
       renderProfileGate(route);
