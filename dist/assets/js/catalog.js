@@ -1,4 +1,4 @@
-// Auto-split from app.js as part of docs/REFACTOR_PLAN.md.
+﻿// Auto-split from app.js as part of docs/REFACTOR_PLAN.md.
 import { TRAINING_EVENT_EFFECT_LABELS, asArray, data, getEntityItems, getOwnedCharacterOptions, getSkillReferences, getViewState, renderGradeBadge, renderSelectOptions, setBrowseHash, state } from "./core.js";
 import { escapeHtml, renderBadge, renderLinkedSkillList, renderReferenceList, renderSimpleList, tableFromRows } from "./dom-utils.js";
 import { getRosterEntry, renderCharacterRosterProjection, renderSupportCurrentEffects, renderSupportRosterProjection } from "./roster.js";
@@ -85,6 +85,10 @@ function getOwnedSupportSummariesForDeck() {
       type: summary.type,
       rarity: summary.rarity,
       limitBreak: Number(summary.entry?.limit_break) || 0,
+      // Real per-effect values at the card's actual level/LB, from the
+      // roster-view projection - lets scoreSupportForTarget rank on effective
+      // value instead of rarity+LB (falls back gracefully if absent).
+      effectiveEffects: summary.derived?.effective_effects || [],
     };
   });
 }
@@ -95,7 +99,7 @@ export function getCmTargetDeck(detail) {
   const profile = targetProfileFromCmDetail(detail);
   const summaries = getOwnedSupportSummariesForDeck();
   const titleById = new Map(summaries.map((summary) => [summary.id, summary]));
-  return { result: recommendSupportDeck(profile.distanceKey, summaries), titleById };
+  return { result: recommendSupportDeck(profile.distanceKey, summaries, { targetProfile: profile }), titleById };
 }
 
 export function getSkillPickerOptions() {

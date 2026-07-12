@@ -10,6 +10,7 @@ import {
   recommendSkillsForBuild,
   recommendSupportDeck,
   scoreCharacterForTarget,
+  scoreSupportForTarget,
   scoreSupportSummary,
   targetProfileFromCmDetail,
 } from "../../src/ui/assets/js/build_recommender.js";
@@ -127,6 +128,68 @@ function makeSupport(id, type, rarity, limitBreak = 0) {
   return { id, type, rarity, limitBreak };
 }
 
+// --- Phase 1a: score supports on real effective values ---
+
+// effect_id constants: 1 Friendship, 8 Increased Training, 19 Specialty Rate,
+// 15 Race Bonus, 31 Wit Recovery, 28 Energy Discount.
+function eff(effectId, currentValue, level = 45) {
+  return { effect_id: effectId, name: `Effect ${effectId}`, current_value: currentValue, current_unlock_level: level };
+}
+
+const LONG_TURF = { surfaceKey: "turf", distanceKey: "long", distanceM: 3000 };
+
+test("scoreSupportForTarget sums family weight * value/reference, reasons sorted by points", () => {
+  // Friendship 30 (ref 30 -> 100 pts), Increased Training 15 (ref 15 -> 85 pts).
+  const summary = { id: "ssr", type: "speed", rarity: 3, limitBreak: 4, effectiveEffects: [eff(1, 30), eff(8, 15)] };
+  const result = scoreSupportForTarget(summary, MEDIUM_TURF);
+  assert.equal(result.hasProjection, true);
+  assert.equal(result.score, 185);
+  assert.equal(result.reasons[0].family, "friendship");
+  assert.equal(result.reasons[0].points, 100);
+  assert.equal(result.reasons[1].family, "training");
+});
+
+test("scoreSupportForTarget scales with the card's ACTUAL effective value", () => {
+  const maxed = { id: "a", effectiveEffects: [eff(1, 30)] };
+  const halfLeveled = { id: "b", effectiveEffects: [eff(1, 15)] };
+  const full = scoreSupportForTarget(maxed, MEDIUM_TURF).score;
+  const half = scoreSupportForTarget(halfLeveled, MEDIUM_TURF).score;
+  assert.equal(full, 100);
+  assert.equal(half, 50); // 100 * (15/30)
+});
+
+test("scoreSupportForTarget emphasizes energy/recovery families on long distances", () => {
+  const witCard = { id: "wit", type: "intelligence", effectiveEffects: [eff(31, 4)] }; // ref 4 -> 45 pts base
+  const onMedium = scoreSupportForTarget(witCard, MEDIUM_TURF).score;
+  const onLong = scoreSupportForTarget(witCard, LONG_TURF).score;
+  assert.equal(onMedium, 45 * 1.05);
+  assert.equal(onLong, 45 * 1.2);
+  assert.ok(onLong > onMedium);
+});
+
+test("scoreSupportForTarget falls back to rarity+LB when there is no projection, flagged", () => {
+  const noProjection = { id: "x", type: "speed", rarity: 3, limitBreak: 4, effectiveEffects: [] };
+  const result = scoreSupportForTarget(noProjection, MEDIUM_TURF);
+  assert.equal(result.hasProjection, false);
+  assert.equal(result.score, (3 * 10 + 4 * 2) * 6); // scoreSupportSummary * fallback scale
+  assert.match(result.reasons[0].label, /No effect data/);
+});
+
+test("scoreSupportForTarget ignores unmapped effect ids and non-positive values", () => {
+  const summary = { id: "x", effectiveEffects: [eff(999, 50), eff(1, 0), eff(1, null), eff(8, 15)] };
+  const result = scoreSupportForTarget(summary, MEDIUM_TURF);
+  assert.equal(result.score, 85); // only the Increased Training 15 counts
+  assert.equal(result.reasons.length, 1);
+});
+
+test("scoreSupportForTarget weights override lets a future meta layer re-rank", () => {
+  const summary = { id: "x", effectiveEffects: [eff(15, 10)] }; // Race Bonus, ref 10 -> 20 pts base
+  const base = scoreSupportForTarget(summary, MEDIUM_TURF).score;
+  const boosted = scoreSupportForTarget(summary, MEDIUM_TURF, { families: { raceBonus: 200 } }).score;
+  assert.equal(base, 20);
+  assert.equal(boosted, 200);
+});
+
 test("recommendSupportDeck honors the type mix then fills the best remaining, deduped to 6", () => {
   const owned = [
     makeSupport("s1", "speed", 3, 4), makeSupport("s2", "speed", 3, 2), makeSupport("s3", "speed", 2, 0),
@@ -144,6 +207,21 @@ test("recommendSupportDeck honors the type mix then fills the best remaining, de
   assert.ok(result.deck.includes("p1"));
   assert.equal(result.shortfall, false);
   assert.equal(result.actual.speed, 2);
+});
+
+test("recommendSupportDeck ranks by effective value when projections are present, exposing per-card reasons", () => {
+  // Same rarity/LB, but s2's projection is stronger (Friendship 30 vs 15) - it
+  // must outrank the rarity+LB heuristic, which would have tied them.
+  const owned = [
+    { id: "s1", type: "speed", rarity: 3, limitBreak: 4, effectiveEffects: [eff(1, 15)] },
+    { id: "s2", type: "speed", rarity: 3, limitBreak: 4, effectiveEffects: [eff(1, 30)] },
+    { id: "w1", type: "intelligence", rarity: 3, limitBreak: 4, effectiveEffects: [eff(1, 30)] },
+  ];
+  const result = recommendSupportDeck("mile", owned, { targetProfile: MEDIUM_TURF });
+  const speedPicks = result.picks.filter((p) => p.type === "speed");
+  assert.equal(speedPicks[0].id, "s2"); // stronger friendship first
+  assert.equal(speedPicks[0].hasProjection, true);
+  assert.ok(speedPicks[0].reasons.length >= 1);
 });
 
 test("recommendSupportDeck flags a shortfall and fills what it can when the roster is too small", () => {
