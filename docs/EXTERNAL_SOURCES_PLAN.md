@@ -423,6 +423,60 @@ changement backend, volontairement hors perimetre de ce MVP.
 Prochaine tranche recommandee: seulement apres, cadrer un adaptateur
 `Meta / Insights`.
 
+## Spike uma.moe (Meta / Insights) — 13/07/2026 — VERDICT: GO
+
+Spike empirique (sondage direct de l'API + backend `Tunnelbliick/umamoe-backend`,
+appele "honsemoe-backend" en prod) pour trancher les trois inconnues bloquantes
+avant tout code Meta. Prerequis d'Auto Prep Phase 4 (hooks `weights?` deja en
+place cote moteur).
+
+**1. Couverture Global — OUI (fort).** uma.moe se decrit comme la plateforme
+"for the global version"; `/api/stats` (public) renvoie **~25,3 M umas trackes,
+2,18 M comptes/7j, ~795 k comptes/24h** — un dataset Global massif et courant,
+alimente par les donnees uploadees des entraineurs Global. Pas de colonne region
+cote backend (le filtrage region est implicite: la source EST le playerbase
+Global).
+
+**2. Mapping d'IDs — IDENTITE (le risque principal disparait).** Les IDs
+uma.moe sont les IDs numeriques du jeu, identiques aux notres:
+- supports: `support_card_id` = notre `id`/`support_id` (5 chiffres, rarete
+  encodee dans le 1er chiffre — ex. `10001` = R Special Week).
+- personnages: card ids 6 chiffres (ex. `main_parent_id: 105101`) = notre
+  `characters.id` (`card_id`); base perso = `card_id / 100` = notre
+  `base_character_id`. Le backend fait exactement cette normalisation
+  (`if id >= 10000 { id / 100 }`).
+Aucun cross-reference fragile a maintenir (contrairement au mapping d'icones).
+
+**3. Donnees fetchables — OUI, avec reserve.** API publique live:
+`/api/health`, `/api/stats`, `/api/v3/search` repondent **200** en GET (JSON
+propre). `/api/v3/search` expose les enregistrements reels d'heritage/emprunt:
+`main_parent_id`, `parent_left_id`/`parent_right_id`, `blue/pink/green/white_sparks`,
+`borrow_view_count`, `borrow_copy_count`, `win_count`, `last_updated` — signaux
+directement exploitables (popularite deck/support, tier perso, distributions de
+sparks pour la spec parents). **Reserve:** `/api/v4/rankings/*` existe mais
+**rate-limite (429)** au bout de quelques requetes rapides — il FAUT snapshoter
+poliment (basse frequence, backoff). Cela colle a l'archi deja decidee:
+snapshots locaux dates, aucune dependance runtime.
+
+**Verdict: GO** pour une brique `Meta / Insights` en snapshots locaux dates,
+injectee via les `weights?` du moteur. Le concern historique ("pas d'API meta
+simple et stable") est nuance: l'API existe et est joignable, mais la tierlist
+"pretes a l'emploi" passe par `/api/v4/rankings/*` (params exacts + shape a
+finaliser sous rate-limit) OU par agregation cote-nous de `/api/v3/search`.
+
+**Premieres taches Phase 4 M2 (quand elle sera lancee):**
+- finaliser l'endpoint + params de `/api/v4/rankings/*` (shape par-support /
+  par-perso) sous acces rate-limite poli; sinon agreger `/api/v3/search`.
+- script de snapshot date -> `data/meta/uma_moe/<date>.json` (gitignore comme
+  `data/raw`), jamais appele a l'execution de l'UI.
+- adaptateur pur qui transforme un snapshot en `weights` (familles de support,
+  tier d'uma, popularite deck) + badge "meta" dans les `reasons[]`.
+- alternative/complement open-source note: `Euophrys/umamusume-tierlist`
+  (`src/cards/gl.js` = Global, `jp.js` = JP) — tier FORMULE (calcule depuis
+  master.db), fetchable/versionnable, mais recouvre en partie notre propre
+  `scoreSupportForTarget`; utile comme repere de calibration, pas comme source
+  de popularite reelle.
+
 Cette sequence maximise:
 
 - l'utilite immediate

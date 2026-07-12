@@ -294,8 +294,18 @@ l'editeur gagne un bouton **"Compare in CM Prep"** (-> `#/prep/:target_id`).
 Verifie en navigateur (motif net-zero: build+run cobaye crees via l'API,
 section confirmee, puis supprimes).
 
-Reste: Phase 4 (meta/uma.moe via les `weights?`), cadree separement (spike
-couverture Global d'abord).
+Reste: Phase 4 (meta/uma.moe via les `weights?`), cadree separement.
+
+### Phase 4 — spike meta uma.moe — FAIT (13/07/2026) — VERDICT: GO
+
+Detail complet dans `EXTERNAL_SOURCES_PLAN.md` ("Spike uma.moe"). Les trois
+inconnues bloquantes sont levees: **couverture Global forte** (~25 M umas
+trackes cote Global), **mapping d'IDs = identite** (les IDs uma.moe sont les IDs
+du jeu = les notres, supports et persos), **API publique joignable** (`/api/health`,
+`/api/stats`, `/api/v3/search` en 200) mais **rate-limitee** sur `/api/v4/rankings/*`
+(429) -> snapshots locaux dates obligatoires (ce qui etait deja l'archi visee).
+GO pour construire la brique Meta en snapshots + injection via les `weights?`.
+L'implementation Phase 4 elle-meme n'est pas commencee.
 
 ## Estimation
 
