@@ -32,7 +32,7 @@ import {
   umaReferenceFingerprint,
 } from "./roster_import_cv.js";
 import { getRosterEntry, setRosterEntry } from "./roster.js";
-import { persistRosterDocument, requestRenderPreservingScroll } from "../app.js";
+import { loadRosterForProfile, persistRosterDocument, requestRenderPreservingScroll } from "../app.js";
 
 const FETCH_CONCURRENCY = 8;
 // Level digits read below this agreement are unreliable (correct reads sit
@@ -780,9 +780,27 @@ async function applySelectedRows(modeKey) {
     setRosterEntry(mode.entityKey, item, entry);
   }
 
-  // Learn the manual associations the user just confirmed by applying them:
-  // the cell's no-jitter hash + histogram become the reference fingerprint
-  // for that id (overwriting any earlier learned entry).
+  await persistRosterDocument(`Imported ${selected.length} ${mode.noun}(s) from screenshots.`);
+
+  // persistRosterDocument swallows its errors into rosterStatus. A failed PUT
+  // must NOT be reported as success here: the local mutations would live only
+  // in this tab (phantom "owned" entries the server never saw — observed in
+  // real use when the server restarted mid-session). Resync from the server
+  // so the table goes back to proposing the unsaved rows, and learn nothing.
+  if (state.rosterStatus?.kind === "error") {
+    await loadRosterForProfile(state.activeProfileId, true);
+    setImportStatus(
+      modeKey,
+      "error",
+      `NOT saved: ${state.rosterStatus.message || "the roster save failed."} Your rows are still selected — apply again once the server is reachable.`,
+    );
+    requestRenderPreservingScroll();
+    return;
+  }
+
+  // Learn the manual associations only once the save is confirmed: the
+  // cell's no-jitter hash + histogram become the reference fingerprint for
+  // that id (overwriting any earlier learned entry).
   const learned = ensureLearnedFingerprints(modeKey);
   let memorized = 0;
   for (const row of selected) {
@@ -795,7 +813,6 @@ async function applySelectedRows(modeKey) {
     saveLearnedToStorage(mode, learned);
   }
 
-  await persistRosterDocument(`Imported ${selected.length} ${mode.noun}(s) from screenshots.`);
   setImportStatus(
     modeKey,
     "saved",

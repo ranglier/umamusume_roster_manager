@@ -248,6 +248,14 @@ Premiere session d'usage reel (retours utilisateur, tous corriges):
   ont ete essayes et ecartes (39/68 et 36/68)
 - **vocabulaire**: "Potential" partout dans l'UI d'import (le champ roster
   reste `awakening`, meme chose — nom historique de l'app)
+- **echec de sauvegarde honnete** (bug utilisateur "entrees fantomes":
+  affichees Owned cote client mais absentes du serveur, projections vides,
+  uniques a 0): persistRosterDocument avale ses erreurs dans rosterStatus et
+  l'import annoncait "Applied" meme quand le PUT echouait (serveur redemarre
+  en cours de session). Desormais: detection de l'echec, resync du roster
+  depuis le serveur (les lignes redeviennent proposees/cochees), message
+  "NOT saved... apply again", et l'apprentissage n'est memorise qu'apres
+  sauvegarde confirmee. Verifie en simulant un PUT injoignable
 - **dedup des lignes inconnues par empreinte** (bug utilisateur "doublons
   entre captures qui se chevauchent"): la dedup par id ne couvrait que les
   matchs confiants; les lignes Unknown (variantes non couvertes) etaient
