@@ -270,6 +270,19 @@ de bout en bout sur le roster reel p_001. Suite JS verte (211).
   (seed de l'editeur existant, aucune ecriture roster). L'ancienne reco de la
   fiche `cm_targets` reste fonctionnelle (compat).
 
+**Correctif scenarios Global-only** (retour utilisateur): la reco ne doit
+proposer que des scenarios sortis en version **Global**. Source de verite =
+GameTora, comme les cartes (`available.en`): `normalize_scenarios` porte
+desormais `name_en` (nom Global) et `start_en` (date de sortie Global, unix, ou
+`null`). `catalog.getGlobalAvailableScenarios()` derive l'ensemble disponible
+(`start_en` present ET <= maintenant); `recommendScenario(profile,
+{ availableScenarios })` ne considere que ceux-la, affiche le **nom Global**, et
+renvoie `confidence: "none"` si rien de connu n'est dispo. Aujourd'hui Global =
+URA Finale, Unity Cup (Aoharu), Trackblazer (Climax) — une cible Long Turf
+suggere Unity Cup (confiance basse), plus jamais L'Arc. Regenerer les donnees
+via `scripts/update_reference.py` pour que `start_en` arrive dans
+`reference-data.js` (gitignore).
+
 Reste du chantier: Phase 3 (boucle reelle `run_results`), Phase 4 (meta/uma.moe
 via les `weights?`), cadrees separement.
 
