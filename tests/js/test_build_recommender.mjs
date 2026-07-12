@@ -7,6 +7,7 @@ import {
   proposeTargetStats,
   rankOwnedCharactersForTarget,
   recommendBuildForTarget,
+  recommendParentSpec,
   recommendSkillsForBuild,
   recommendSupportDeck,
   scoreCharacterForTarget,
@@ -230,6 +231,70 @@ test("recommendSupportDeck flags a shortfall and fills what it can when the rost
   assert.equal(result.deck.length, 2);
   assert.equal(result.shortfall, true);
   assert.equal(result.filled, 2);
+});
+
+// --- Phase 1b: parent spec (spark shopping list, never concrete parents) ---
+
+const LONG_TURF_RACES = {
+  surfaceKey: "turf", surface: "Turf", distanceKey: "long", distanceCategory: "Long", distanceM: 3200,
+  relatedRaces: [{ id: "r1", title: "Tenno Sho (Spring)" }, { id: "r2", title: "Kikuka Sho" }],
+};
+
+test("targetProfileFromCmDetail carries the related-race white sparks", () => {
+  const profile = targetProfileFromCmDetail({
+    name: "Japanese Derby",
+    race_profile: { surface_slug: "turf", distance_category_slug: "medium", distance_m: 2400 },
+    related_races: [{ id: "100901", title: "Japanese Oaks" }],
+  });
+  assert.equal(profile.relatedRaces.length, 1);
+  assert.equal(profile.relatedRaces[0].title, "Japanese Oaks");
+});
+
+test("recommendParentSpec pinks the aptitude gaps below A and blues the constrained stats", () => {
+  // Long turf, char is Long B (gap) and Turf A (fine), leader A style.
+  const char = makeChar("c", {
+    surface: { turf: "A" },
+    distance: { long: "B", medium: "A" },
+    style: { leader: "A", betweener: "A", runner: "G", chaser: "C" },
+  }, "Gold Ship");
+  const spec = recommendParentSpec(LONG_TURF_RACES, char, ["skill_a", { id: "skill_b", title: "Swinging Maestro" }]);
+  // Only distance is below A -> single pink gap, both parents hunt LONG.
+  assert.equal(spec.pinkGaps.length, 1);
+  assert.equal(spec.pinkGaps[0].label, "LONG");
+  assert.equal(spec.parents[0].pink.label, "LONG");
+  assert.equal(spec.parents[1].pink.label, "LONG");
+  // Long distance -> blue sparks are STAMINA then SPEED across the two parents.
+  assert.equal(spec.parents[0].blue.stat, "STAMINA");
+  assert.equal(spec.parents[1].blue.stat, "SPEED");
+  assert.equal(spec.parents[0].stars, 3);
+  assert.match(spec.parents[0].summary, /Parent 1: STAMINA, LONG 3★/);
+});
+
+test("recommendParentSpec spreads two aptitude gaps across the two parents by priority", () => {
+  // Both distance (Long C) and surface (Turf B) are below A -> distance first.
+  const char = makeChar("c", {
+    surface: { turf: "B" },
+    distance: { long: "C" },
+    style: { leader: "A", runner: "G", betweener: "B", chaser: "C" },
+  });
+  const spec = recommendParentSpec(LONG_TURF_RACES, char);
+  assert.equal(spec.pinkGaps.length, 2);
+  assert.equal(spec.parents[0].pink.label, "LONG");   // priority 3
+  assert.equal(spec.parents[1].pink.label, "TURF");   // priority 2
+});
+
+test("recommendParentSpec notes when aptitudes are already covered and lists white sparks", () => {
+  const char = makeChar("c", {
+    surface: { turf: "A" },
+    distance: { long: "S" },
+    style: { leader: "A", runner: "G", betweener: "A", chaser: "C" },
+  });
+  const spec = recommendParentSpec(LONG_TURF_RACES, char, ["skill_a"]);
+  assert.equal(spec.pinkGaps.length, 0);
+  assert.equal(spec.parents[0].pink, null);
+  assert.equal(spec.whiteSparks.races.length, 2);
+  assert.equal(spec.whiteSparks.skills[0].id, "skill_a");
+  assert.match(spec.reasons[0], /already A\+/);
 });
 
 // --- Phase 2b: skill recommendation by effect category ---

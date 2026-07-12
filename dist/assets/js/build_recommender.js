@@ -26,6 +26,11 @@ export function targetProfileFromCmDetail(detail) {
     distanceKey: race.distance_category_slug || String(race.distance_category || "").toLowerCase(),
     distanceCategory: race.distance_category || "",
     distanceM: Number(race.distance_m) || 0,
+    raceName: detail?.name || race.track_name || "",
+    // The CM's own race family (G1s at this track/distance) - the useful white
+    // "race sparks" to hunt on parents. Carried through so recommendParentSpec
+    // stays pure and self-contained (its signature takes only the profile).
+    relatedRaces: (detail?.related_races || []).map((r) => ({ id: String(r.id || ""), title: r.title || "" })),
   };
 }
 
@@ -463,5 +468,118 @@ export function recommendSkillsForBuild(poolSkillItems, targetProfile, { require
     optional: optional.map((entry) => entry.id),
     byCategory,
     poolSize: scored.length,
+  };
+}
+
+// --- Phase 1b (Auto Prep): parent SPEC, not parent SELECTION. Decision on
+// record (docs/AUTO_PREP_PLAN.md): half the parents come from the in-game friend
+// borrow list at setup time, invisible to the app, so we NEVER name concrete
+// parents - we say what sparks to hunt for. A parent spec is one blue stat spark
+// + one pink aptitude spark at a target star level, plus a shared list of white
+// sparks (race + build skills). All heuristic, all labeled, all with reasons. ---
+
+const APTITUDE_LABELS = {
+  runner: "FRONT RUNNER", leader: "PACE CHASER", betweener: "LATE SURGER", chaser: "END CLOSER",
+};
+
+// Recommend chasing 3-star sparks: the practical strong target (each star adds a
+// meaningful chunk; 3 is reliably reachable when hunting a specific spark).
+const PARENT_SPARK_STARS = 3;
+
+function isBelowA(grade) {
+  const g = String(grade || "").toUpperCase();
+  return g !== "S" && g !== "A";
+}
+
+// Aptitude gaps the target needs but the character is below A on, in priority
+// order: distance drives both speed and accel modifiers (biggest lever), then
+// surface (accel), then running style (Wiz). A pink spark on a parent lifts the
+// child's grade, so these are the ones worth hunting.
+function collectPinkGaps(aptitudes, targetProfile, bestStyle) {
+  const gaps = [];
+  const distanceGrade = aptitudes?.distance?.[targetProfile.distanceKey];
+  if (isBelowA(distanceGrade)) {
+    gaps.push({ kind: "distance", label: String(targetProfile.distanceCategory || targetProfile.distanceKey || "").toUpperCase(), currentGrade: String(distanceGrade || "-").toUpperCase(), priority: 3 });
+  }
+  const surfaceGrade = aptitudes?.surface?.[targetProfile.surfaceKey];
+  if (isBelowA(surfaceGrade)) {
+    gaps.push({ kind: "surface", label: String(targetProfile.surface || targetProfile.surfaceKey || "").toUpperCase(), currentGrade: String(surfaceGrade || "-").toUpperCase(), priority: 2 });
+  }
+  const styleGrade = aptitudes?.style?.[bestStyle];
+  if (isBelowA(styleGrade)) {
+    gaps.push({ kind: "style", label: APTITUDE_LABELS[bestStyle] || String(bestStyle || "").toUpperCase(), currentGrade: String(styleGrade || "-").toUpperCase(), priority: 1 });
+  }
+  return gaps.sort((a, b) => b.priority - a.priority);
+}
+
+// The two most constrained base stats for a target, as a labeled heuristic tied
+// to the same distance->stamina reasoning as the Feasibility panel: stamina is
+// the binding threshold on medium/long, raw speed on short/mile; the second stat
+// is the runner-up pressure. Each parent takes one blue spark from this ranking.
+function rankConstrainedStats(targetProfile) {
+  const staminaHeavy = targetProfile?.distanceKey === "long" || targetProfile?.distanceKey === "medium";
+  return staminaHeavy
+    ? [
+        { stat: "STAMINA", reason: "stamina is the binding threshold at this distance (see Feasibility)" },
+        { stat: "SPEED", reason: "raw speed still sets the pace" },
+      ]
+    : [
+        { stat: "SPEED", reason: "short/mile races are won on raw speed" },
+        { stat: "POWER", reason: "acceleration out of the corners" },
+      ];
+}
+
+// recommendParentSpec(targetProfile, charItem, buildSkills)
+// - buildSkills: array of skill ids or { id, title } from the build draft.
+// Returns two parent specs (blue + pink + stars), the full pink-gap list, the
+// shared white-spark shopping list (races + skills), and reasons[]. Never picks
+// concrete parents.
+export function recommendParentSpec(targetProfile, charItem, buildSkills = []) {
+  const aptitudes = charItem?.detail?.aptitudes || {};
+  const bestStyle = scoreCharacterForTarget(charItem, targetProfile).bestStyle;
+  const pinkGaps = collectPinkGaps(aptitudes, targetProfile, bestStyle);
+  const blueStats = rankConstrainedStats(targetProfile);
+
+  // Blue: each parent covers one of the top-2 constrained stats. Pink: if there
+  // are 2+ aptitude gaps, spread the top two across the parents to cover more
+  // ground; with a single gap, both parents hunt it (aptitude sparks stack).
+  const parents = [0, 1].map((index) => {
+    const blue = blueStats[index] || blueStats[0];
+    let pink = null;
+    if (pinkGaps.length >= 2) pink = pinkGaps[index] || pinkGaps[0];
+    else if (pinkGaps.length === 1) pink = pinkGaps[0];
+    const parts = [`Parent ${index + 1}: ${blue.stat}`];
+    if (pink) parts.push(`${pink.label} ${PARENT_SPARK_STARS}★`);
+    return {
+      label: `Parent ${index + 1}`,
+      blue: { stat: blue.stat, reason: blue.reason },
+      pink: pink ? { kind: pink.kind, label: pink.label, currentGrade: pink.currentGrade, stars: PARENT_SPARK_STARS } : null,
+      stars: PARENT_SPARK_STARS,
+      summary: parts.join(", "),
+    };
+  });
+
+  const raceSparks = (targetProfile?.relatedRaces || []).slice(0, 4).map((race) => ({ id: race.id, title: race.title }));
+  const skillSparks = (buildSkills || [])
+    .map((skill) => (typeof skill === "string" ? { id: skill, title: skill } : { id: String(skill?.id || ""), title: skill?.title || String(skill?.id || "") }))
+    .filter((skill) => skill.id)
+    .slice(0, 6);
+
+  const reasons = [];
+  if (pinkGaps.length) {
+    reasons.push(`Pink sparks fill aptitude gaps where ${charItem?.title || "this uma"} is below A: ${pinkGaps.map((g) => `${g.label} (${g.currentGrade})`).join(", ")}.`);
+  } else {
+    reasons.push("Aptitudes already A+ for this target - no pink spark strictly needed; a second blue or a skill spark is fine.");
+  }
+  reasons.push(`Blue sparks target the most constrained stats: ${blueStats.map((b) => b.stat).join(" then ")}.`);
+  if (raceSparks.length) reasons.push(`White race sparks worth having: ${raceSparks.map((r) => r.title).join(", ")}.`);
+  if (skillSparks.length) reasons.push(`White skill sparks from the build: ${skillSparks.map((s) => s.title).join(", ")}.`);
+
+  return {
+    parents,
+    pinkGaps,
+    whiteSparks: { races: raceSparks, skills: skillSparks },
+    stars: PARENT_SPARK_STARS,
+    reasons,
   };
 }
