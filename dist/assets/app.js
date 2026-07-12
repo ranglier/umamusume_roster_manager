@@ -3,7 +3,7 @@
 import { activeProfileBlock, activeProfileNameEl, adminButton, allowedEntityKeys, appSidebarEl, asArray, backToTopButton, BUILD_RUNNING_STYLE_OPTIONS, BUILD_STATUS_OPTIONS, browseActionsEl, buildsEntityKey, changeProfileButton, clearButton, collectionEntityKeys, compactLayoutQuery, createEntityState, currentRouteState, data, datasetBarEl, datasetHeadingEl, defaultEntityKeyForMode, defaultProfilesIndex, detailColumnEl, detailEl, detailPanelEl, entityMetaEl, entityTitleEl, filtersEl, getActiveProfile, getBuildTargetOptions, getEntityItems, getLoadedReferenceGeneratedAt, getRosterViewEntry, getRosterViewPayload, getViewState, globalBuild, hasLoadedReferenceBundle, lastBuildBlock, legacyEntityKey, listEl, navEl, normalizeProfilesIndex, normalizeRosterDocument, normalizeRosterViewPayload, pageTitleEl, profileBackgroundMediaEl, profileBackgroundVideoEl, profileGateEl, referenceEntityKeys, renderGradeBadge, resetBuildsDocument, resetLegacyViewPayload, resultCountEl, resultsPanelEl, rosterEntityKeys, searchInput, setAdminHash, setBrowseHash, setHomeHash, setPrepHash, setProfilesHash, setWizardHash, SIDEBAR_SECTIONS, sidebarSectionForRoute, sidebarSectionsEl, state, summaryText, syncSelectedProfileId, toolbarEl, topHeaderEl, viewStateByKey } from "./js/core.js";
 import { escapeHtml, formatDateTime, renderBadge, renderDetailHeader, renderLinks, renderResultTop } from "./js/dom-utils.js";
 import { attachCmTargetRecommendationListeners, attachRacetrackVisualizerListeners, buildAutoPrepPlanForDetail, getCmTargetDeck, getCmTargetRecommendations, renderCatalogSupportQuickAdd, renderCharacters, renderCmTargets, renderCompatibility, renderG1Factors, renderRaces, renderRacetracks, renderScenarios, renderSkills, renderSupports, renderTrainingEvents } from "./js/catalog.js";
-import { planToBuildSeed, selectDefaultTargetId } from "./js/prep.js";
+import { formatCmTargetLabel, planToBuildSeed, selectDefaultTargetId } from "./js/prep.js";
 import { attachRosterFormListeners, collectRosterFormData, getDefaultRosterEntry, getRosterBadges, getRosterEntry, getRosterFilterDefinitions, getRosterFilterOptions, removeSelectedBatchRows, renderBatchList, renderReferenceRosterActions, renderRosterCardProgress, renderRosterEditor, rosterCountForEntity, saveVisibleBatchRows, setRosterEntry } from "./js/roster.js";
 import { attachLegacyFormListeners, getCharacterRosterDefaults, getLegacyCharacterOptions, renderLegacyDetailBody, renderLegacyEditor, renderLegacyPreview, renderLegacySimulatorList } from "./js/legacy.js";
 import { attachBuildFormListeners, createEmptyBuildEntry, renderBuildEditor, renderBuildFeasibilityPanel, renderBuildSpurtPanel, startSeededBuildDraft } from "./js/builds.js";
@@ -547,8 +547,7 @@ export function renderPrepPage(route) {
     .slice()
     .sort((a, b) => (Number(b.detail?.start_ts) || 0) - (Number(a.detail?.start_ts) || 0))
     .map((item) => {
-      const race = item.detail?.race_profile || {};
-      const label = `${item.detail?.name || item.title || item.id} · ${race.surface || ""} ${race.distance_category || ""} ${race.distance_m ? `${race.distance_m}m` : ""}`.trim();
+      const label = formatCmTargetLabel(item);
       return `<option value="${escapeHtml(String(item.id))}" ${String(item.id) === String(activeId) ? "selected" : ""}>${escapeHtml(label)}</option>`;
     })
     .join("");

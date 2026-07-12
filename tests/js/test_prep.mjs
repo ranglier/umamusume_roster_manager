@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { planToBuildSeed, selectDefaultTargetId } from "../../src/ui/assets/js/prep.js";
+import { formatCmTargetLabel, planToBuildSeed, selectDefaultTargetId } from "../../src/ui/assets/js/prep.js";
 
 function cm(id, start, end) {
   return { id, detail: { start_ts: start, end_ts: end } };
@@ -49,4 +49,21 @@ test("planToBuildSeed maps a plan into the build-editor seed shape", () => {
 
 test("planToBuildSeed returns null when the plan has no retained uma", () => {
   assert.equal(planToBuildSeed({ selected: null }, "cm_001"), null);
+});
+
+test("formatCmTargetLabel combines name, track, distance/surface and month/year", () => {
+  // cm_043 LONG at Nakayama 2500m Turf, starts 2026-01-22.
+  const item = { id: "cm_043", detail: { name: "LONG", names: { en: null, ja: "LONG" }, start_ts: 1769040000, race_profile: { track_name: "Nakayama", surface: "Turf", distance_m: 2500 } } };
+  const label = formatCmTargetLabel(item);
+  assert.match(label, /^LONG · Nakayama 2500m Turf · \w{3} 2026$/);
+});
+
+test("formatCmTargetLabel drops an unknown track and a missing date gracefully", () => {
+  const item = { id: "cm_045", detail: { name: "DIRT", race_profile: { track_name: "Unknown racetrack", surface: "Dirt", distance_m: 2000 } } };
+  assert.equal(formatCmTargetLabel(item), "DIRT · 2000m Dirt");
+});
+
+test("formatCmTargetLabel prefers the zodiac cup name when present", () => {
+  const item = { id: "cm_001", detail: { name: "Taurus Cup", start_ts: 1620000000, race_profile: { track_name: "Tokyo", surface: "Turf", distance_m: 2400 } } };
+  assert.match(formatCmTargetLabel(item), /^Taurus Cup · Tokyo 2400m Turf · \w{3} 2021$/);
 });
