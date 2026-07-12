@@ -194,6 +194,20 @@ test("scoreSupportForTarget weights override lets a future meta layer re-rank", 
   assert.equal(boosted, 200);
 });
 
+test("scoreSupportForTarget adds a capped, labeled meta bonus from weights.supportMeta", () => {
+  const summary = { id: "30010", effectiveEffects: [eff(1, 30)] }; // 100 pts formula
+  const weights = { supportMeta: { "30010": { bonus: 40, label: "top" } } };
+  const result = scoreSupportForTarget(summary, MEDIUM_TURF, weights);
+  assert.equal(result.score, 140); // 100 formula + 40 meta
+  assert.equal(result.metaBonus, 40);
+  const metaReason = result.reasons.find((r) => r.family === "meta");
+  assert.ok(metaReason && /community snapshot/.test(metaReason.label));
+  // no meta entry for this id -> no bonus, no meta reason
+  const plain = scoreSupportForTarget(summary, MEDIUM_TURF, { supportMeta: { other: { bonus: 40 } } });
+  assert.equal(plain.score, 100);
+  assert.ok(!plain.reasons.some((r) => r.family === "meta"));
+});
+
 test("recommendSupportDeck honors the type mix then fills the best remaining, deduped to 6", () => {
   const owned = [
     makeSupport("s1", "speed", 3, 4), makeSupport("s2", "speed", 3, 2), makeSupport("s3", "speed", 2, 0),
@@ -501,6 +515,19 @@ test("buildAutoPrepPlan gates the course-aware skill bonus and wires the injecte
   assert.equal(zoneSkill.zones, 2);
   // the build's skills feed the parent white sparks.
   assert.ok(plan.parents.whiteSparks.skills.some((s) => s.id === "a1"));
+});
+
+test("buildAutoPrepPlan uses character meta only as an equal-fit tiebreaker, never over fit", () => {
+  // STAYER and a same-fit clone; meta favors the clone. Fit is identical so meta
+  // breaks the tie. SPRINTER has worse long fit and must NOT be lifted by meta.
+  const clone = makeChar("clone", STAYER.detail.aptitudes, "Mejiro McQueen");
+  const weights = { characterMeta: { clone: { popularity: 0.9, label: "top" }, sprinter: { popularity: 1, label: "top" } } };
+  const plan = buildAutoPrepPlan(LONG_TURF_TARGET, planRoster({ characters: [STAYER, clone, SPRINTER], weights }));
+  // clone (equal fit, higher meta) outranks stayer; sprinter (worse fit) still last.
+  assert.equal(plan.selected.characterId, "clone");
+  assert.ok(plan.selected.reasons.some((r) => /meta:/.test(r)));
+  assert.notEqual(plan.selected.characterId, "sprinter");
+  assert.equal(plan.meta.applied, true);
 });
 
 test("buildAutoPrepPlan degrades cleanly with an empty roster", () => {

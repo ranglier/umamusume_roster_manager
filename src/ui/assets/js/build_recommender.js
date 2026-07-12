@@ -284,9 +284,28 @@ export function scoreSupportForTarget(summary, targetProfile, weights = {}) {
     });
   }
 
+  // Phase 4 meta: an optional, capped, labeled bonus from a dated community
+  // snapshot (weights.supportMeta, built by meta.buildMetaWeights). Additive on
+  // top of the formula score so it refines the ranking within a tier without
+  // overturning real effective value; always shown as its own "meta" reason.
+  const applyMeta = (base) => {
+    const metaEntry = weights?.supportMeta?.[String(summary?.id ?? "")];
+    if (!metaEntry || !(Number(metaEntry.bonus) > 0)) return base;
+    const bonus = Math.round(Number(metaEntry.bonus) * 100) / 100;
+    return {
+      ...base,
+      score: Math.round((base.score + bonus) * 100) / 100,
+      metaBonus: bonus,
+      reasons: [
+        ...base.reasons,
+        { family: "meta", label: `meta: ${metaEntry.label || "popular"} pick (community snapshot)`, points: bonus },
+      ],
+    };
+  };
+
   if (!contributions.length) {
     const proxy = scoreSupportSummary(summary) * SUPPORT_FALLBACK_SCALE;
-    return {
+    return applyMeta({
       score: Math.round(proxy * 100) / 100,
       hasProjection: false,
       reasons: [{
@@ -294,16 +313,16 @@ export function scoreSupportForTarget(summary, targetProfile, weights = {}) {
         label: `No effect data - ranked by rarity R${Number(summary?.rarity) || 0} / LB ${Number(summary?.limitBreak) || 0}`,
         points: Math.round(proxy * 100) / 100,
       }],
-    };
+    });
   }
 
   contributions.sort((a, b) => b.points - a.points);
   const score = contributions.reduce((sum, entry) => sum + entry.points, 0);
-  return {
+  return applyMeta({
     score: Math.round(score * 100) / 100,
     hasProjection: true,
     reasons: contributions.slice(0, 5),
-  };
+  });
 }
 
 // ownedSupportSummaries: [{ id, type, rarity, limitBreak, effectiveEffects? }].
@@ -782,7 +801,13 @@ export function buildAutoPrepPlan(target, rosterData = {}, options = {}) {
     racetrackResolved: Boolean(course),
   };
 
-  const ranked = rankOwnedCharactersForTarget(characters, profile);
+  // Phase 4 meta: exact aptitude fit stays the primary truth; community
+  // popularity (weights.characterMeta) is only a TIEBREAKER among equal-fit umas
+  // and a labeled note - it never reorders past a better fit.
+  const characterMeta = weights?.characterMeta || {};
+  const metaPopularityOf = (candidate) => Number(characterMeta[String(candidate.characterId)]?.popularity) || 0;
+  const ranked = rankOwnedCharactersForTarget(characters, profile)
+    .sort((a, b) => (b.fitScore - a.fitScore) || (metaPopularityOf(b) - metaPopularityOf(a)));
   if (!ranked.length) {
     return {
       target: targetSummary,
@@ -794,12 +819,14 @@ export function buildAutoPrepPlan(target, rosterData = {}, options = {}) {
   }
 
   const charById = new Map(characters.map((item) => [String(item?.id || ""), item]));
-  const withReasons = (candidate) => ({
-    ...candidate,
-    reasons: [
+  const withReasons = (candidate) => {
+    const reasons = [
       `${candidate.surfaceGrade || "-"}/${candidate.distanceGrade || "-"} on ${profile.surface || "?"} ${profile.distanceCategory || "?"}, ${candidate.verdict} fit (score ${candidate.fitScore})`,
-    ],
-  });
+    ];
+    const metaEntry = characterMeta[String(candidate.characterId)];
+    if (metaEntry?.label) reasons.push(`meta: ${metaEntry.label} pick (community snapshot)`);
+    return { ...candidate, reasons, metaLabel: metaEntry?.label || "" };
+  };
 
   // Retain the requested uma if given and owned, else the top-ranked; keep the
   // rest as clickable alternatives that re-generate the plan.
@@ -867,7 +894,13 @@ export function buildAutoPrepPlan(target, rosterData = {}, options = {}) {
     skills: { ...skills, reasons: skillReasons },
     scenario,
     parents,
-    meta: { courseAware: skills.courseAware, weightsApplied: Object.keys(weights || {}).length > 0 },
+    meta: {
+      courseAware: skills.courseAware,
+      weightsApplied: Object.keys(weights || {}).length > 0,
+      // Community meta snapshot info (Phase 4), present only when one is loaded.
+      snapshot: weights?.meta?.source && weights?.meta?.source !== "unknown" ? weights.meta : null,
+      applied: Boolean((weights?.supportMeta && Object.keys(weights.supportMeta).length) || (weights?.characterMeta && Object.keys(weights.characterMeta).length)),
+    },
     reasons: [
       `Retained ${selectedRanked.title}: ${selectedRanked.reasons[0]}.`,
       `${alternatives.length} alternative uma${alternatives.length === 1 ? "" : "s"} available.`,

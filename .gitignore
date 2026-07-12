@@ -22,5 +22,6 @@ data/normalized/
 data/runtime/
 data/user/
 data/backups/
+data/meta/
 dist/data/
 dist/media/
