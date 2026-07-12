@@ -248,6 +248,10 @@ Premiere session d'usage reel (retours utilisateur, tous corriges):
   ont ete essayes et ecartes (39/68 et 36/68)
 - **vocabulaire**: "Potential" partout dans l'UI d'import (le champ roster
   reste `awakening`, meme chose — nom historique de l'app)
+- **niveau d'unique = etoiles** (regle du jeu): l'import characters
+  alimente aussi `unique_level` depuis les etoiles lues (mapping
+  stars -> unique_level dans diffFields) — le diff l'affiche ("unique
+  1 -> 4") et repare les entrees deja importees au prochain apply
 - **layout**: le panneau d'import s'etend sur toute la largeur
   (`grid-column: 1/-1` dans la grille de #list) et le dashboard home passe
   a 1560px centre (la moitie de l'ecran restait vide)

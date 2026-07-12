@@ -129,9 +129,10 @@ const IMPORT_MODES = {
       };
     },
     // The in-game label is "Potential Lvl"; the roster field is `awakening`
-    // (same thing — the app's historical name for it).
-    diffFields: [["stars", "stars"], ["potential", "awakening"]],
-    diffLabels: { stars: "stars", awakening: "potential" },
+    // (same thing — the app's historical name for it). The unique skill
+    // level equals the star count in the game, so stars feed both fields.
+    diffFields: [["stars", "stars"], ["stars", "unique_level"], ["potential", "awakening"]],
+    diffLabels: { stars: "stars", unique_level: "unique", awakening: "potential" },
     renderValueCells(row) {
       return `
         <td><input class="import-level-input" type="number" min="1" max="5" step="1" data-import-field="stars" data-import-key="${escapeHtml(row.key)}" value="${Number.isInteger(row.values.stars) ? row.values.stars : ""}" placeholder="?"></td>
