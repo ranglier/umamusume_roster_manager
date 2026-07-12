@@ -1,9 +1,9 @@
 ﻿// Entry point. Wires up the feature modules extracted under assets/js/
 // as part of docs/REFACTOR_PLAN.md.
-import { activeProfileBlock, activeProfileNameEl, adminButton, allowedEntityKeys, appSidebarEl, asArray, backToTopButton, BUILD_RUNNING_STYLE_OPTIONS, BUILD_STATUS_OPTIONS, browseActionsEl, buildsEntityKey, changeProfileButton, clearButton, collectionEntityKeys, compactLayoutQuery, createEntityState, currentRouteState, data, datasetBarEl, datasetHeadingEl, defaultEntityKeyForMode, defaultProfilesIndex, detailColumnEl, detailEl, detailPanelEl, entityMetaEl, entityTitleEl, filtersEl, getActiveProfile, getBuildTargetOptions, getEntityItems, getLoadedReferenceGeneratedAt, getRosterViewEntry, getRosterViewPayload, getViewState, globalBuild, hasLoadedReferenceBundle, lastBuildBlock, legacyEntityKey, listEl, navEl, normalizeProfilesIndex, normalizeRosterDocument, normalizeRosterViewPayload, pageTitleEl, profileBackgroundMediaEl, profileBackgroundVideoEl, profileGateEl, referenceEntityKeys, renderGradeBadge, resetBuildsDocument, resetLegacyViewPayload, resultCountEl, resultsPanelEl, rosterEntityKeys, searchInput, setAdminHash, setBrowseHash, setHomeHash, setPrepHash, setProfilesHash, setWizardHash, SIDEBAR_SECTIONS, sidebarSectionForRoute, sidebarSectionsEl, state, summaryText, syncSelectedProfileId, toolbarEl, topHeaderEl, viewStateByKey } from "./js/core.js";
+import { activeProfileBlock, activeProfileNameEl, adminButton, allowedEntityKeys, appSidebarEl, asArray, backToTopButton, BUILD_RUNNING_STYLE_OPTIONS, BUILD_STATUS_OPTIONS, browseActionsEl, buildsEntityKey, changeProfileButton, clearButton, collectionEntityKeys, compactLayoutQuery, createEntityState, currentRouteState, data, datasetBarEl, datasetHeadingEl, defaultEntityKeyForMode, defaultProfilesIndex, detailColumnEl, detailEl, detailPanelEl, entityMetaEl, entityTitleEl, filtersEl, getActiveProfile, getBuildTargetOptions, getEntityItems, getLoadedReferenceGeneratedAt, getRosterViewEntry, getRosterViewPayload, getRunsForTarget, getViewState, globalBuild, hasLoadedReferenceBundle, lastBuildBlock, legacyEntityKey, listEl, navEl, normalizeProfilesIndex, normalizeRosterDocument, normalizeRosterViewPayload, pageTitleEl, profileBackgroundMediaEl, profileBackgroundVideoEl, profileGateEl, referenceEntityKeys, renderGradeBadge, resetBuildsDocument, resetLegacyViewPayload, resultCountEl, resultsPanelEl, rosterEntityKeys, searchInput, setAdminHash, setBrowseHash, setHomeHash, setPrepHash, setProfilesHash, setWizardHash, SIDEBAR_SECTIONS, sidebarSectionForRoute, sidebarSectionsEl, state, summaryText, syncSelectedProfileId, toolbarEl, topHeaderEl, viewStateByKey } from "./js/core.js";
 import { escapeHtml, formatDateTime, renderBadge, renderDetailHeader, renderLinks, renderResultTop } from "./js/dom-utils.js";
 import { attachCmTargetRecommendationListeners, attachRacetrackVisualizerListeners, buildAutoPrepPlanForDetail, getCmTargetDeck, getCmTargetRecommendations, renderCatalogSupportQuickAdd, renderCharacters, renderCmTargets, renderCompatibility, renderG1Factors, renderRaces, renderRacetracks, renderScenarios, renderSkills, renderSupports, renderTrainingEvents } from "./js/catalog.js";
-import { formatCmTargetLabel, planToBuildSeed, selectDefaultTargetId } from "./js/prep.js";
+import { formatCmTargetLabel, planToBuildSeed, selectDefaultTargetId, summarizeTargetRuns } from "./js/prep.js";
 import { attachRosterFormListeners, collectRosterFormData, getDefaultRosterEntry, getRosterBadges, getRosterEntry, getRosterFilterDefinitions, getRosterFilterOptions, removeSelectedBatchRows, renderBatchList, renderReferenceRosterActions, renderRosterCardProgress, renderRosterEditor, rosterCountForEntity, saveVisibleBatchRows, setRosterEntry } from "./js/roster.js";
 import { attachLegacyFormListeners, getCharacterRosterDefaults, getLegacyCharacterOptions, renderLegacyDetailBody, renderLegacyEditor, renderLegacyPreview, renderLegacySimulatorList } from "./js/legacy.js";
 import { attachBuildFormListeners, createEmptyBuildEntry, renderBuildEditor, renderBuildFeasibilityPanel, renderBuildSpurtPanel, startSeededBuildDraft } from "./js/builds.js";
@@ -427,6 +427,45 @@ function prepSyntheticEntry(plan, targetId) {
   };
 }
 
+const PREP_RUN_OUTCOME = { win: { tone: "ok", label: "Win" }, loss: { tone: "bad", label: "Loss" }, untested: { tone: "neutral", label: "Untested" } };
+const PREP_STAT_ABBR = { speed: "SPD", stamina: "STA", power: "PWR", guts: "GUT", wit: "WIT" };
+
+// "Past runs on this target" (Phase 3): the real outcomes recorded against this
+// CM, most recent first, so the plan is grounded in what actually happened last
+// time. Empty (no section) when nothing has been logged for the target.
+function renderPrepRunsSection(targetId) {
+  const runs = summarizeTargetRuns(getRunsForTarget(targetId));
+  if (!runs.length) {
+    return "";
+  }
+  const titleById = new Map(getEntityItems("characters").map((item) => [String(item.id), item.title || String(item.id)]));
+  const rows = runs
+    .map((run) => {
+      const outcome = PREP_RUN_OUTCOME[run.outcome] || PREP_RUN_OUTCOME.untested;
+      const statsText = Object.entries(run.finalStats)
+        .filter(([, value]) => Number.isFinite(Number(value)) && Number(value) > 0)
+        .map(([key, value]) => `${PREP_STAT_ABBR[key] || key.toUpperCase()} ${value}`)
+        .join(" · ");
+      return `
+        <div class="prep-run">
+          <span class="prep-badge prep-badge-${outcome.tone}">${escapeHtml(outcome.label)}</span>
+          <strong>${escapeHtml(titleById.get(run.characterId) || run.characterId || "Unknown uma")}</strong>
+          ${run.runningStyle ? `<span class="prep-run-style">${escapeHtml(PREP_STYLE_LABELS[run.runningStyle] || run.runningStyle)}</span>` : ""}
+          ${statsText ? `<span class="prep-run-stats">${escapeHtml(statsText)}</span>` : ""}
+          ${run.notes ? `<span class="prep-run-notes">${escapeHtml(run.notes)}</span>` : ""}
+        </div>
+      `;
+    })
+    .join("");
+  return `
+    <section class="prep-section prep-section-runs">
+      <div class="prep-section-head"><h2>Past runs on this target</h2><span class="prep-badge">${runs.length}</span></div>
+      <div class="prep-runs-list">${rows}</div>
+      <p class="prep-note">What actually happened last time on this CM - grounds the plan in your own results.</p>
+    </section>
+  `;
+}
+
 function renderPrepPlanSections(plan, targetId) {
   if (!plan?.selected) {
     return `<div class="prep-empty"><p>${escapeHtml(plan?.reasons?.[0] || "No plan available for this target.")}</p></div>`;
@@ -506,6 +545,8 @@ function renderPrepPlanSections(plan, targetId) {
         ${renderBuildSpurtPanel(prepSyntheticEntry(plan, targetId))}
       </div>
     </section>
+
+    ${renderPrepRunsSection(targetId)}
 
     <div class="prep-actions">
       <button type="button" class="prep-primary" id="prepSaveDraft">Save as build draft</button>

@@ -33,6 +33,26 @@ export function selectDefaultTargetId(items, nowSeconds) {
   return rows.slice().sort((a, b) => (b.end || b.start) - (a.end || a.start))[0].id;
 }
 
+// Compact, sorted summary of the runs recorded against a CM target (Phase 3):
+// most recent first, reduced to what the Auto Prep "past runs" section shows.
+// Pure: `runs` are run entries ({ id, character_id, running_style, outcome,
+// final_stats, notes, created_at }); title/label resolution stays in the caller.
+export function summarizeTargetRuns(runs, { limit = 5 } = {}) {
+  return (runs || [])
+    .slice()
+    .sort((a, b) => String(b?.created_at || "").localeCompare(String(a?.created_at || "")))
+    .slice(0, limit)
+    .map((run) => ({
+      id: String(run?.id || ""),
+      characterId: String(run?.character_id || ""),
+      runningStyle: String(run?.running_style || ""),
+      outcome: String(run?.outcome || "untested"),
+      finalStats: { ...(run?.final_stats || {}) },
+      notes: String(run?.notes || ""),
+      createdAt: String(run?.created_at || ""),
+    }));
+}
+
 const PREP_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 // A readable CM-target label for the target dropdown/header. Recent CMs no longer

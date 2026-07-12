@@ -1,4 +1,4 @@
-﻿import { BUILD_APTITUDE_FIELDS, BUILD_APTITUDE_GRADES, BUILD_STAT_FIELDS, asArray, getBuildReferenceLabel, getRunsForBuild, state } from "./core.js";
+﻿import { BUILD_APTITUDE_FIELDS, BUILD_APTITUDE_GRADES, BUILD_STAT_FIELDS, asArray, getBuildReferenceLabel, getRunsForBuild, setPrepHash, state } from "./core.js";
 import { clampNumber, escapeHtml } from "./dom-utils.js";
 import { apiJson, requestRender, requestRenderPreservingScroll } from "../app.js";
 import { loadRunsForProfile } from "./admin.js";
@@ -237,6 +237,7 @@ export function renderBuildRunsPanel(buildEntry) {
       <p class="source-note">Record the real outcome of a run against this build. A new run starts as a copy of the plan; edit the stats, ticked skills and outcome to match reality, and the delta below shows the gap.</p>
       <div class="roster-actions">
         <button type="button" class="button-strong" data-run-action="log">Log a run</button>
+        ${buildEntry.target_id ? `<button type="button" class="button-secondary" data-run-action="prep" data-target-id="${escapeHtml(String(buildEntry.target_id))}">Compare in CM Prep →</button>` : ""}
       </div>
       ${statusLine}
       <div class="build-runs-list">${listMarkup}</div>
@@ -347,6 +348,11 @@ export function attachBuildRunsListeners(buildEntry) {
   const logButton = panel.querySelector('[data-run-action="log"]');
   if (logButton) {
     logButton.addEventListener("click", () => logRunFromBuild(buildEntry));
+  }
+
+  const prepButton = panel.querySelector('[data-run-action="prep"]');
+  if (prepButton) {
+    prepButton.addEventListener("click", () => setPrepHash(prepButton.dataset.targetId));
   }
 
   panel.querySelectorAll('[data-run-action="save"]').forEach((button) => {

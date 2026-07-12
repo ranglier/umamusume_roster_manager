@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { formatCmTargetLabel, planToBuildSeed, selectDefaultTargetId } from "../../src/ui/assets/js/prep.js";
+import { formatCmTargetLabel, planToBuildSeed, selectDefaultTargetId, summarizeTargetRuns } from "../../src/ui/assets/js/prep.js";
 
 function cm(id, start, end) {
   return { id, detail: { start_ts: start, end_ts: end } };
@@ -66,4 +66,21 @@ test("formatCmTargetLabel drops an unknown track and a missing date gracefully",
 test("formatCmTargetLabel prefers the zodiac cup name when present", () => {
   const item = { id: "cm_001", detail: { name: "Taurus Cup", start_ts: 1620000000, race_profile: { track_name: "Tokyo", surface: "Turf", distance_m: 2400 } } };
   assert.match(formatCmTargetLabel(item), /^Taurus Cup · Tokyo 2400m Turf · \w{3} 2021$/);
+});
+
+test("summarizeTargetRuns sorts most-recent-first and caps the list", () => {
+  const runs = [
+    { id: "run_001", character_id: "c1", outcome: "loss", final_stats: { speed: 1400 }, created_at: "2026-01-01T00:00:00Z" },
+    { id: "run_003", character_id: "c3", outcome: "win", final_stats: { speed: 1580 }, created_at: "2026-03-01T00:00:00Z" },
+    { id: "run_002", character_id: "c2", outcome: "win", final_stats: { speed: 1500 }, created_at: "2026-02-01T00:00:00Z" },
+  ];
+  const summary = summarizeTargetRuns(runs, { limit: 2 });
+  assert.deepEqual(summary.map((r) => r.id), ["run_003", "run_002"]);
+  assert.equal(summary[0].outcome, "win");
+  assert.equal(summary[0].finalStats.speed, 1580);
+});
+
+test("summarizeTargetRuns tolerates an empty or missing list", () => {
+  assert.deepEqual(summarizeTargetRuns([]), []);
+  assert.deepEqual(summarizeTargetRuns(null), []);
 });

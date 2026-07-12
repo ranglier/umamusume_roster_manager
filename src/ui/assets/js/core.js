@@ -724,6 +724,16 @@ export function getRunsForBuild(buildId) {
   return asArray(state.runsDocument?.entries).filter((entry) => String(entry.build_id) === targetId);
 }
 
+// Runs recorded against a CM target (across every build for that target) - the
+// data behind the Auto Prep "past runs on this target" section (Phase 3).
+export function getRunsForTarget(targetId) {
+  const wanted = String(targetId || "");
+  if (!wanted) {
+    return [];
+  }
+  return asArray(state.runsDocument?.entries).filter((entry) => String(entry.target_id) === wanted);
+}
+
 export function createSkillReferenceBucket() {
   return {
     characters: new Map(),

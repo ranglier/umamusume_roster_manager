@@ -5403,3 +5403,32 @@ code {
   font-size: 0.82rem;
 }
 .prep-swap-option:hover { border-color: var(--accent); }
+
+.prep-section-runs .prep-runs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.prep-run {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--panel-strong);
+}
+.prep-run strong { color: var(--ink-deep); }
+.prep-run-style { color: var(--text-soft); font-size: 0.85rem; }
+.prep-run-stats {
+  color: var(--ink-deep);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+}
+.prep-run-notes {
+  flex-basis: 100%;
+  color: var(--text-soft);
+  font-size: 0.82rem;
+}
