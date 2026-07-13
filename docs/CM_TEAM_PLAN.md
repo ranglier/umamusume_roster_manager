@@ -114,11 +114,25 @@ Tests : chaque fonction en node:test avec fixtures ; les tests existants de
 `build_recommender`/`buildAutoPrepPlan` continuent de passer (compat — l'As
 reste `buildAutoPrepPlan`).
 
-## Phase 2 — UI équipe (ultérieur)
+## Phase 2 — UI équipe — LIVREE (13/07/2026)
 
-`#/prep` passe d'un plan mono-uma à un **plan d'équipe** : bandeau stratégie
-(répartition des styles, qui debuff quoi) + 3 colonnes/onglets réutilisant les
-sections par-uma existantes. Seed d'éditeur par uma.
+`#/prep` rend désormais le **trio** au lieu d'une seule uma. Pont
+`catalog.buildAutoPrepTeamPlanForDetail` (partage l'assemblage `rosterData`
+avec le pont mono-uma). `renderPrepPage` affiche un **bandeau stratégie**
+(badge de spread + why) avec **3 chips de rôle servant d'onglets** :
+- **As** = les sections par-uma complètes réutilisées (deck, skills, scenario,
+  parents, readouts, runs, badges meta, swaps, alternatives, save-as-draft —
+  tout intact).
+- **Debuffer / Pacer** = panneaux de rôle compacts (cible de stats du rôle +
+  skills du rôle + guidance + tagline).
+L'onglet actif se réinitialise au changement de cible. Vérifié en navigateur sur
+p_001 : As Oguri Cap (tiebreaker meta), Debuffer Air Groove (Late Surger, Wit
+1200, guidance stamina-debuff), Pacer Silence Suzuka (Front Runner) ; spread
+"Pace Chaser / Late Surger / Front Runner" ; onglets OK, interactions de l'As
+préservées, zéro erreur console.
+
+Chantier CM Team : **Phases 1-2 livrées.** Suites possibles : seed d'éditeur par
+rôle (debuffer/pacer), deck/parents par rôle, meta des rôles (debuffers meta).
 
 ## Plus tard
 
