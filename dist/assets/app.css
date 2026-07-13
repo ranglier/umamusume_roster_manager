@@ -1604,9 +1604,17 @@ button {
   border-color: rgba(95, 212, 198, 0.2);
 }
 
+/* Gate-like pages render into #profileGate (inside main-column, grid column 1)
+   and hide the detail column - but the two-column grid still reserves the empty
+   detail track (~360-540px), wasting the right side. Collapse to a single block
+   column on every gate page so the content uses the full width. route-home and
+   route-prep were missing here, which is why the home/CM-Prep pages looked
+   boxed-in with a large empty gutter. */
 body.route-profiles .app-layout,
 body.route-wizard .app-layout,
-body.route-admin .app-layout {
+body.route-admin .app-layout,
+body.route-home .app-layout,
+body.route-prep .app-layout {
   display: block;
 }
 
