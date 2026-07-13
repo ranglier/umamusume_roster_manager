@@ -5442,3 +5442,37 @@ code {
   font-size: 0.8rem;
   color: var(--accent-5);
 }
+
+.prep-team-banner .prep-role-chips {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+@media (max-width: 640px) {
+  .prep-team-banner .prep-role-chips { grid-template-columns: 1fr; }
+}
+.prep-role-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  cursor: pointer;
+  text-align: left;
+  border: 1px solid var(--border);
+  background: var(--panel-strong);
+  color: var(--ink-deep);
+  transition: transform 120ms ease, border-color 120ms ease;
+}
+.prep-role-chip:hover:not([disabled]) { transform: translateY(-1px); border-color: var(--accent); }
+.prep-role-chip.active { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.prep-role-chip[disabled] { opacity: 0.5; cursor: default; }
+.prep-role-name {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-soft);
+}
+.prep-role-uma { font-weight: 600; }
+.prep-role-style { font-size: 0.8rem; color: var(--accent); }
+.prep-badge-role { color: var(--accent); border-color: rgba(95, 212, 198, 0.4); }

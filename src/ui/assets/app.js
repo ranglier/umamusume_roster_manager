@@ -2,7 +2,7 @@
 // as part of docs/REFACTOR_PLAN.md.
 import { activeProfileBlock, activeProfileNameEl, adminButton, allowedEntityKeys, appSidebarEl, asArray, backToTopButton, BUILD_RUNNING_STYLE_OPTIONS, BUILD_STATUS_OPTIONS, browseActionsEl, buildsEntityKey, changeProfileButton, clearButton, collectionEntityKeys, compactLayoutQuery, createEntityState, currentRouteState, data, datasetBarEl, datasetHeadingEl, defaultEntityKeyForMode, defaultProfilesIndex, detailColumnEl, detailEl, detailPanelEl, entityMetaEl, entityTitleEl, filtersEl, getActiveProfile, getBuildTargetOptions, getEntityItems, getLoadedReferenceGeneratedAt, getRosterViewEntry, getRosterViewPayload, getRunsForTarget, getViewState, globalBuild, hasLoadedReferenceBundle, lastBuildBlock, legacyEntityKey, listEl, navEl, normalizeProfilesIndex, normalizeRosterDocument, normalizeRosterViewPayload, pageTitleEl, profileBackgroundMediaEl, profileBackgroundVideoEl, profileGateEl, referenceEntityKeys, renderGradeBadge, resetBuildsDocument, resetLegacyViewPayload, resultCountEl, resultsPanelEl, rosterEntityKeys, searchInput, setAdminHash, setBrowseHash, setHomeHash, setPrepHash, setProfilesHash, setWizardHash, SIDEBAR_SECTIONS, sidebarSectionForRoute, sidebarSectionsEl, state, summaryText, syncSelectedProfileId, toolbarEl, topHeaderEl, viewStateByKey } from "./js/core.js";
 import { escapeHtml, formatDateTime, renderBadge, renderDetailHeader, renderLinks, renderResultTop } from "./js/dom-utils.js";
-import { attachCmTargetRecommendationListeners, attachRacetrackVisualizerListeners, buildAutoPrepPlanForDetail, getCmTargetDeck, getCmTargetRecommendations, renderCatalogSupportQuickAdd, renderCharacters, renderCmTargets, renderCompatibility, renderG1Factors, renderRaces, renderRacetracks, renderScenarios, renderSkills, renderSupports, renderTrainingEvents } from "./js/catalog.js";
+import { attachCmTargetRecommendationListeners, attachRacetrackVisualizerListeners, buildAutoPrepPlanForDetail, buildAutoPrepTeamPlanForDetail, getCmTargetDeck, getCmTargetRecommendations, renderCatalogSupportQuickAdd, renderCharacters, renderCmTargets, renderCompatibility, renderG1Factors, renderRaces, renderRacetracks, renderScenarios, renderSkills, renderSupports, renderTrainingEvents } from "./js/catalog.js";
 import { formatCmTargetLabel, planToBuildSeed, selectDefaultTargetId, summarizeTargetRuns } from "./js/prep.js";
 import { attachRosterFormListeners, collectRosterFormData, getDefaultRosterEntry, getRosterBadges, getRosterEntry, getRosterFilterDefinitions, getRosterFilterOptions, removeSelectedBatchRows, renderBatchList, renderReferenceRosterActions, renderRosterCardProgress, renderRosterEditor, rosterCountForEntity, saveVisibleBatchRows, setRosterEntry } from "./js/roster.js";
 import { attachLegacyFormListeners, getCharacterRosterDefaults, getLegacyCharacterOptions, renderLegacyDetailBody, renderLegacyEditor, renderLegacyPreview, renderLegacySimulatorList } from "./js/legacy.js";
@@ -354,7 +354,14 @@ export function renderHomePage() {
 // plan from buildAutoPrepPlan, each section with an expandable "why". Client-only
 // on already-loaded data; the uma choice is kept in module scope so it survives
 // re-renders and resets when the target changes. ---
-let prepSelection = { targetId: null, characterId: null, deckPinned: [], deckExcluded: [] };
+let prepSelection = { targetId: null, characterId: null, deckPinned: [], deckExcluded: [], roleTab: "ace" };
+
+const PREP_ROLE_LABELS = { ace: "Ace", debuffer: "Debuffer", pacer: "Pacer" };
+const PREP_ROLE_TAGLINE = {
+  ace: "Trained to win - the only finisher that scores.",
+  debuffer: "Sabotages opponents; racing stats and placement don't matter.",
+  pacer: "Controls the front to set the pace and deny a free lead.",
+};
 
 const PREP_STYLE_LABELS = { runner: "Front Runner", leader: "Pace Chaser", betweener: "Late Surger", chaser: "End Closer" };
 const PREP_VERDICT_TONE = { useful: "ok", workable: "warn", "off-target": "bad" };
@@ -555,6 +562,65 @@ function renderPrepPlanSections(plan, targetId) {
   `;
 }
 
+// The team strategy banner + role tabs (CM Team Phase 2). Each role chip is a
+// tab switching the panel below; the active tab is highlighted.
+function renderPrepTeamBanner(teamPlan, activeRole) {
+  const roles = teamPlan.roles || {};
+  const chip = (role) => {
+    const entry = roles[role];
+    const title = role === "ace" ? entry?.title : entry?.title;
+    const style = role === "ace" ? entry?.style : entry?.style;
+    const disabled = !entry;
+    return `
+      <button type="button" class="prep-role-chip ${role === activeRole ? "active" : ""}" data-prep-role="${role}" ${disabled ? "disabled" : ""}>
+        <span class="prep-role-name">${escapeHtml(PREP_ROLE_LABELS[role])}</span>
+        <span class="prep-role-uma">${escapeHtml(title || "none available")}</span>
+        ${style ? `<span class="prep-role-style">${escapeHtml(PREP_STYLE_LABELS[style] || style)}</span>` : ""}
+      </button>
+    `;
+  };
+  const spread = teamPlan.strategy?.styleSpread;
+  return `
+    <section class="prep-section prep-team-banner">
+      <div class="prep-section-head"><h2>Team strategy</h2>${spread ? `<span class="prep-badge prep-badge-${spread.clash ? "bad" : spread.size >= 3 ? "ok" : "warn"}">${escapeHtml(spread.distinct.map((s) => PREP_STYLE_LABELS[s] || s).join(" / "))}</span>` : ""}</div>
+      <div class="prep-role-chips">${["ace", "debuffer", "pacer"].map(chip).join("")}</div>
+      ${renderPrepWhy(teamPlan.strategy?.reasons)}
+    </section>
+  `;
+}
+
+// Compact per-uma panel for the Debuffer / Pacer roles (the Ace reuses the full
+// plan sections). Role stat target + role skills + reasons, all labeled.
+function renderPrepRolePanel(rolePlan, role) {
+  if (!rolePlan) {
+    return `<div class="prep-empty"><p>No owned uma fits the ${escapeHtml(PREP_ROLE_LABELS[role])} role for this target.</p></div>`;
+  }
+  const skillTitleById = new Map((rolePlan.skills?.entries || []).map((entry) => [String(entry.id), entry.title]));
+  const skillLine = (ids) => asArray(ids).map((id) => escapeHtml(skillTitleById.get(String(id)) || String(id))).join(", ") || "-";
+  const stats = rolePlan.stats?.stats || {};
+  const basis = rolePlan.stats?.basis || {};
+  return `
+    <section class="prep-section">
+      <div class="prep-section-head"><h2>${escapeHtml(rolePlan.title)}</h2><span class="prep-badge prep-badge-role">${escapeHtml(PREP_STYLE_LABELS[rolePlan.style] || rolePlan.style || "-")}</span></div>
+      <p class="prep-note">${escapeHtml(PREP_ROLE_TAGLINE[role] || "")}</p>
+      ${renderPrepWhy(rolePlan.reasons)}
+    </section>
+    <section class="prep-section">
+      <div class="prep-section-head"><h2>Stat target</h2></div>
+      <div class="prep-stats-grid">
+        ${Object.entries(stats).map(([key, value]) => `<div class="prep-stat"><span>${escapeHtml(key)}</span><strong>${escapeHtml(String(value))}</strong></div>`).join("")}
+      </div>
+      ${renderPrepWhy(Object.values(basis).filter(Boolean))}
+    </section>
+    <section class="prep-section">
+      <div class="prep-section-head"><h2>Skills</h2>${role === "debuffer" ? `<span class="prep-badge prep-badge-warn">debuff-first</span>` : ""}</div>
+      <p class="prep-line"><span class="prep-line-label">Required</span> ${skillLine(rolePlan.skills?.required)}</p>
+      <p class="prep-line"><span class="prep-line-label">Optional</span> ${skillLine(rolePlan.skills?.optional)}</p>
+      ${rolePlan.skills?.guidance ? `<p class="prep-note">${escapeHtml(rolePlan.skills.guidance)}</p>` : ""}
+    </section>
+  `;
+}
+
 export function renderPrepPage(route) {
   if (!profileGateEl) {
     return;
@@ -572,18 +638,24 @@ export function renderPrepPage(route) {
     ? String(route.targetId)
     : defaultId;
 
-  // Reset the uma override and deck swaps when the target changes.
+  // Reset the uma override, deck swaps and role tab when the target changes.
   if (prepSelection.targetId !== activeId) {
-    prepSelection = { targetId: activeId, characterId: null, deckPinned: [], deckExcluded: [] };
+    prepSelection = { targetId: activeId, characterId: null, deckPinned: [], deckExcluded: [], roleTab: "ace" };
   }
 
   const activeItem = targetItems.find((item) => String(item.id) === String(activeId));
   const detail = activeItem?.detail || {};
-  const plan = buildAutoPrepPlanForDetail(detail, {
+  const teamPlan = buildAutoPrepTeamPlanForDetail(detail, {
     selectedCharacterId: prepSelection.characterId,
     pinnedDeckIds: prepSelection.deckPinned,
     excludedDeckIds: prepSelection.deckExcluded,
   });
+  // The Ace sub-plan drives every reused per-uma section + handler below.
+  const plan = teamPlan.roles.ace?.plan || null;
+  const roleTab = teamPlan.roles[prepSelection.roleTab] ? prepSelection.roleTab : "ace";
+  const roleContent = roleTab === "ace"
+    ? renderPrepPlanSections(plan, activeId)
+    : renderPrepRolePanel(teamPlan.roles[roleTab], roleTab);
 
   const options = targetItems
     .slice()
@@ -613,7 +685,8 @@ export function renderPrepPage(route) {
           <button type="button" class="prep-secondary" id="prepRegenerate">Regenerate</button>
         </div>
       </header>
-      ${renderPrepPlanSections(plan, activeId)}
+      ${renderPrepTeamBanner(teamPlan, roleTab)}
+      ${roleContent}
     </div>
   `;
 
@@ -621,6 +694,12 @@ export function renderPrepPage(route) {
   if (targetSelect) {
     targetSelect.addEventListener("change", () => setPrepHash(targetSelect.value));
   }
+  profileGateEl.querySelectorAll("[data-prep-role]").forEach((button) => {
+    button.addEventListener("click", () => {
+      prepSelection.roleTab = button.dataset.prepRole;
+      requestRender();
+    });
+  });
   const regenerateButton = document.getElementById("prepRegenerate");
   if (regenerateButton) {
     regenerateButton.addEventListener("click", () => {

@@ -10,7 +10,7 @@ import {
   resolveStaticZones,
   SKILL_HIGHLIGHT_CLASSES,
 } from "./visualizer.js";
-import { buildAutoPrepPlan, recommendBuildForTarget, recommendSkillsForBuild, recommendSupportDeck, targetProfileFromCmDetail } from "./build_recommender.js";
+import { buildAutoPrepPlan, buildAutoPrepTeamPlan, recommendBuildForTarget, recommendSkillsForBuild, recommendSupportDeck, targetProfileFromCmDetail } from "./build_recommender.js";
 import { buildMetaWeights } from "./meta.js";
 import { getBuildTargetRacetrack, getSkillReferenceItem, getSupportOwnedSummary, startSeededBuildDraft } from "./builds.js";
 import { getOwnedSupportOptions } from "./core.js";
@@ -82,13 +82,12 @@ export function getCmTargetRecommendations(detail) {
 // buildSkillPool is called by the engine once the deck is known (kit + deck
 // hints, same as getCandidateSkillReco); the course is only present when the
 // cm_target resolves to exactly ONE racetrack (getBuildTargetRacetrack).
-export function buildAutoPrepPlanForDetail(detail, { selectedCharacterId = null, weights = {}, pinnedDeckIds = [], excludedDeckIds = [] } = {}) {
-  const targetItem = { detail };
-  const racetrack = getBuildTargetRacetrack(targetItem);
+function assembleRosterData(detail, weights = {}) {
+  const racetrack = getBuildTargetRacetrack({ detail });
   // Fold the loaded meta snapshot (if any) into the weights the engine consumes.
   // No snapshot -> empty supportMeta/characterMeta -> identical to before.
   const effectiveWeights = { ...buildMetaWeights(state.metaSnapshot), ...weights };
-  const rosterData = {
+  return {
     characters: getOwnedCharacterItems(),
     supportSummaries: getOwnedSupportSummariesForDeck(),
     buildSkillPool: (characterId, deckIds) => {
@@ -101,7 +100,17 @@ export function buildAutoPrepPlanForDetail(detail, { selectedCharacterId = null,
     weights: effectiveWeights,
     availableScenarios: getGlobalAvailableScenarios(),
   };
-  return buildAutoPrepPlan(targetItem, rosterData, { selectedCharacterId, pinnedDeckIds, excludedDeckIds });
+}
+
+export function buildAutoPrepPlanForDetail(detail, { selectedCharacterId = null, weights = {}, pinnedDeckIds = [], excludedDeckIds = [] } = {}) {
+  return buildAutoPrepPlan({ detail }, assembleRosterData(detail, weights), { selectedCharacterId, pinnedDeckIds, excludedDeckIds });
+}
+
+// CM Team (docs/CM_TEAM_PLAN.md Phase 2): same DOM/state bridge, but the trio
+// aggregator. The Ace sub-plan inside is a full buildAutoPrepPlan, so the UI can
+// reuse every per-uma section for it.
+export function buildAutoPrepTeamPlanForDetail(detail, { selectedCharacterId = null, weights = {}, pinnedDeckIds = [], excludedDeckIds = [] } = {}) {
+  return buildAutoPrepTeamPlan({ detail }, assembleRosterData(detail, weights), { selectedCharacterId, pinnedDeckIds, excludedDeckIds });
 }
 
 // Scenarios released on the player's version (Global), derived from GameTora's
