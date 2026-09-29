@@ -614,8 +614,12 @@ function renderImportRow(mode, row, itemsById) {
   warnings.push(...mode.warnings(row, item));
 
   return `
-    <tr class="import-row import-row-${status.kind}" data-import-row="${escapeHtml(row.key)}">
-      <td><input type="checkbox" data-import-field="include" data-import-key="${escapeHtml(row.key)}" ${row.include ? "checked" : ""} ${status.kind === "unknown" ? "disabled" : ""}></td>
+    <tr class="import-row import-row-${status.kind}${row.include ? " import-row-included" : ""}" data-import-row="${escapeHtml(row.key)}">
+      <td class="import-pick-cell">
+        <label class="import-pick" title="${status.kind === "unknown" ? "Identify the card first" : (row.include ? "This row will be applied" : "This row will be skipped")}">
+          <input type="checkbox" data-import-field="include" data-import-key="${escapeHtml(row.key)}" ${row.include ? "checked" : ""} ${status.kind === "unknown" ? "disabled" : ""}>
+        </label>
+      </td>
       <td><img class="import-cell-thumb" src="${row.thumb}" alt="captured cell" title="Click to enlarge" data-import-preview="${escapeHtml(row.key)}"></td>
       <td class="import-match-cell">
         ${item ? `<img class="import-ref-thumb" src="${escapeHtml(resolveMediaAssetSrc(mode.displaySrc(item)))}" alt="">` : ""}
@@ -688,7 +692,9 @@ export function renderRosterImportPanel(entityKey) {
       </div>
       ${rows.length ? `
         <div class="import-apply-bar">
-          <strong id="importSelectedCount">${selectedCount}</strong> row(s) selected
+          <span class="import-apply-count"><strong id="importSelectedCount">${selectedCount}</strong> of ${visible.filter((row) => row.cardId).length} row(s) selected</span>
+          <button type="button" class="button-secondary" id="importSelectAllButton">Select all</button>
+          <button type="button" class="button-secondary" id="importSelectNoneButton">Select none</button>
           <button type="button" class="button-strong" id="importApplyButton" ${selectedCount && !current.processing ? "" : "disabled"}>Apply to my roster</button>
         </div>
         <div class="import-table-wrap">
@@ -835,6 +841,32 @@ function attachImportListeners(modeKey, itemsById, sortedItems) {
   const rowContext = { modeKey, mode, itemsById, sortedItems };
   listEl.querySelectorAll("tr[data-import-row]").forEach((tr) => bindRowEvents(tr, rowContext));
 
+  // Bulk selection: with dozens of rows, ticking them one by one was the main
+  // friction on a real import. Scoped to the rows of the main table — the ones
+  // the count in the apply bar talks about. Rows with no identified card cannot
+  // be applied, and rows already matching the roster sit in the collapsed
+  // "up to date" section: selecting either would make the count lie.
+  const setAllIncluded = (included) => {
+    for (const row of importState(modeKey).results) {
+      if (row.startedUnchanged || !row.cardId) {
+        continue;
+      }
+      if (rowDiffStatus(mode, row, itemsById).kind === "unknown") {
+        continue;
+      }
+      row.include = included;
+    }
+    requestRenderPreservingScroll();
+  };
+  const selectAllButton = document.getElementById("importSelectAllButton");
+  if (selectAllButton) {
+    selectAllButton.addEventListener("click", () => setAllIncluded(true));
+  }
+  const selectNoneButton = document.getElementById("importSelectNoneButton");
+  if (selectNoneButton) {
+    selectNoneButton.addEventListener("click", () => setAllIncluded(false));
+  }
+
   const applyButton = document.getElementById("importApplyButton");
   if (applyButton) {
     applyButton.addEventListener("click", async () => {
@@ -911,6 +943,13 @@ function bindRowEvents(tr, ctx) {
       const field = input.dataset.importField;
       if (field === "include") {
         row.include = input.checked;
+        // Sync the row's visual state without re-rendering it: a full row
+        // refresh here would rebuild the checkbox and steal the focus.
+        tr.classList.toggle("import-row-included", row.include);
+        const pick = input.closest(".import-pick");
+        if (pick) {
+          pick.title = row.include ? "This row will be applied" : "This row will be skipped";
+        }
         updateApplyBar(modeKey);
         return;
       }

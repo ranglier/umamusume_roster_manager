@@ -3534,6 +3534,7 @@ body.route-wizard .profile-gate::after {
 
 .import-apply-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   padding: 10px 14px;
@@ -3741,6 +3742,61 @@ body.route-wizard .profile-gate::after {
 
 .import-row-unknown {
   background: rgba(255, 139, 102, 0.04);
+}
+
+/* Selection column. The native checkbox was too small to scan down a long
+   import, and nothing outside it distinguished a selected row from a skipped
+   one — reported after a real import where rows silently stayed unticked. */
+.import-pick-cell {
+  width: 1%;
+  padding: 0 !important;
+}
+
+.import-pick {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 46px;
+  min-height: 44px;
+  padding: 8px;
+  cursor: pointer;
+}
+
+.import-pick input[type="checkbox"] {
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.import-pick input[type="checkbox"]:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+.import-pick input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The state is marked on the whole row, so it stays readable while looking at
+   the card name instead of only in the checkbox column. */
+.import-row-included {
+  background: rgba(95, 212, 198, 0.09);
+}
+
+.import-row-included td:first-child {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.import-row:not(.import-row-included) .import-cell-thumb,
+.import-row:not(.import-row-included) .import-ref-thumb {
+  opacity: 0.55;
+}
+
+.import-apply-count {
+  margin-right: auto;
 }
 
 .import-unchanged summary {
