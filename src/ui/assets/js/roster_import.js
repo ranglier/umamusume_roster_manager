@@ -15,6 +15,7 @@ import {
   UMA_GRID,
   assessMatch,
   cellFingerprint,
+  cellLooksEmpty,
   deserializeFingerprint,
   detectGridOffsetY,
   cropImage,
@@ -416,6 +417,7 @@ export async function processImportFiles(modeKey, fileList) {
     // while references WERE available (that one is probably scrolled).
     const bootstrapping = refEntries.length === 0;
     const rows = [];
+    let emptyCells = 0;
 
     for (const file of files) {
       const canvas = await decodeBlobToCanvas(file);
@@ -427,6 +429,12 @@ export async function processImportFiles(modeKey, fileList) {
       const cells = gridCells(imageData.width, imageData.height, mode.grid, detection.offsetY);
       for (const cell of cells) {
         const cellImg = cropImage(imageData, cell.x, cell.y, cell.width, cell.height);
+        // The last capture of a list leaves trailing cells on plain background.
+        // They can never match, so offering them for review is pure noise.
+        if (cellLooksEmpty(cellImg)) {
+          emptyCells += 1;
+          continue;
+        }
         const cellFp = mode.makeCellFingerprint(cellImg);
         const ranked = rankCandidates(cellFp, refEntries, 3);
         const verdict = assessMatch(ranked);
@@ -493,7 +501,10 @@ export async function processImportFiles(modeKey, fileList) {
     current.results = merged;
     const uncertain = merged.filter((row) => !row.cardId).length;
     const misaligned = rows.filter((row) => !row.alignmentTrusted).length;
-    const read = `Read ${rows.length} cells from ${files.length} screenshot(s) — ${merged.length} distinct ${mode.noun}s${uncertain ? `, ${uncertain} to review` : ""}.`;
+    // The ignored count is reported rather than silently dropped: a wrong grid
+    // offset would also produce "empty" cells, and that must stay visible.
+    const ignored = emptyCells ? ` (${emptyCells} empty grid slot(s) ignored)` : "";
+    const read = `Read ${rows.length} card cells from ${files.length} screenshot(s)${ignored} — ${merged.length} distinct ${mode.noun}s${uncertain ? `, ${uncertain} to review` : ""}.`;
     if (bootstrapping) {
       // Not an error: every row is Unknown by construction, and saying so beats
       // letting the user conclude the matcher is broken.

@@ -228,6 +228,45 @@ export function assessMatch(ranked, { maxDistance = MATCH_MAX_DISTANCE, minGap =
   };
 }
 
+// --- Empty-cell rejection ---
+
+// The grid is a fixed 5 x N lattice, but the last screenshot of a list only
+// fills its first rows: the remaining cells are blurred room background. They
+// match nothing, so they used to be offered as "cards to review" — 20 junk rows
+// out of 30 on a real end-of-list capture.
+//
+// A card cell is dense with hard edges (frame, level banner, gem row); the
+// blurred background has almost none. Measured over both grids on real
+// captures: real cells never dropped below 13.8, background never rose above
+// 3.3, so the threshold sits in an empty band an order of magnitude wide.
+export const CELL_MIN_EDGE_ENERGY = 8;
+
+// Mean per-sample gradient magnitude, subsampled every other pixel (the signal
+// is huge, so the cheap version is plenty).
+export function cellEdgeEnergy(img) {
+  const { width, height, data } = img;
+  let sum = 0;
+  let n = 0;
+  for (let y = 0; y + 1 < height; y += 2) {
+    const base = y * width;
+    const next = (y + 1) * width;
+    for (let x = 0; x + 1 < width; x += 2) {
+      const i = (base + x) * 4;
+      const right = (base + x + 1) * 4;
+      const below = (next + x) * 4;
+      const here = luminance(data[i], data[i + 1], data[i + 2]);
+      sum += Math.abs(luminance(data[right], data[right + 1], data[right + 2]) - here)
+        + Math.abs(luminance(data[below], data[below + 1], data[below + 2]) - here);
+      n += 1;
+    }
+  }
+  return n ? sum / n : 0;
+}
+
+export function cellLooksEmpty(img, threshold = CELL_MIN_EDGE_ENERGY) {
+  return cellEdgeEnergy(img) < threshold;
+}
+
 // --- Grid slicing ---
 
 // Above this line (base scale) sits the fixed UI header; cards never render there.

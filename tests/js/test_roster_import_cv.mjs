@@ -10,12 +10,15 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  CELL_MIN_EDGE_ENERGY,
   MATCH_MAX_DISTANCE,
   MATCH_MIN_GAP,
   SUPPORT_GRID,
   UMA_GRID,
   assessMatch,
+  cellEdgeEnergy,
   cellFingerprint,
+  cellLooksEmpty,
   colorHistogram,
   cropImage,
   dedupeExtracted,
@@ -83,6 +86,48 @@ test("cropImage and resizeImage keep dimensions coherent", () => {
   const small = resizeImage(crop, 9, 8);
   assert.equal(small.width, 9);
   assert.equal(small.data.length, 9 * 8 * 4);
+});
+
+// --- empty-cell rejection ---
+
+function grayImage(width, height, valueAt) {
+  const data = new Uint8Array(width * height * 4);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const v = valueAt(x, y);
+      const o = (y * width + x) * 4;
+      data[o] = v;
+      data[o + 1] = v;
+      data[o + 2] = v;
+      data[o + 3] = 255;
+    }
+  }
+  return { width, height, data };
+}
+
+test("cellEdgeEnergy is zero on a flat cell and maximal on a checkerboard", () => {
+  assert.equal(cellEdgeEnergy(grayImage(16, 16, () => 128)), 0);
+  // Each sample differs from its right and bottom neighbour by the full range.
+  assert.equal(cellEdgeEnergy(grayImage(16, 16, (x, y) => ((x + y) % 2 ? 255 : 0))), 510);
+});
+
+test("cellLooksEmpty separates blurred background from a card", () => {
+  assert.equal(cellLooksEmpty(grayImage(16, 16, () => 128)), true);
+  assert.equal(cellLooksEmpty(grayImage(16, 16, (x, y) => ((x + y) % 2 ? 255 : 0))), false);
+});
+
+test("every real card fixture stays well above the empty-cell threshold", () => {
+  // Measured 22.6-25.9 on these captures; background cells of an end-of-list
+  // screenshot sit at 0.6-3.3, so the threshold has an order of magnitude of
+  // headroom on both sides. Guards against a silent drift of the constant.
+  for (const cell of cells) {
+    const energy = cellEdgeEnergy(cell.img);
+    assert.ok(
+      energy > CELL_MIN_EDGE_ENERGY * 2,
+      `cellule (${cell.row},${cell.col}) : energie ${energy.toFixed(2)} trop proche du seuil ${CELL_MIN_EDGE_ENERGY}`,
+    );
+    assert.equal(cellLooksEmpty(cell.img), false, `cellule (${cell.row},${cell.col}) prise pour du vide`);
+  }
 });
 
 // --- grid ---
