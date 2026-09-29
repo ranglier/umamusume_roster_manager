@@ -12,6 +12,12 @@
       "runtimeExecutable": "python",
       "runtimeArgs": ["./scripts/serve_reference.py", "--port", "8421"],
       "port": 8421
+    },
+    {
+      "name": "reference-server-py3",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["./scripts/serve_reference.py", "--port", "8422"],
+      "port": 8422
     }
   ]
 }

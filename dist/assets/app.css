@@ -3704,6 +3704,18 @@ body.route-wizard .profile-gate::after {
   color: var(--accent);
 }
 
+/* Reference-asset coverage warning in the import dropzone: a missing asset set
+   is otherwise indistinguishable from a broken matcher. */
+.import-coverage-note {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-left: 3px solid #e0a030;
+  border-radius: 4px;
+  background: rgba(224, 160, 48, 0.12);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
 .batch-select {
   width: 17px;
   height: 17px;
